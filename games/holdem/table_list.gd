@@ -27,7 +27,17 @@ func _ready() -> void:
 	next_button.pressed.connect(func() -> void: _load(current_page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
+	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if seat_r.status == 200:
+		enter(seat_r.data.tableId)
+		return
 	_load(0)
+
+
+func enter(id: int) -> void:
+	var table_script = preload("res://games/holdem/table.gd")
+	table_script.table_id = id
+	get_tree().change_scene_to_file("res://games/holdem/table.tscn")
 
 
 func _load(page: int) -> void:
@@ -68,6 +78,10 @@ func _build_rows(items: Array) -> void:
 		var seats_label := Label.new()
 		seats_label.text = "%d/%d명" % [item.occupiedSeats, item.maxSeats]
 		row.add_child(seats_label)
+		var enter_button := Button.new()
+		enter_button.text = "입장"
+		enter_button.pressed.connect(enter.bind(item.tableId))
+		row.add_child(enter_button)
 		rows.add_child(row)
 
 
