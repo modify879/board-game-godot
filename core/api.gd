@@ -11,6 +11,7 @@ var access_token := ""
 var _dev_cookie := "" # desktop-only dev copy of the refresh_token cookie; web relies on the browser
 var user_id := 0
 var _refreshing := false
+var _resume_tried := false # 자동 로그인은 앱 시작 때 한 번만. 로그아웃·만료 후 로그인 화면에서 헛 refresh 를 보내지 않는다
 
 
 func origin() -> String:
@@ -127,6 +128,9 @@ func logout() -> void:
 
 
 func try_resume() -> bool:
+	if _resume_tried:
+		return false
+	_resume_tried = true
 	if not OS.has_feature("web"):
 		var cfg := ConfigFile.new()
 		if cfg.load("user://session.cfg") != OK:
