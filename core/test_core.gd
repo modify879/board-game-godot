@@ -39,10 +39,12 @@ func _init() -> void:
 	check(hb.command == "", "heartbeat parses to empty command")
 
 	# page_items
-	var with_embedded := {"_embedded": {"tableList": [{"id": 1}, {"id": 2}]}, "page": {}}
-	check(api.page_items(with_embedded).size() == 2, "page_items with _embedded")
-	var without_embedded := {"page": {}}
-	check(api.page_items(without_embedded).size() == 0, "page_items without _embedded")
+	var with_content := {"content": [{"id": 1}, {"id": 2}], "page": {}}
+	check(api.page_items(with_content).size() == 2, "page_items with content")
+	var no_content := {"page": {}}
+	check(api.page_items(no_content).size() == 0, "page_items without content")
+	var empty_content := {"content": []}
+	check(api.page_items(empty_content).size() == 0, "page_items with empty content")
 
 	# jwt sub decode
 	var payload_b64 := Marshalls.raw_to_base64('{"sub":"42"}'.to_utf8_buffer())

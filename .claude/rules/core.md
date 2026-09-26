@@ -15,7 +15,7 @@ paths: ["core/**"]
 ## 서버 계약에서 깨지기 쉬운 것
 
 - 에러 응답은 ProblemDetail `{title,status,instance,errorCode,traceId}`. 401 은 만료·무효 구분 없이 `AUTHENTICATION_REQUIRED`
-- 페이지 응답은 HAL `{_embedded:{<xxx>List:[...]}, page:{...}}`. **목록이 비면 `_embedded` 키가 아예 없다** — `Api.page_items()` 를 쓴다
+- 페이지 응답은 Spring Data `PagedModel`(HAL 아님): `{content:[...], page:{size,number,totalPages,totalElements}}`. 목록은 `Api.page_items()` 로 꺼낸다
 - refresh 토큰은 `refresh_token` httpOnly 쿠키(`Path=/api/auth`)로만 온다. Web 은 브라우저가 처리하므로 토큰을 코드·디스크에 두지 않는다.
   데스크톱(개발용)만 `Set-Cookie` 를 직접 파싱해 `user://session.cfg` 에 둔다
 - refresh 는 회전식이다. 동시에 두 번 보내면 방금 받은 토큰이 무효가 된다 — `_refresh()` 의 단일 비행을 우회하지 않는다
