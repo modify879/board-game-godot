@@ -11,6 +11,8 @@ Godot 은 PATH 에 없다. 프로젝트 루트에서 `--path .` 로 실행한다
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --import                            # 임포트·캐시 갱신
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --script res://core/test_core.gd    # 자체 점검 (exit 0 = 통과)
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --quit-after 120                    # 메인 씬 로드 확인
+/mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --export-release "Web" build/web/index.html   # Web 빌드
+(cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose up -d)              # http://localhost:8000 (같은 origin 프록시)
 ```
 
 서버 코드는 이 저장소에서 고치지 않는다. 띄워야 하면 서버 저장소에서 `./gradlew bootRun`.
