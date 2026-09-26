@@ -23,3 +23,4 @@ paths: ["core/**"]
 - `/me` 가 없다. 내 userId 는 access 토큰 JWT 의 `sub`(`Api.user_id`)
 - 서버에 CORS·허용 origin 설정이 없다. Web 빌드는 같은 origin 프록시(`/` = 빌드, `/api`·`/ws` → 8080)로 서빙한다
 - STOMP 는 raw WebSocket `/ws`(SockJS 아님). 인증은 CONNECT 프레임의 `Authorization` 헤더 — 브라우저 WebSocket 은 HTTP 헤더를 못 붙인다
+- Godot `JSON.parse_string` 은 숫자를 전부 `float` 로 만든다(서버는 정수로 보낸다). `==` 는 int 와 맞지만 `in`·`Array.has()`·Dictionary 키는 타입까지 봐서 틀린다 — 비교·키로 쓰기 전에 `int()` 로 바꾼다
