@@ -25,7 +25,7 @@ res://
 └── games/<game>/  게임별 씬·스크립트·에셋. 이 폴더만 떼면 게임 하나가 빠진다
 ```
 
-영역 전용 규칙은 `.claude/rules/` 에 있고 그 영역 파일을 건드릴 때만 로드된다(`core`·`games`).
+영역 전용 규칙은 `.claude/rules/` 에 있고 그 영역 파일을 건드릴 때만 로드된다(`core`·`holdem`). 게임을 추가하면 `.claude/rules/<game>.md`(`paths: ["games/<game>/**"]`)를 따로 만든다.
 
 ## 규칙
 

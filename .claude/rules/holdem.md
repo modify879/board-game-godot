@@ -1,10 +1,10 @@
 ---
-paths: ["games/**"]
+paths: ["games/holdem/**"]
 ---
 
-# games
+# holdem
 
-게임 폴더 파일을 건드릴 때만 로드된다. 범용 규칙은 `CLAUDE.md` 에 있다.
+`games/holdem` 파일을 건드릴 때만 로드된다. 범용 규칙은 `CLAUDE.md` 에 있다.
 
 - 행동(착석·베팅 등)은 REST 로 보낸다. STOMP 는 수신 전용이다 — 서버에 `@MessageMapping` 이 없다
 - 개인 채널은 `/user/queue/...` 로만 구독한다. 원시 `/queue` 구독은 서버가 거부하고, ERROR 후 연결이 끊긴다(자동 재연결도 멈춘다)
