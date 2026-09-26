@@ -169,8 +169,6 @@ static func jwt_sub(token: String) -> int:
 
 
 static func page_items(data) -> Array:
-	if data is Dictionary and data.has("_embedded"):
-		var embedded: Dictionary = data["_embedded"]
-		for key in embedded:
-			return embedded[key]
+	if data is Dictionary and data.has("content"):
+		return data["content"]
 	return []

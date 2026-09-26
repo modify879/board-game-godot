@@ -11,9 +11,9 @@ config_version=5
 [application]
 
 config/name="board-game"
+run/main_scene="res://auth/login.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
-run/main_scene="res://auth/login.tscn"
 
 [autoload]
 
@@ -22,10 +22,10 @@ Stomp="*res://core/stomp.gd"
 
 [display]
 
-window/size/viewport_height=720
 window/size/viewport_width=1280
-window/stretch/aspect="expand"
+window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [gui]
 
