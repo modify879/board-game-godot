@@ -11,6 +11,7 @@ paths: ["core/**"]
 - `api.gd`·`stomp.gd` 는 서로를 `get_node("/root/...")` 로 부른다 — autoload 이름을 직접 쓰면 `--script` 모드에서 컴파일이 깨진다
 - 파싱 로직(프레임·쿠키·페이지·JWT)은 static 순수 함수로 두고 `test_core.gd` 에 검사를 추가한다
 - **STOMP 프레임 끝의 NUL 은 바이트로 붙인다**(`encode`/`decode`). 문자열 안의 `"\u0000"` 은 잘려나가 서버가 프레임 끝을 못 찾는다
+- Web 에서는 `HTTPRequest.accept_gzip` 을 끈다. 브라우저가 이미 푼 본문을 Godot 이 한 번 더 풀려다 `RESULT_BODY_DECOMPRESS_FAILED` 가 난다(nginx 가 JSON 을 gzip 으로 보낸다)
 
 ## 서버 계약에서 깨지기 쉬운 것
 

@@ -30,6 +30,7 @@ func request(method: int, path: String, body = null) -> Dictionary:
 
 func _do_request(method: int, path: String, body) -> Dictionary:
 	var req := HTTPRequest.new()
+	req.accept_gzip = not OS.has_feature("web") # 브라우저가 이미 압축을 풀어 주는데 Content-Encoding 헤더가 남아 있어, 켜 두면 이중 해제로 실패한다
 	add_child(req)
 	var headers := ["Content-Type: application/json"]
 	if access_token != "":
@@ -50,6 +51,7 @@ func _do_request(method: int, path: String, body) -> Dictionary:
 	var res_headers: PackedStringArray = result[2]
 	var res_body: PackedByteArray = result[3]
 	if res_result != HTTPRequest.RESULT_SUCCESS:
+		push_warning("HTTP %s %s failed: result=%d" % [method, path, res_result])
 		return {"ok": false, "status": 0, "data": null, "error": "NETWORK_ERROR"}
 	if is_auth_path and not is_web:
 		_update_dev_cookie(res_headers)
