@@ -1,0 +1,101 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://auth/signup.gd" id="1"]
+
+[node name="Signup" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="CenterContainer/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "회원가입"
+
+[node name="Form" type="VBoxContainer" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="UsernameEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "아이디"
+
+[node name="UsernameHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "영문 소문자로 시작, 소문자·숫자·_ 4~20자"
+
+[node name="NicknameEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "닉네임"
+
+[node name="NicknameHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "2~12자"
+
+[node name="PasswordEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "비밀번호"
+secret = true
+
+[node name="PasswordHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "8자 이상"
+
+[node name="PasswordConfirmEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "비밀번호 확인"
+secret = true
+
+[node name="ErrorLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+autowrap_mode = 2
+text = ""
+
+[node name="SubmitButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "가입하기"
+
+[node name="BackButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "뒤로"
