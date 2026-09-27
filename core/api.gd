@@ -2,16 +2,19 @@ extends Node
 ## REST client + session state. Autoload "Api".
 
 signal session_expired
+signal token_refreshed
 signal _refresh_done(ok: bool)
 
 const DEV_ORIGIN := "http://localhost:8080"
 const LOGIN_SCENE := "res://auth/login.tscn"
+const REFRESH_MARGIN_SEC := 300.0 # exp 몇 초 전에 선제 갱신할지
 
 var access_token := ""
 var _dev_cookie := "" # desktop-only dev copy of the refresh_token cookie; web relies on the browser
 var user_id := 0
 var _refreshing := false
 var _resume_tried := false # 자동 로그인은 앱 시작 때 한 번만. 로그아웃·만료 후 로그인 화면에서 헛 refresh 를 보내지 않는다
+var _refresh_schedule_generation := 0 # 새 스케줄이 걸리거나 세션이 끊기면 늘려서 옛 타이머를 무효화한다
 
 
 func origin() -> String:
@@ -88,6 +91,8 @@ func _refresh(expire_on_fail := true) -> bool:
 		_clear_session()
 	_refreshing = false
 	_refresh_done.emit(ok)
+	if ok:
+		token_refreshed.emit()
 	if not ok and expire_on_fail:
 		session_expired.emit()
 		get_tree().change_scene_to_file(LOGIN_SCENE)
@@ -97,11 +102,26 @@ func _refresh(expire_on_fail := true) -> bool:
 func _apply_tokens(data: Dictionary) -> void:
 	access_token = data.accessToken
 	user_id = jwt_sub(access_token)
+	_schedule_refresh()
+
+
+func _schedule_refresh() -> void:
+	_refresh_schedule_generation += 1
+	var generation := _refresh_schedule_generation
+	var exp: float = jwt_claims(access_token).get("exp", 0)
+	var delay: float = max(exp - Time.get_unix_time_from_system() - REFRESH_MARGIN_SEC, 1.0)
+	get_tree().create_timer(delay).timeout.connect(_on_refresh_timer.bind(generation))
+
+
+func _on_refresh_timer(generation: int) -> void:
+	if generation == _refresh_schedule_generation:
+		await _refresh()
 
 
 func _clear_session() -> void:
 	access_token = ""
 	user_id = 0
+	_refresh_schedule_generation += 1 # 예약된 선제 갱신 타이머를 무효화한다
 	if not OS.has_feature("web"):
 		_dev_cookie = ""
 		var cfg := ConfigFile.new()
@@ -160,17 +180,22 @@ static func cookie_value(headers: PackedStringArray, name: String) -> Variant:
 	return null
 
 
-static func jwt_sub(token: String) -> int:
+static func jwt_claims(token: String) -> Dictionary:
 	var parts := token.split(".")
 	if parts.size() < 2:
-		return 0
+		return {}
 	var b64 := parts[1].replace("-", "+").replace("_", "/")
 	while b64.length() % 4 != 0:
 		b64 += "="
 	var text := Marshalls.base64_to_raw(b64).get_string_from_utf8()
 	var data = JSON.parse_string(text)
-	if data is Dictionary and data.has("sub"):
-		return int(data.sub)
+	return data if data is Dictionary else {}
+
+
+static func jwt_sub(token: String) -> int:
+	var claims := jwt_claims(token)
+	if claims.has("sub"):
+		return int(claims.sub)
 	return 0
 
 

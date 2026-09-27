@@ -2,6 +2,7 @@ extends Control
 ## Holdem table: seats, betting round status, private hole cards.
 
 static var table_id := 0
+static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
 
 const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
@@ -14,11 +15,12 @@ const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
 @onready var seats_grid: GridContainer = %Seats
 @onready var my_cards_label: Label = %MyCardsLabel
 @onready var error_label: Label = %ErrorLabel
+@onready var join_button: Button = %JoinButton
 @onready var stand_button: Button = %StandButton
 @onready var cancel_request_button: Button = %CancelRequestButton
 @onready var sit_popup: Control = %SitPopup
-@onready var sit_popup_label: Label = %SitPopupLabel
 @onready var sit_popup_spin: SpinBox = %SitPopupSpin
+@onready var sit_popup_post_blind: CheckBox = %PostBlindCheck
 @onready var sit_popup_error: Label = %SitPopupError
 @onready var sit_popup_ok: Button = %SitPopupOk
 @onready var sit_popup_cancel: Button = %SitPopupCancel
@@ -28,17 +30,24 @@ var public_view: Dictionary = {}
 var received_first_public := false
 var last_public_seq := -1
 var last_private_seq := -1
-var my_pending_seat := 0
-var sitting_seat_no := 0
 var private_subscribed := false
 var private_sub_id := ""
 var nickname_cache := {} # userId -> nickname
 var nickname_fetching := {} # userId -> true while request in flight
 
+var stomp_connected := false
+var waiting := false
+var queue_position := 0
+var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
+var last_buy_in := 0
+var last_post_blind := false
+var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
+
 
 func _ready() -> void:
 	title_label.text = "#%d" % table_id
 	back_button.pressed.connect(_on_back_pressed)
+	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
 	sit_popup_ok.pressed.connect(_on_sit_popup_ok)
@@ -46,18 +55,23 @@ func _ready() -> void:
 	_build_seat_panels()
 	Stomp.message.connect(_on_stomp_message)
 	Stomp.error.connect(_on_stomp_error)
-	Stomp.connect_ws()
+	Stomp.connected.connect(_on_stomp_connected)
+	Stomp.closed.connect(_on_stomp_closed)
 	Stomp.subscribe("/topic/tables/%d" % table_id)
+	Stomp.subscribe("/user/queue/holdem/join-queue")
+	Stomp.connect_ws()
 
 
 func _exit_tree() -> void:
 	Stomp.message.disconnect(_on_stomp_message)
 	Stomp.error.disconnect(_on_stomp_error)
+	Stomp.connected.disconnect(_on_stomp_connected)
+	Stomp.closed.disconnect(_on_stomp_closed)
 	Stomp.disconnect_ws()
 
 
 func _process(_delta: float) -> void:
-	if received_first_public and not public_view.get("handInProgress", false) and public_view.get("nextHandAt") != null:
+	if received_first_public and not waiting and not public_view.get("handInProgress", false) and public_view.get("nextHandAt") != null:
 		_update_status_label()
 
 
@@ -77,6 +91,8 @@ func _on_stomp_message(destination: String, body: Variant) -> void:
 		_handle_public(body)
 	elif destination == "/user/queue/tables/%d" % table_id:
 		_handle_private(body)
+	elif destination == "/user/queue/holdem/join-queue":
+		_handle_join_queue(body)
 
 
 func _handle_public(body: Dictionary) -> void:
@@ -85,8 +101,12 @@ func _handle_public(body: Dictionary) -> void:
 	last_public_seq = int(body.seq)
 	received_first_public = true
 	public_view = body
-	if _is_seated() or (my_pending_seat > 0 and not _is_pending(my_pending_seat)):
-		my_pending_seat = 0 # 입장했거나, 입장 처리에서 요청이 떨어져 나갔다
+	if _is_seated():
+		waiting = false
+	if rejoin_pending:
+		rejoin_pending = false
+		if not _is_seated():
+			_send_join(last_buy_in, last_post_blind)
 	_sync_private_subscription()
 	_update_status_label()
 	_update_board_label()
@@ -100,6 +120,26 @@ func _handle_private(body: Dictionary) -> void:
 	last_private_seq = int(body.seq)
 	my_cards_label.text = "내 카드: " + " ".join(body.holeCards)
 	my_cards_label.show()
+
+
+func _handle_join_queue(body: Dictionary) -> void:
+	if int(body.tableId) != table_id:
+		return
+	match body.type:
+		"POSITION":
+			queue_position = int(body.position)
+			_update_status_label()
+		"SEATED":
+			got_seated = true
+			waiting = false
+			_update_status_label()
+			_update_buttons()
+		"DROPPED":
+			waiting = false
+			error_label.text = ErrorText.of(body.errorCode)
+			error_label.show()
+			_update_status_label()
+			_update_buttons()
 
 
 func _sync_private_subscription() -> void:
@@ -126,6 +166,25 @@ func _on_stomp_error(code: String) -> void:
 		Stomp.connect_ws()
 
 
+func _on_stomp_connected() -> void:
+	stomp_connected = true
+	last_public_seq = -1
+	last_private_seq = -1
+	_update_buttons()
+	if auto_join and not waiting and not _is_seated():
+		auto_join = false
+		_open_sit_popup()
+
+
+func _on_stomp_closed() -> void:
+	stomp_connected = false
+	if waiting:
+		rejoin_pending = true
+		error_label.text = "연결이 끊겨 다시 대기열에 등록합니다"
+		error_label.show()
+	_update_buttons()
+
+
 # --- rendering ---
 
 func _is_seated() -> bool:
@@ -146,14 +205,10 @@ func _find_seat_by_user(user_id: int) -> Variant:
 	return null
 
 
-func _is_pending(seat_no: int) -> bool:
-	for n in public_view.get("pendingSeatNos", []):
-		if int(n) == seat_no: # JSON 숫자는 float 로 온다 — Array.has 로는 int 와 안 맞는다
-			return true
-	return false
-
-
 func _update_status_label() -> void:
+	if waiting:
+		status_label.text = "대기 순번 %d" % queue_position
+		return
 	if public_view.get("handInProgress", false):
 		status_label.text = "%s · 팟 %d" % [str(public_view.get("street", "")), int(public_view.get("pot", 0))]
 		return
@@ -197,16 +252,9 @@ func _render_seat_panel(seat_no: int) -> void:
 
 	var seat: Variant = _find_seat(seat_no)
 	if seat == null:
-		if _is_pending(seat_no):
-			var pending_label := Label.new()
-			pending_label.text = "대기 중"
-			vbox.add_child(pending_label)
-		else:
-			var sit_button := Button.new()
-			sit_button.text = "앉기"
-			sit_button.disabled = not received_first_public or _is_seated() or my_pending_seat > 0
-			sit_button.pressed.connect(_on_sit_pressed.bind(seat_no))
-			vbox.add_child(sit_button)
+		var empty_label := Label.new()
+		empty_label.text = "빈 자리"
+		vbox.add_child(empty_label)
 		return
 
 	var nickname_label := Label.new()
@@ -252,17 +300,22 @@ func _update_buttons() -> void:
 	var seated := _is_seated()
 	stand_button.visible = seated
 	stand_button.disabled = public_view.get("handInProgress", false)
-	cancel_request_button.visible = my_pending_seat > 0
-	back_button.disabled = seated or my_pending_seat > 0
+	join_button.visible = not seated and not waiting
+	join_button.disabled = not stomp_connected
+	cancel_request_button.visible = waiting
+	back_button.disabled = seated or waiting
 	back_button.tooltip_text = "일어선 뒤 나갈 수 있습니다" if back_button.disabled else ""
 
 
 # --- actions ---
 
-func _on_sit_pressed(seat_no: int) -> void:
-	sitting_seat_no = seat_no
-	sit_popup_label.text = "%d번 좌석에 앉기" % seat_no
+func _on_join_pressed() -> void:
+	_open_sit_popup()
+
+
+func _open_sit_popup() -> void:
 	sit_popup_error.hide()
+	sit_popup_post_blind.button_pressed = false
 	sit_popup_ok.disabled = true
 	sit_popup.show()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
@@ -290,23 +343,34 @@ func _on_sit_popup_cancel() -> void:
 func _on_sit_popup_ok() -> void:
 	sit_popup_ok.disabled = true
 	var buy_in := int(sit_popup_spin.value)
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"seatNo": sitting_seat_no, "buyIn": buy_in})
+	var post_blind := sit_popup_post_blind.button_pressed
 	sit_popup.hide()
+	_send_join(buy_in, post_blind)
+
+
+func _send_join(buy_in: int, post_blind: bool) -> void:
+	got_seated = false
+	last_buy_in = buy_in
+	last_post_blind = post_blind
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"buyIn": buy_in, "postBlindImmediately": post_blind})
 	if r.status == 202:
-		my_pending_seat = sitting_seat_no
-		_update_buttons()
-		_render_seats()
+		if not _is_seated() and not got_seated: # SEATED 나 공개 뷰가 202 보다 먼저 왔을 수 있다
+			waiting = true
+			queue_position = int(r.data.position)
 	elif not r.ok:
 		error_label.text = ErrorText.of(r.error)
 		error_label.show()
+	_update_status_label()
+	_update_buttons()
+	_render_seats()
 
 
 func _on_cancel_request_pressed() -> void:
 	cancel_request_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/tables/%d/seats/request" % table_id)
 	cancel_request_button.disabled = false
-	if r.ok:
-		my_pending_seat = 0
+	if r.ok or r.error == "JOIN_REQUEST_NOT_FOUND":
+		waiting = false # 착석 여부는 공개 뷰가 결정한다
 		_update_buttons()
 		_render_seats()
 	else:

@@ -34,9 +34,10 @@ func _ready() -> void:
 	_load(0)
 
 
-func enter(id: int) -> void:
+func enter(id: int, join := false) -> void:
 	var table_script = preload("res://games/holdem/table.gd")
 	table_script.table_id = id
+	table_script.auto_join = join
 	get_tree().change_scene_to_file("res://games/holdem/table.tscn")
 
 
@@ -78,10 +79,14 @@ func _build_rows(items: Array) -> void:
 		var seats_label := Label.new()
 		seats_label.text = "%d/%d명" % [item.occupiedSeats, item.maxSeats]
 		row.add_child(seats_label)
-		var enter_button := Button.new()
-		enter_button.text = "입장"
-		enter_button.pressed.connect(enter.bind(item.tableId))
-		row.add_child(enter_button)
+		var watch_button := Button.new()
+		watch_button.text = "관전"
+		watch_button.pressed.connect(enter.bind(item.tableId, false))
+		row.add_child(watch_button)
+		var join_button := Button.new()
+		join_button.text = "참가"
+		join_button.pressed.connect(enter.bind(item.tableId, true))
+		row.add_child(join_button)
 		rows.add_child(row)
 
 
