@@ -27,3 +27,4 @@ paths: ["core/**"]
 - 토큰 갱신(REST refresh)에 성공하면 옛 토큰의 소켓은 30초 뒤 닫힌다 — `Stomp` 가 `/app/auth/refresh` 로 연장한다, 실패하면 새 소켓을 먼저 연결하고 옛 소켓을 닫는다(대기열 유지)
 - access 토큰은 exp 5분 전에 선제 갱신한다
 - `/user/queue/auth` 는 Stomp 내부 채널이다
+- `/api/auth/login`·`/api/auth/refresh` 에는 `Authorization` 헤더를 싣지 않는다(`Api.sends_bearer`). permitAll 이어도 서버 필터가 Bearer 를 검증해, 만료 토큰이 실리면 refresh 가 401 로 실패하고 로그인 화면으로 튕긴다

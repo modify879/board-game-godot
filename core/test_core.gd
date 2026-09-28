@@ -71,6 +71,11 @@ func _init() -> void:
 	var ck_lower := PackedStringArray(["set-cookie: refresh_token=xyz; Path=/"])
 	check(api.cookie_value(ck_lower, "refresh_token") == "xyz", "cookie_value lowercase header name")
 
+	# sends_bearer
+	check(api.sends_bearer("/api/auth/refresh") == false, "refresh 에는 Bearer 를 안 싣는다")
+	check(api.sends_bearer("/api/auth/login") == false, "login 에는 Bearer 를 안 싣는다")
+	check(api.sends_bearer("/api/auth/logout") == true, "logout 은 Bearer 필요")
+
 	# ErrorText
 	check(et.of("LOGIN_FAILED") == "아이디 또는 비밀번호가 올바르지 않습니다", "ErrorText known code")
 	check(et.of("NOPE") == "오류가 발생했습니다 (NOPE)", "ErrorText fallback")

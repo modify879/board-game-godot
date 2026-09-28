@@ -37,7 +37,7 @@ func _do_request(method: int, path: String, body) -> Dictionary:
 	req.accept_gzip = not OS.has_feature("web") # 브라우저가 이미 압축을 풀어 주는데 Content-Encoding 헤더가 남아 있어, 켜 두면 이중 해제로 실패한다
 	add_child(req)
 	var headers := ["Content-Type: application/json"]
-	if access_token != "":
+	if access_token != "" and sends_bearer(path):
 		headers.append("Authorization: Bearer " + access_token)
 	var is_auth_path := path.begins_with("/api/auth/")
 	var is_web := OS.has_feature("web")
@@ -76,6 +76,11 @@ func _update_dev_cookie(headers: PackedStringArray) -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("session", "dev_cookie", _dev_cookie)
 	cfg.save("user://session.cfg")
+
+
+static func sends_bearer(path: String) -> bool:
+	# 로그인·refresh 는 permitAll 이지만, 서버 토큰 필터는 Bearer 헤더가 있으면 검증한다 — 만료된 토큰이 실리면 refresh 전에 401 이 난다
+	return path != "/api/auth/login" and path != "/api/auth/refresh"
 
 
 func _refresh(expire_on_fail := true) -> bool:
