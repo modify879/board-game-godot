@@ -46,12 +46,53 @@ size_flags_horizontal = 3
 horizontal_alignment = 2
 text = "대기 중 (2명 이상 필요)"
 
+[node name="Board" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="Card1" type="TextureRect" parent="VBoxContainer/Board"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Card2" type="TextureRect" parent="VBoxContainer/Board"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Card3" type="TextureRect" parent="VBoxContainer/Board"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Card4" type="TextureRect" parent="VBoxContainer/Board"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Card5" type="TextureRect" parent="VBoxContainer/Board"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
 [node name="BoardLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 16
 horizontal_alignment = 1
-text = "보드: -"
+text = ""
 
 [node name="SeatsMargin" type="MarginContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -70,13 +111,26 @@ theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
 columns = 3
 
-[node name="MyCardsLabel" type="Label" parent="VBoxContainer"]
+[node name="MyCards" type="HBoxContainer" parent="VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_constants/margin_left = 16
-horizontal_alignment = 1
-text = "내 카드: "
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="Card1" type="TextureRect" parent="VBoxContainer/MyCards"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
+
+[node name="Card2" type="TextureRect" parent="VBoxContainer/MyCards"]
+custom_minimum_size = Vector2(128, 128)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+texture_filter = 1
 
 [node name="ErrorLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -87,6 +141,52 @@ theme_override_constants/margin_left = 16
 theme_override_constants/margin_right = 16
 autowrap_mode = 2
 text = ""
+
+[node name="ActionBarMargin" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 8
+
+[node name="ActionBar" type="HBoxContainer" parent="VBoxContainer/ActionBarMargin"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FoldButton" type="Button" parent="VBoxContainer/ActionBarMargin/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "폴드"
+
+[node name="CheckCallButton" type="Button" parent="VBoxContainer/ActionBarMargin/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "체크"
+
+[node name="RaiseBox" type="HBoxContainer" parent="VBoxContainer/ActionBarMargin/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RaiseSlider" type="HSlider" parent="VBoxContainer/ActionBarMargin/ActionBar/RaiseBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+min_value = 200.0
+step = 100.0
+
+[node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/ActionBarMargin/ActionBar/RaiseBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 200.0
+step = 100.0
+
+[node name="RaiseButton" type="Button" parent="VBoxContainer/ActionBarMargin/ActionBar/RaiseBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "레이즈"
 
 [node name="BottomBar" type="MarginContainer" parent="VBoxContainer"]
 layout_mode = 2
