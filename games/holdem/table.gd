@@ -45,6 +45,7 @@ var public_view: Dictionary = {}
 var received_first_public := false
 var last_public_seq := -1
 var last_private_seq := -1
+var next_hand_due_ticks := -1 # nextHandInMs 를 받은 순간 기준의 시작 시각(get_ticks_msec). -1 이면 카운트다운 없음
 var private_subscribed := false
 var private_sub_id := ""
 var nickname_cache := {} # userId -> nickname
@@ -102,7 +103,7 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
-	if received_first_public and not waiting and not public_view.get("handInProgress", false) and public_view.get("nextHandAt") != null:
+	if received_first_public and not waiting and not public_view.get("handInProgress", false) and next_hand_due_ticks >= 0:
 		_update_status_label()
 	_update_turn_timer()
 
@@ -141,6 +142,8 @@ func _handle_public(body: Dictionary) -> void:
 	last_public_seq = int(body.seq)
 	received_first_public = true
 	public_view = body
+	var in_ms = body.get("nextHandInMs")
+	next_hand_due_ticks = -1 if in_ms == null else Time.get_ticks_msec() + int(in_ms)
 	if _is_seated():
 		waiting = false
 	if rejoin_pending:
@@ -293,9 +296,8 @@ func _update_status_label() -> void:
 	if public_view.get("handInProgress", false):
 		status_label.text = "%s · 팟 %d" % [Cards.street_text(public_view.get("street", "")), int(public_view.get("pot", 0))]
 		return
-	var next_hand_at = public_view.get("nextHandAt")
-	if next_hand_at != null:
-		var remaining := int(ceil(Time.get_unix_time_from_datetime_string(next_hand_at) - Time.get_unix_time_from_system()))
+	if next_hand_due_ticks >= 0:
+		var remaining := int(ceil((next_hand_due_ticks - Time.get_ticks_msec()) / 1000.0))
 		status_label.text = "다음 판 %d초" % max(remaining, 0)
 	else:
 		status_label.text = "대기 중 (2명 이상 필요)"

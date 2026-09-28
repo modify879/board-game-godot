@@ -14,7 +14,7 @@ var _dev_cookie := "" # desktop-only dev copy of the refresh_token cookie; web r
 var user_id := 0
 var _refreshing := false
 var _resume_tried := false # 자동 로그인은 앱 시작 때 한 번만. 로그아웃·만료 후 로그인 화면에서 헛 refresh 를 보내지 않는다
-var _refresh_schedule_generation := 0 # 새 스케줄이 걸리거나 세션이 끊기면 늘려서 옛 타이머를 무효화한다
+var _refresh_due_ticks := -1 # 선제 갱신 시각(Time.get_ticks_msec 기준). -1 이면 예약 없음
 
 
 func origin() -> String:
@@ -107,26 +107,27 @@ func _refresh(expire_on_fail := true) -> bool:
 func _apply_tokens(data: Dictionary) -> void:
 	access_token = data.accessToken
 	user_id = jwt_sub(access_token)
-	_schedule_refresh()
+	_schedule_refresh(data.get("accessTokenExpiresInMs"))
 
 
-func _schedule_refresh() -> void:
-	_refresh_schedule_generation += 1
-	var generation := _refresh_schedule_generation
-	var exp: float = jwt_claims(access_token).get("exp", 0)
-	var delay: float = max(exp - Time.get_unix_time_from_system() - REFRESH_MARGIN_SEC, 1.0)
-	get_tree().create_timer(delay).timeout.connect(_on_refresh_timer.bind(generation))
+func _schedule_refresh(expires_in_ms) -> void:
+	# 서버가 준 남은 ms 를 단조 시계로 센다 — OS 시계가 어긋나도, 탭이 가려져 루프가 멈췄다 돌아와도 정확하다
+	if expires_in_ms == null:
+		var exp: float = jwt_claims(access_token).get("exp", 0)
+		expires_in_ms = (exp - Time.get_unix_time_from_system()) * 1000.0
+	_refresh_due_ticks = Time.get_ticks_msec() + max(int(expires_in_ms) - int(REFRESH_MARGIN_SEC * 1000), 1000)
 
 
-func _on_refresh_timer(generation: int) -> void:
-	if generation == _refresh_schedule_generation:
-		await _refresh()
+func _process(_delta: float) -> void:
+	if _refresh_due_ticks >= 0 and Time.get_ticks_msec() >= _refresh_due_ticks and not _refreshing:
+		_refresh_due_ticks = -1
+		_refresh()
 
 
 func _clear_session() -> void:
 	access_token = ""
 	user_id = 0
-	_refresh_schedule_generation += 1 # 예약된 선제 갱신 타이머를 무효화한다
+	_refresh_due_ticks = -1
 	if not OS.has_feature("web"):
 		_dev_cookie = ""
 		var cfg := ConfigFile.new()
