@@ -53,39 +53,39 @@ alignment = 1
 theme_override_constants/separation = 8
 
 [node name="Card1" type="TextureRect" parent="VBoxContainer/Board"]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(84, 114)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="Card2" type="TextureRect" parent="VBoxContainer/Board"]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(84, 114)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="Card3" type="TextureRect" parent="VBoxContainer/Board"]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(84, 114)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="Card4" type="TextureRect" parent="VBoxContainer/Board"]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(84, 114)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="Card5" type="TextureRect" parent="VBoxContainer/Board"]
-custom_minimum_size = Vector2(64, 64)
+custom_minimum_size = Vector2(84, 114)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="BoardLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -119,18 +119,18 @@ alignment = 1
 theme_override_constants/separation = 8
 
 [node name="Card1" type="TextureRect" parent="VBoxContainer/MyCards"]
-custom_minimum_size = Vector2(128, 128)
+custom_minimum_size = Vector2(112, 152)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="Card2" type="TextureRect" parent="VBoxContainer/MyCards"]
-custom_minimum_size = Vector2(128, 128)
+custom_minimum_size = Vector2(112, 152)
 layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
-texture_filter = 1
+texture_filter = 4
 
 [node name="ErrorLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
