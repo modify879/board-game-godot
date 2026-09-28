@@ -1,22 +1,16 @@
-	
 
-	Playing Cards Pack
 
-	Created/distributed by Kenney (www.kenney.nl)
-	Creation date: 01-12-2020
+	Boardgame pack v2 by Kenney Vleugels (www.kenney.nl)
 
-			------------------------------
+	------------------------------
 
-	License: (Creative Commons Zero, CC0)
+	CC0 License (Creative Commons Zero)
 	http://creativecommons.org/publicdomain/zero/1.0/
 
-	This content is free to use in personal, educational and commercial projects.
-	Support us by crediting Kenney or www.kenney.nl (this is not mandatory)
+	You may use these graphics in personal and commercial projects.
+	Credit (Kenney or www.kenney.nl) would be nice but is not mandatory.
 
-			------------------------------
+	------------------------------
 
-	Donate:   http://support.kenney.nl
-	Patreon:  http://patreon.com/kenney/
-
-	Follow on Twitter for updates:
-	http://twitter.com/KenneyNL
+	More information:
+	www.kenney.nl
