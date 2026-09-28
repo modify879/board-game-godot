@@ -52,6 +52,15 @@ func _init() -> void:
 	var token := "eyJhbGciOiJIUzI1NiJ9." + payload_b64
 	check(api.jwt_sub(token) == 42, "jwt_sub decodes sub")
 
+	# jwt_claims decode (exp)
+	var claims_payload_b64 := Marshalls.raw_to_base64('{"sub":"7","exp":1700000000}'.to_utf8_buffer())
+	claims_payload_b64 = claims_payload_b64.replace("+", "-").replace("/", "_").rstrip("=")
+	var claims_token := "eyJhbGciOiJIUzI1NiJ9." + claims_payload_b64
+	var claims := api.jwt_claims(claims_token)
+	check(int(claims.get("exp", 0)) == 1700000000, "jwt_claims reads exp")
+	check(api.jwt_sub(claims_token) == 7, "jwt_sub still works via jwt_claims")
+	check(api.jwt_claims("not-a-jwt").is_empty(), "jwt_claims returns empty dict for malformed token")
+
 	# cookie_value
 	var ck_normal := PackedStringArray(["Set-Cookie: refresh_token=abc; Path=/api/auth; Max-Age=1209600; HttpOnly; Secure; SameSite=Strict"])
 	check(api.cookie_value(ck_normal, "refresh_token") == "abc", "cookie_value normal")

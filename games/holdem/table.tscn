@@ -1,0 +1,191 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://games/holdem/table.gd" id="1"]
+
+[node name="Table" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBar" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "← 방 목록"
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "#0"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+text = "대기 중 (2명 이상 필요)"
+
+[node name="BoardLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 16
+horizontal_alignment = 1
+text = "보드: -"
+
+[node name="SeatsMargin" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 8
+
+[node name="Seats" type="GridContainer" parent="VBoxContainer/SeatsMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+columns = 3
+
+[node name="MyCardsLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 16
+horizontal_alignment = 1
+text = "내 카드: "
+
+[node name="ErrorLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_right = 16
+autowrap_mode = 2
+text = ""
+
+[node name="BottomBar" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="JoinButton" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "참가"
+
+[node name="StandButton" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "일어서기"
+
+[node name="CancelRequestButton" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "대기 취소"
+
+[node name="SitPopup" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="SitPopup"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="SitPopup/CenterContainer"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="SitPopup/CenterContainer/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SitPopupLabel" type="Label" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "참가하기"
+
+[node name="SitPopupSpin" type="SpinBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 200.0
+max_value = 20000.0
+step = 100.0
+value = 200.0
+
+[node name="PostBlindCheck" type="CheckBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "바로 참가 (BB 진입료)"
+
+[node name="SitPopupError" type="Label" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+autowrap_mode = 2
+text = ""
+
+[node name="HBoxContainer" type="HBoxContainer" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="SitPopupOk" type="Button" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "확인"
+
+[node name="SitPopupCancel" type="Button" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "취소"

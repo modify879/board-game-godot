@@ -20,13 +20,15 @@ const TEXT := {
 	"NETWORK_ERROR": "네트워크 오류가 발생했습니다",
 	"TABLE_NOT_FOUND": "방을 찾을 수 없습니다",
 	"TABLE_NAME_INVALID": "방 이름은 1~30자여야 합니다",
-	"SEAT_TAKEN": "이미 다른 사람이 앉은 좌석입니다",
 	"ALREADY_SEATED": "이미 착석 중입니다",
-	"SEAT_NO_OUT_OF_RANGE": "좌석 번호가 올바르지 않습니다",
 	"BUY_IN_OUT_OF_RANGE": "바이인 금액이 허용 범위를 벗어났습니다",
 	"INSUFFICIENT_BALANCE": "잔액이 부족합니다",
 	"JOIN_REQUEST_NOT_FOUND": "참가 요청을 찾을 수 없습니다",
 	"NOT_SEATED": "착석 중이 아닙니다",
+	"HAND_IN_PROGRESS": "진행 중인 판이 끝난 뒤에 할 수 있습니다",
+	"CHIPS_NOT_UNIT": "칩은 100 단위로 입력해주세요",
+	"NOT_CONNECTED": "서버 연결을 확인한 뒤 다시 시도해주세요",
+	"TABLE_FULL": "자리가 가득 찼습니다",
 }
 
 
