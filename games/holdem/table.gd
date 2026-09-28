@@ -4,16 +4,20 @@ extends Control
 static var table_id := 0
 static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
 
+const Cards := preload("res://games/holdem/cards.gd")
+
 const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
 const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
+const TURN_SECONDS := 60.0
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
 @onready var status_label: Label = %StatusLabel
+@onready var board_box: HBoxContainer = %Board
 @onready var board_label: Label = %BoardLabel
 @onready var seats_grid: GridContainer = %Seats
-@onready var my_cards_label: Label = %MyCardsLabel
+@onready var my_cards_box: HBoxContainer = %MyCards
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
 @onready var stand_button: Button = %StandButton
@@ -24,8 +28,19 @@ const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
 @onready var sit_popup_error: Label = %SitPopupError
 @onready var sit_popup_ok: Button = %SitPopupOk
 @onready var sit_popup_cancel: Button = %SitPopupCancel
+@onready var action_bar: HBoxContainer = %ActionBar
+@onready var fold_button: Button = %FoldButton
+@onready var check_call_button: Button = %CheckCallButton
+@onready var raise_box: HBoxContainer = %RaiseBox
+@onready var raise_slider: HSlider = %RaiseSlider
+@onready var raise_spin: SpinBox = %RaiseSpin
+@onready var raise_button: Button = %RaiseButton
 
 var seat_panels: Array = [] # seat_panels[seatNo - 1] -> PanelContainer
+var seat_content_boxes: Array = [] # seat_content_boxes[seatNo - 1] -> VBoxContainer, rebuilt on each render
+var seat_timer_labels: Array = [] # seat_timer_labels[seatNo - 1] -> Label, ticked every frame (not rebuilt)
+var board_card_rects: Array = []
+var my_card_rects: Array = []
 var public_view: Dictionary = {}
 var received_first_public := false
 var last_public_seq := -1
@@ -43,6 +58,15 @@ var last_buy_in := 0
 var last_post_blind := false
 var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
 
+var my_available_actions = null # SeatPrivateView.availableActions (Dictionary) or null
+var action_pending := false
+
+# 서버는 턴 마감 시각을 보내지 않는다 — toActSeatNo 가 바뀐 시점부터 60초로 어림한다.
+var hand_counter := 0
+var last_hand_in_progress := false
+var last_turn_key := ""
+var turn_started_at := 0.0
+
 
 func _ready() -> void:
 	title_label.text = "#%d" % table_id
@@ -52,6 +76,13 @@ func _ready() -> void:
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
 	sit_popup_ok.pressed.connect(_on_sit_popup_ok)
 	sit_popup_cancel.pressed.connect(_on_sit_popup_cancel)
+	fold_button.pressed.connect(_on_fold_pressed)
+	check_call_button.pressed.connect(_on_check_call_pressed)
+	raise_button.pressed.connect(_on_raise_pressed)
+	raise_slider.value_changed.connect(_on_raise_slider_changed)
+	raise_spin.value_changed.connect(_on_raise_spin_changed)
+	board_card_rects = board_box.get_children()
+	my_card_rects = my_cards_box.get_children()
 	_build_seat_panels()
 	Stomp.message.connect(_on_stomp_message)
 	Stomp.error.connect(_on_stomp_error)
@@ -73,14 +104,23 @@ func _exit_tree() -> void:
 func _process(_delta: float) -> void:
 	if received_first_public and not waiting and not public_view.get("handInProgress", false) and public_view.get("nextHandAt") != null:
 		_update_status_label()
+	_update_turn_timer()
 
 
 func _build_seat_panels() -> void:
 	for seat_no in range(1, 10):
 		var panel := PanelContainer.new()
-		panel.add_child(VBoxContainer.new())
+		var outer := VBoxContainer.new()
+		panel.add_child(outer)
+		var content := VBoxContainer.new()
+		outer.add_child(content)
+		var timer_label := Label.new()
+		timer_label.hide()
+		outer.add_child(timer_label)
 		seats_grid.add_child(panel)
 		seat_panels.append(panel)
+		seat_content_boxes.append(content)
+		seat_timer_labels.append(timer_label)
 	_render_seats()
 
 
@@ -108,18 +148,32 @@ func _handle_public(body: Dictionary) -> void:
 		if not _is_seated():
 			_send_join(last_buy_in, last_post_blind)
 	_sync_private_subscription()
+	_update_turn_key()
+	if int(public_view.get("toActSeatNo", -1)) != _my_seat_no():
+		my_available_actions = null
 	_update_status_label()
+	_update_board_cards()
 	_update_board_label()
 	_render_seats()
 	_update_buttons()
+	_update_action_bar()
 
 
 func _handle_private(body: Dictionary) -> void:
 	if int(body.seq) < last_private_seq:
 		return
 	last_private_seq = int(body.seq)
-	my_cards_label.text = "내 카드: " + " ".join(body.holeCards)
-	my_cards_label.show()
+	var hole_cards: Array = body.get("holeCards", [])
+	for i in my_card_rects.size():
+		var rect: TextureRect = my_card_rects[i]
+		if i < hole_cards.size():
+			rect.texture = load(Cards.texture_path(hole_cards[i]))
+			rect.show()
+		else:
+			rect.hide()
+	my_cards_box.visible = not hole_cards.is_empty()
+	my_available_actions = body.get("availableActions")
+	_update_action_bar()
 
 
 func _handle_join_queue(body: Dictionary) -> void:
@@ -151,7 +205,8 @@ func _sync_private_subscription() -> void:
 		Stomp.unsubscribe(private_sub_id)
 		private_subscribed = false
 		last_private_seq = -1
-		my_cards_label.hide()
+		my_cards_box.hide()
+		my_available_actions = null
 
 
 func _on_stomp_error(code: String) -> void:
@@ -162,7 +217,8 @@ func _on_stomp_error(code: String) -> void:
 			Stomp.unsubscribe(private_sub_id)
 			private_subscribed = false
 			last_private_seq = -1
-			my_cards_label.hide()
+			my_cards_box.hide()
+			my_available_actions = null
 		Stomp.connect_ws()
 
 
@@ -205,12 +261,37 @@ func _find_seat_by_user(user_id: int) -> Variant:
 	return null
 
 
+func _my_seat_no() -> int:
+	var seat: Variant = _find_seat_by_user(Api.user_id)
+	return int(seat.seatNo) if seat != null else -1
+
+
+func _find_shown_hand(seat_no: int) -> Variant:
+	var result = public_view.get("result")
+	if result == null:
+		return null
+	for shown in result.get("shownHands", []):
+		if int(shown.seatNo) == seat_no:
+			return shown
+	return null
+
+
+func _payout_for(seat_no: int) -> int:
+	var result = public_view.get("result")
+	if result == null:
+		return 0
+	for payout in result.get("payouts", []):
+		if int(payout.seatNo) == seat_no:
+			return int(payout.amount)
+	return 0
+
+
 func _update_status_label() -> void:
 	if waiting:
 		status_label.text = "대기 순번 %d" % queue_position
 		return
 	if public_view.get("handInProgress", false):
-		status_label.text = "%s · 팟 %d" % [str(public_view.get("street", "")), int(public_view.get("pot", 0))]
+		status_label.text = "%s · 팟 %d" % [Cards.street_text(public_view.get("street", "")), int(public_view.get("pot", 0))]
 		return
 	var next_hand_at = public_view.get("nextHandAt")
 	if next_hand_at != null:
@@ -220,17 +301,27 @@ func _update_status_label() -> void:
 		status_label.text = "대기 중 (2명 이상 필요)"
 
 
-func _update_board_label() -> void:
+func _update_board_cards() -> void:
 	var board: Array = public_view.get("board", [])
-	var text := "보드: " + (" ".join(board) if not board.is_empty() else "-")
+	for i in board_card_rects.size():
+		var rect: TextureRect = board_card_rects[i]
+		if i < board.size():
+			rect.texture = load(Cards.texture_path(board[i]))
+			rect.show()
+		else:
+			rect.hide()
+
+
+func _update_board_label() -> void:
 	var result = public_view.get("result")
+	var text := ""
 	if result != null:
 		var wins := []
 		for payout in result.get("payouts", []):
 			if payout.amount > 0:
-				wins.append("%d번 +%d" % [payout.seatNo, payout.amount])
+				wins.append("%d번 +%d" % [int(payout.seatNo), int(payout.amount)])
 		if not wins.is_empty():
-			text += " · 승리: " + ", ".join(wins)
+			text = "승리: " + ", ".join(wins)
 	board_label.text = text
 
 
@@ -239,9 +330,22 @@ func _render_seats() -> void:
 		_render_seat_panel(seat_no)
 
 
+func _add_card_row(vbox: VBoxContainer, codes: Array) -> void:
+	var row := HBoxContainer.new()
+	for code in codes:
+		var rect := TextureRect.new()
+		rect.custom_minimum_size = Vector2(32, 32)
+		rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		rect.texture = load(Cards.texture_path(code))
+		row.add_child(rect)
+	vbox.add_child(row)
+
+
 func _render_seat_panel(seat_no: int) -> void:
 	var panel: PanelContainer = seat_panels[seat_no - 1]
-	var vbox: VBoxContainer = panel.get_child(0)
+	var vbox: VBoxContainer = seat_content_boxes[seat_no - 1]
 	for child in vbox.get_children():
 		child.queue_free()
 	panel.self_modulate = TO_ACT_COLOR if public_view.get("toActSeatNo", -1) == seat_no else Color(1, 1, 1, 1)
@@ -261,13 +365,14 @@ func _render_seat_panel(seat_no: int) -> void:
 	var suffix := ""
 	if public_view.get("buttonSeatNo", -1) == seat_no:
 		suffix += " D"
-	if seat.userId == Api.user_id:
+	var is_me := int(seat.userId) == Api.user_id
+	if is_me:
 		suffix += " (나)"
 	nickname_label.text = _nickname_for(seat.userId) + suffix
 	vbox.add_child(nickname_label)
 
 	var stack_label := Label.new()
-	stack_label.text = "%d칩" % seat.stack
+	stack_label.text = "%d칩" % int(seat.stack)
 	vbox.add_child(stack_label)
 
 	var status_text: String = STATUS_TEXT.get(seat.status, "")
@@ -277,6 +382,53 @@ func _render_seat_panel(seat_no: int) -> void:
 		var status_label_node := Label.new()
 		status_label_node.text = status_text
 		vbox.add_child(status_label_node)
+
+	var hand_in_progress: bool = public_view.get("handInProgress", false)
+	var shown_hand: Variant = _find_shown_hand(seat_no)
+	if shown_hand != null:
+		_add_card_row(vbox, shown_hand.holeCards)
+		var category_label := Label.new()
+		category_label.text = Cards.category_text(shown_hand.category)
+		vbox.add_child(category_label)
+	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
+		_add_card_row(vbox, ["back", "back"])
+
+	var contributed := int(seat.totalContributed)
+	if hand_in_progress and contributed > 0:
+		var bet_label := Label.new()
+		bet_label.text = "베팅 %d" % contributed
+		vbox.add_child(bet_label)
+
+	var payout := _payout_for(seat_no)
+	if payout > 0:
+		var payout_label := Label.new()
+		payout_label.text = "+%d" % payout
+		vbox.add_child(payout_label)
+
+
+func _update_turn_key() -> void:
+	var hip: bool = public_view.get("handInProgress", false)
+	if hip and not last_hand_in_progress:
+		hand_counter += 1
+	last_hand_in_progress = hip
+	var to_act := int(public_view.get("toActSeatNo", -1))
+	var turn_key := "%d:%s:%d" % [hand_counter, str(public_view.get("street", "")), to_act]
+	if turn_key != last_turn_key:
+		last_turn_key = turn_key
+		turn_started_at = Time.get_unix_time_from_system()
+
+
+func _update_turn_timer() -> void:
+	var to_act := int(public_view.get("toActSeatNo", -1))
+	var hip: bool = public_view.get("handInProgress", false)
+	for seat_no in range(1, 10):
+		var lbl: Label = seat_timer_labels[seat_no - 1]
+		if hip and seat_no == to_act and turn_started_at > 0.0:
+			var remaining := int(ceil(TURN_SECONDS - (Time.get_unix_time_from_system() - turn_started_at)))
+			lbl.text = "%d초" % max(remaining, 0)
+			lbl.show()
+		else:
+			lbl.hide()
 
 
 func _nickname_for(user_id: int) -> String:
@@ -307,7 +459,90 @@ func _update_buttons() -> void:
 	back_button.tooltip_text = "일어선 뒤 나갈 수 있습니다" if back_button.disabled else ""
 
 
-# --- actions ---
+# --- action bar ---
+
+func _update_action_bar() -> void:
+	var seat_no := _my_seat_no()
+	var to_act := int(public_view.get("toActSeatNo", -1))
+	var show_bar: bool = my_available_actions != null and seat_no != -1 and to_act == seat_no and public_view.get("handInProgress", false)
+	action_bar.visible = show_bar
+	if not show_bar:
+		return
+	var actions: Dictionary = my_available_actions
+	var can_check: bool = actions.get("canCheck", false)
+	check_call_button.text = "체크" if can_check else "콜 %d" % int(actions.get("callAmount", 0))
+	var min_raise = actions.get("minRaiseTo")
+	var raise_allowed := min_raise != null
+	raise_box.visible = raise_allowed
+	if raise_allowed:
+		var min_v := int(min_raise)
+		var max_v := int(actions.get("maxRaiseTo"))
+		raise_slider.min_value = min_v
+		raise_slider.max_value = max_v
+		raise_slider.step = 100
+		raise_spin.min_value = min_v
+		raise_spin.max_value = max_v
+		raise_spin.step = 100
+		if int(raise_slider.value) < min_v or int(raise_slider.value) > max_v:
+			raise_slider.value = min_v
+		raise_spin.value = raise_slider.value
+		_update_raise_button_label()
+	_set_action_bar_disabled(action_pending)
+
+
+func _update_raise_button_label() -> void:
+	var v := int(raise_slider.value)
+	raise_button.text = ("올인 %d" % v) if v == int(raise_slider.max_value) else ("레이즈 %d" % v)
+
+
+func _set_action_bar_disabled(disabled: bool) -> void:
+	fold_button.disabled = disabled
+	check_call_button.disabled = disabled
+	raise_button.disabled = disabled
+	raise_slider.editable = not disabled
+	raise_spin.editable = not disabled
+
+
+func _on_raise_slider_changed(value: float) -> void:
+	raise_spin.value = value
+	_update_raise_button_label()
+
+
+func _on_raise_spin_changed(value: float) -> void:
+	raise_slider.value = value
+	_update_raise_button_label()
+
+
+func _on_fold_pressed() -> void:
+	_send_play_action("FOLD")
+
+
+func _on_check_call_pressed() -> void:
+	if my_available_actions != null and my_available_actions.get("canCheck", false):
+		_send_play_action("CHECK")
+	else:
+		_send_play_action("CALL")
+
+
+func _on_raise_pressed() -> void:
+	_send_play_action("RAISE_TO", int(raise_slider.value))
+
+
+func _send_play_action(action: String, raise_to_amount = null) -> void:
+	action_pending = true
+	_set_action_bar_disabled(true)
+	var body := {"action": action}
+	if raise_to_amount != null:
+		body["raiseToAmount"] = raise_to_amount
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/hands/actions" % table_id, body)
+	action_pending = false
+	if not r.ok:
+		error_label.text = ErrorText.of(r.error)
+		error_label.show()
+	_update_action_bar()
+
+
+# --- seat actions ---
 
 func _on_join_pressed() -> void:
 	_open_sit_popup()

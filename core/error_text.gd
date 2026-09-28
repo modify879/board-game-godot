@@ -29,6 +29,15 @@ const TEXT := {
 	"CHIPS_NOT_UNIT": "칩은 100 단위로 입력해주세요",
 	"NOT_CONNECTED": "서버 연결을 확인한 뒤 다시 시도해주세요",
 	"TABLE_FULL": "자리가 가득 찼습니다",
+	"NOT_YOUR_TURN": "내 차례가 아닙니다",
+	"CANNOT_CHECK": "지금은 체크할 수 없습니다",
+	"RAISE_TOO_SMALL": "레이즈 금액이 너무 작습니다",
+	"RAISE_NOT_ALLOWED": "지금은 레이즈할 수 없습니다",
+	"INSUFFICIENT_STACK": "칩이 부족합니다",
+	"BETTING_ROUND_CLOSED": "이미 끝난 베팅 라운드입니다",
+	"HAND_ALREADY_FINISHED": "이미 끝난 판입니다",
+	"HAND_NOT_FOUND": "진행 중인 판이 없습니다",
+	"UNKNOWN_ACTION": "알 수 없는 행동입니다",
 }
 
 
