@@ -279,6 +279,13 @@ func _find_shown_hand(seat_no: int) -> Variant:
 	return null
 
 
+func _find_revealed_hand(seat_no: int) -> Variant:
+	for revealed in public_view.get("revealedHands", []):
+		if int(revealed.seatNo) == seat_no:
+			return revealed
+	return null
+
+
 func _payout_for(seat_no: int) -> int:
 	var result = public_view.get("result")
 	if result == null:
@@ -387,11 +394,14 @@ func _render_seat_panel(seat_no: int) -> void:
 
 	var hand_in_progress: bool = public_view.get("handInProgress", false)
 	var shown_hand: Variant = _find_shown_hand(seat_no)
+	var revealed_hand: Variant = _find_revealed_hand(seat_no)
 	if shown_hand != null:
 		_add_card_row(vbox, shown_hand.holeCards)
 		var category_label := Label.new()
 		category_label.text = Cards.category_text(shown_hand.category)
 		vbox.add_child(category_label)
+	elif revealed_hand != null:
+		_add_card_row(vbox, revealed_hand.holeCards)
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
 		_add_card_row(vbox, ["back", "back"])
 
