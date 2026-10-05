@@ -28,4 +28,7 @@ paths: ["core/**"]
 - access 토큰은 exp 5분 전에 선제 갱신한다
 - `/user/queue/auth` 는 Stomp 내부 채널이다
 - `/api/auth/login`·`/api/auth/refresh` 에는 `Authorization` 헤더를 싣지 않는다(`Api.sends_bearer`). permitAll 이어도 서버 필터가 Bearer 를 검증해, 만료 토큰이 실리면 refresh 가 401 로 실패하고 로그인 화면으로 튕긴다
+- STOMP heart-beat 는 `0,10000`(서버→클라이언트만)이다. 클라이언트 비트는 Web 가려진 탭에서 메인 루프가 멈춰 끊기고, 그러면 서버가 연결(대기열 자리)을 버린다
+- refresh 실패는 4xx 만 세션 종료다. 네트워크 오류·5xx 는 세션을 두고 5초 뒤 재시도한다
 - 선제 갱신은 `accessTokenExpiresInMs` 를 `Time.get_ticks_msec()` 로 센다(`_refresh_due_ticks`). `create_timer` 는 가려진 탭에서 멈춘 만큼 늦게 울리지만, 틱 비교는 탭 복귀 첫 프레임에 바로 갱신한다
+- connect 직후 `_last_state` 는 CONNECTING 으로 둔다 — 즉시 거부되면 CLOSED→CLOSED 라 재연결이 멈춘다(실측)

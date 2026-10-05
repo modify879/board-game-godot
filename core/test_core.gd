@@ -76,6 +76,19 @@ func _init() -> void:
 	check(api.sends_bearer("/api/auth/login") == false, "login 에는 Bearer 를 안 싣는다")
 	check(api.sends_bearer("/api/auth/logout") == true, "logout 은 Bearer 필요")
 
+	# refresh_failure_is_final
+	check(api.refresh_failure_is_final(0) == false, "refresh 네트워크 오류는 일시 장애")
+	check(api.refresh_failure_is_final(503) == false, "refresh 5xx 는 일시 장애")
+	check(api.refresh_failure_is_final(401) == true, "refresh 401 은 확정 실패")
+	check(api.refresh_failure_is_final(400) == true, "refresh 400 은 확정 실패")
+
+	# receive_interval_ms
+	check(stomp.receive_interval_ms("10000,0") == 10000, "heart-beat 10000,0")
+	check(stomp.receive_interval_ms("5000,0") == 10000, "heart-beat 5000,0 은 10000 으로 올림")
+	check(stomp.receive_interval_ms("20000,0") == 20000, "heart-beat 20000,0")
+	check(stomp.receive_interval_ms("0,0") == 0, "heart-beat 0,0 은 비활성")
+	check(stomp.receive_interval_ms("") == 0, "heart-beat 없으면 비활성")
+
 	# ErrorText
 	check(et.of("LOGIN_FAILED") == "아이디 또는 비밀번호가 올바르지 않습니다", "ErrorText known code")
 	check(et.of("NOPE") == "오류가 발생했습니다 (NOPE)", "ErrorText fallback")

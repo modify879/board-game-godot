@@ -1,13 +1,13 @@
 extends Node
 ## REST client + session state. Autoload "Api".
 
-signal session_expired
 signal token_refreshed
 signal _refresh_done(ok: bool)
 
 const DEV_ORIGIN := "http://localhost:8080"
 const LOGIN_SCENE := "res://auth/login.tscn"
 const REFRESH_MARGIN_SEC := 300.0 # exp 몇 초 전에 선제 갱신할지
+const REFRESH_RETRY_MS := 5000 # 네트워크·5xx 로 갱신이 실패했을 때 재시도 간격
 
 var access_token := ""
 var _dev_cookie := "" # desktop-only dev copy of the refresh_token cookie; web relies on the browser
@@ -26,7 +26,7 @@ func origin() -> String:
 func request(method: int, path: String, body = null) -> Dictionary:
 	var sent_token := access_token
 	var r := await _do_request(method, path, body)
-	if r.status == 401 and path != "/api/auth/login" and path != "/api/auth/refresh":
+	if r.status == 401 and sends_bearer(path):
 		if access_token != sent_token or await _refresh():
 			r = await _do_request(method, path, body)
 	return r
@@ -72,10 +72,19 @@ func _update_dev_cookie(headers: PackedStringArray) -> void:
 	var value = cookie_value(headers, "refresh_token")
 	if value == null:
 		return
+	_save_dev_cookie(value)
+
+
+func _save_dev_cookie(value: String) -> void:
 	_dev_cookie = value
 	var cfg := ConfigFile.new()
-	cfg.set_value("session", "dev_cookie", _dev_cookie)
+	cfg.set_value("session", "dev_cookie", value)
 	cfg.save("user://session.cfg")
+
+
+static func refresh_failure_is_final(status: int) -> bool:
+	# 4xx 만 세션 종료다. 네트워크 오류(0)·5xx 는 일시 장애라 로그아웃시키지 않는다
+	return status >= 400 and status < 500
 
 
 static func sends_bearer(path: String) -> bool:
@@ -90,16 +99,19 @@ func _refresh(expire_on_fail := true) -> bool:
 	_refreshing = true
 	var r := await _do_request(HTTPClient.METHOD_POST, "/api/auth/refresh", null)
 	var ok: bool = r.ok
+	var final := false
 	if ok:
 		_apply_tokens(r.data)
-	else:
+	elif refresh_failure_is_final(r.status):
+		final = true
 		_clear_session()
+	else:
+		_refresh_due_ticks = Time.get_ticks_msec() + REFRESH_RETRY_MS # 일시 장애 — 세션은 두고 곧 재시도
 	_refreshing = false
 	_refresh_done.emit(ok)
 	if ok:
 		token_refreshed.emit()
-	if not ok and expire_on_fail:
-		session_expired.emit()
+	if final and expire_on_fail:
 		get_tree().change_scene_to_file(LOGIN_SCENE)
 	return ok
 
@@ -129,10 +141,7 @@ func _clear_session() -> void:
 	user_id = 0
 	_refresh_due_ticks = -1
 	if not OS.has_feature("web"):
-		_dev_cookie = ""
-		var cfg := ConfigFile.new()
-		cfg.set_value("session", "dev_cookie", "")
-		cfg.save("user://session.cfg")
+		_save_dev_cookie("")
 
 
 func login(username: String, password: String) -> Dictionary:
@@ -165,7 +174,10 @@ func try_resume() -> bool:
 		if cookie == "":
 			return false
 		_dev_cookie = cookie
-	return await _refresh(false)
+	var ok: bool = await _refresh(false)
+	if not ok:
+		_refresh_due_ticks = -1 # 로그인 화면에서는 재시도하지 않는다 — 사용자가 직접 로그인한다
+	return ok
 
 
 static func cookie_value(headers: PackedStringArray, name: String) -> Variant:
