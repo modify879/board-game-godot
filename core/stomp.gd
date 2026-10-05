@@ -304,6 +304,28 @@ static func decode(bytes: PackedByteArray) -> String:
 	return bytes.slice(0, end).get_string_from_utf8()
 
 
+static func unescape_header(s: String) -> String:
+	# STOMP 1.2 헤더 이스케이프를 왼쪽부터 한 번씩만 푼다 — replace 를 이어 쓰면 "\\\\n" 이 두 번 풀린다
+	if not s.contains("\\"):
+		return s
+	var out := ""
+	var i := 0
+	while i < s.length():
+		var ch := s[i]
+		if ch == "\\" and i + 1 < s.length():
+			i += 1
+			match s[i]:
+				"r": out += "\r"
+				"n": out += "\n"
+				"c": out += ":"
+				"\\": out += "\\"
+				_: out += ch + s[i]
+		else:
+			out += ch
+		i += 1
+	return out
+
+
 static func parse_frame(text: String) -> Dictionary:
 	var t := text.lstrip("\n")
 	var parts := t.split("\n\n", true, 1)
@@ -313,5 +335,5 @@ static func parse_frame(text: String) -> Dictionary:
 		var line: String = head_lines[i]
 		var idx := line.find(":")
 		if idx >= 0:
-			headers[line.substr(0, idx)] = line.substr(idx + 1)
+			headers[unescape_header(line.substr(0, idx))] = unescape_header(line.substr(idx + 1))
 	return {"command": head_lines[0], "headers": headers, "body": parts[1] if parts.size() > 1 else ""}

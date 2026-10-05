@@ -7,6 +7,7 @@ signal _refresh_done(ok: bool)
 const DEV_ORIGIN := "http://localhost:8080"
 const LOGIN_SCENE := "res://auth/login.tscn"
 const REFRESH_MARGIN_SEC := 300.0 # exp 몇 초 전에 선제 갱신할지
+const REQUEST_TIMEOUT_SEC := 15.0 # 응답 없는 연결이 영영 안 끝나면 _refreshing 이 묶여 이후 갱신·401 재시도가 전부 멈춘다 — 타임아웃은 status 0 일시 장애로 처리된다
 const REFRESH_RETRY_MS := 5000 # 네트워크·5xx 로 갱신이 실패했을 때 재시도 간격
 
 var access_token := ""
@@ -35,6 +36,7 @@ func request(method: int, path: String, body = null) -> Dictionary:
 func _do_request(method: int, path: String, body) -> Dictionary:
 	var req := HTTPRequest.new()
 	req.accept_gzip = not OS.has_feature("web") # 브라우저가 이미 압축을 풀어 주는데 Content-Encoding 헤더가 남아 있어, 켜 두면 이중 해제로 실패한다
+	req.timeout = REQUEST_TIMEOUT_SEC
 	add_child(req)
 	var headers := ["Content-Type: application/json"]
 	if access_token != "" and sends_bearer(path):

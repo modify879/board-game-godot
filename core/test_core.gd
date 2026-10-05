@@ -34,6 +34,12 @@ func _init() -> void:
 	var korean_frame := stomp.build_frame("SEND", {"destination": "/app/hello"}, "한글")
 	check(stomp.decode(stomp.encode(korean_frame)) == korean_frame, "encode/decode round trip with Korean body")
 
+	# 헤더 이스케이프 (리터럴의 "\\" 는 백슬래시 한 글자)
+	check(stomp.unescape_header("a\\cb") == "a:b", "unescape \\c")
+	check(stomp.unescape_header("x\\ny") == "x\ny", "unescape \\n")
+	check(stomp.unescape_header("\\\\n") == "\\n" and stomp.unescape_header("\\\\n").length() == 2, "unescape backslash then n, no double decode")
+	check(stomp.parse_frame("ERROR\nmessage:a\\cb\n\n").headers.get("message", "") == "a:b", "parse_frame unescapes header value")
+
 	# heartbeat frame
 	var hb := stomp.parse_frame("\n")
 	check(hb.command == "", "heartbeat parses to empty command")
