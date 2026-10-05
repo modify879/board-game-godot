@@ -12,7 +12,7 @@ Godot 은 PATH 에 없다. 프로젝트 루트에서 `--path .` 로 실행한다
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --script res://core/test_core.gd    # 자체 점검 (exit 0 = 통과)
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --script res://games/holdem/test_holdem.gd   # 홀덤 자체 점검
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --quit-after 120                    # 메인 씬 로드 확인
-/mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --export-release "Web" build/web/index.html   # Web 빌드
+/mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --export-release "Web" build/web/index.html && gzip -kf9 build/web/index.{wasm,pck,js}   # Web 빌드 + 미리 압축. 꼭 함께 — nginx gzip_static 은 .gz 가 있으면 그것을 보내 옛 빌드가 나간다
 (cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose up -d)              # http://localhost:8000 (같은 origin 프록시)
 ```
 

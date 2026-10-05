@@ -4,10 +4,13 @@ server {
     index index.html;
 
     gzip on;
-    gzip_types application/wasm application/javascript text/css application/json;
+    gzip_static on; # 빌드 때 만든 .gz 를 그대로 보낸다 — 40MB wasm 을 요청마다 압축하지 않는다
+    gzip_types application/wasm application/javascript text/css application/json application/octet-stream;
     gzip_min_length 1024;
 
     location / {
+        # Godot 내보내기 파일 이름(index.wasm/pck/js)이 매번 같다 — 재배포 뒤 옛 파일과 섞이지 않게 매번 ETag 로 재검증한다
+        add_header Cache-Control "no-cache";
         try_files $uri $uri/ =404;
     }
 
