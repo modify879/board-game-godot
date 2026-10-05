@@ -42,7 +42,6 @@ var seat_timer_labels: Array = [] # seat_timer_labels[seatNo - 1] -> Label, tick
 var board_card_rects: Array = []
 var my_card_rects: Array = []
 var public_view: Dictionary = {}
-var received_first_public := false
 var last_public_seq := -1
 var last_private_seq := -1
 var next_hand_due_ticks := -1 # nextHandInMs 를 받은 순간 기준의 시작 시각(get_ticks_msec). -1 이면 카운트다운 없음
@@ -103,7 +102,7 @@ func _exit_tree() -> void:
 
 
 func _process(_delta: float) -> void:
-	if received_first_public and not waiting and not public_view.get("handInProgress", false) and next_hand_due_ticks >= 0:
+	if not waiting and not public_view.get("handInProgress", false) and next_hand_due_ticks >= 0:
 		_update_status_label()
 	_update_turn_timer()
 
@@ -140,7 +139,6 @@ func _handle_public(body: Dictionary) -> void:
 	if int(body.seq) < last_public_seq:
 		return
 	last_public_seq = int(body.seq)
-	received_first_public = true
 	public_view = body
 	var in_ms = body.get("nextHandInMs")
 	next_hand_due_ticks = -1 if in_ms == null else Time.get_ticks_msec() + int(in_ms)
@@ -152,7 +150,7 @@ func _handle_public(body: Dictionary) -> void:
 			_send_join(last_buy_in, last_post_blind)
 	_sync_private_subscription()
 	_update_turn_key()
-	if int(public_view.get("toActSeatNo", -1)) != _my_seat_no():
+	if _to_act_seat_no() != _my_seat_no():
 		my_available_actions = null
 	_update_status_label()
 	_update_board_cards()
@@ -167,13 +165,7 @@ func _handle_private(body: Dictionary) -> void:
 		return
 	last_private_seq = int(body.seq)
 	var hole_cards: Array = body.get("holeCards", [])
-	for i in my_card_rects.size():
-		var rect: TextureRect = my_card_rects[i]
-		if i < hole_cards.size():
-			rect.texture = load(Cards.texture_path(hole_cards[i]))
-			rect.show()
-		else:
-			rect.hide()
+	_show_cards(my_card_rects, hole_cards)
 	my_cards_box.visible = not hole_cards.is_empty()
 	my_available_actions = body.get("availableActions")
 	_update_action_bar()
@@ -193,8 +185,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 			_update_buttons()
 		"DROPPED":
 			waiting = false
-			error_label.text = ErrorText.of(body.errorCode)
-			error_label.show()
+			_show_error(body.errorCode)
 			_update_status_label()
 			_update_buttons()
 
@@ -205,23 +196,27 @@ func _sync_private_subscription() -> void:
 		private_sub_id = Stomp.subscribe("/user/queue/tables/%d" % table_id)
 		private_subscribed = true
 	elif not seated and private_subscribed:
-		Stomp.unsubscribe(private_sub_id)
-		private_subscribed = false
-		last_private_seq = -1
-		my_cards_box.hide()
-		my_available_actions = null
+		_drop_private()
+
+
+func _drop_private() -> void:
+	Stomp.unsubscribe(private_sub_id)
+	private_subscribed = false
+	last_private_seq = -1
+	my_cards_box.hide()
+	my_available_actions = null
+
+
+func _show_error(code: String) -> void:
+	error_label.text = ErrorText.of(code)
+	error_label.show()
 
 
 func _on_stomp_error(code: String) -> void:
-	error_label.text = ErrorText.of(code)
-	error_label.show()
+	_show_error(code)
 	if code == "ACCESS_DENIED":
 		if private_subscribed:
-			Stomp.unsubscribe(private_sub_id)
-			private_subscribed = false
-			last_private_seq = -1
-			my_cards_box.hide()
-			my_available_actions = null
+			_drop_private()
 		Stomp.connect_ws()
 
 
@@ -257,6 +252,12 @@ func _find_seat(seat_no: int) -> Variant:
 	return null
 
 
+func _seat_held_by(seat_no: int, user_id) -> bool:
+	# 결과는 다음 핸드 전까지 남는다 — 그 사이 같은 좌석에 다른 사람이 앉을 수 있다
+	var seat: Variant = _find_seat(seat_no)
+	return seat != null and user_id != null and int(seat.userId) == int(user_id)
+
+
 func _find_seat_by_user(user_id: int) -> Variant:
 	for seat in public_view.get("seats", []):
 		if seat.userId == user_id:
@@ -269,13 +270,26 @@ func _my_seat_no() -> int:
 	return int(seat.seatNo) if seat != null else -1
 
 
+func _to_act_seat_no() -> int:
+	# 아무도 차례가 아니면 서버가 null 을 보낸다 — get() 기본값은 키가 없을 때만 쓰이고, int(null) 은 오류다
+	var to_act = public_view.get("toActSeatNo")
+	return -1 if to_act == null else int(to_act)
+
+
 func _find_shown_hand(seat_no: int) -> Variant:
 	var result = public_view.get("result")
 	if result == null:
 		return null
 	for shown in result.get("shownHands", []):
-		if int(shown.seatNo) == seat_no:
+		if int(shown.seatNo) == seat_no and _seat_held_by(seat_no, shown.get("userId")):
 			return shown
+	return null
+
+
+func _find_revealed_hand(seat_no: int) -> Variant:
+	for revealed in public_view.get("revealedHands", []):
+		if int(revealed.seatNo) == seat_no:
+			return revealed
 	return null
 
 
@@ -284,7 +298,7 @@ func _payout_for(seat_no: int) -> int:
 	if result == null:
 		return 0
 	for payout in result.get("payouts", []):
-		if int(payout.seatNo) == seat_no:
+		if int(payout.seatNo) == seat_no and _seat_held_by(seat_no, payout.get("userId")):
 			return int(payout.amount)
 	return 0
 
@@ -305,10 +319,14 @@ func _update_status_label() -> void:
 
 func _update_board_cards() -> void:
 	var board: Array = public_view.get("board", [])
-	for i in board_card_rects.size():
-		var rect: TextureRect = board_card_rects[i]
-		if i < board.size():
-			rect.texture = load(Cards.texture_path(board[i]))
+	_show_cards(board_card_rects, board)
+
+
+func _show_cards(rects: Array, codes: Array) -> void:
+	for i in rects.size():
+		var rect: TextureRect = rects[i]
+		if i < codes.size():
+			rect.texture = load(Cards.texture_path(codes[i]))
 			rect.show()
 		else:
 			rect.hide()
@@ -320,7 +338,7 @@ func _update_board_label() -> void:
 	if result != null:
 		var wins := []
 		for payout in result.get("payouts", []):
-			if payout.amount > 0:
+			if payout.amount > 0 and _seat_held_by(int(payout.seatNo), payout.get("userId")):
 				wins.append("%d번 +%d" % [int(payout.seatNo), int(payout.amount)])
 		if not wins.is_empty():
 			text = "승리: " + ", ".join(wins)
@@ -350,7 +368,7 @@ func _render_seat_panel(seat_no: int) -> void:
 	var vbox: VBoxContainer = seat_content_boxes[seat_no - 1]
 	for child in vbox.get_children():
 		child.queue_free()
-	panel.self_modulate = TO_ACT_COLOR if public_view.get("toActSeatNo", -1) == seat_no else Color(1, 1, 1, 1)
+	panel.self_modulate = TO_ACT_COLOR if _to_act_seat_no() == seat_no else Color(1, 1, 1, 1)
 
 	var seat_no_label := Label.new()
 	seat_no_label.text = "%d번" % seat_no
@@ -387,11 +405,14 @@ func _render_seat_panel(seat_no: int) -> void:
 
 	var hand_in_progress: bool = public_view.get("handInProgress", false)
 	var shown_hand: Variant = _find_shown_hand(seat_no)
+	var revealed_hand: Variant = _find_revealed_hand(seat_no)
 	if shown_hand != null:
 		_add_card_row(vbox, shown_hand.holeCards)
 		var category_label := Label.new()
 		category_label.text = Cards.category_text(shown_hand.category)
 		vbox.add_child(category_label)
+	elif revealed_hand != null:
+		_add_card_row(vbox, revealed_hand.holeCards)
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
 		_add_card_row(vbox, ["back", "back"])
 
@@ -413,7 +434,7 @@ func _update_turn_key() -> void:
 	if hip and not last_hand_in_progress:
 		hand_counter += 1
 	last_hand_in_progress = hip
-	var to_act := int(public_view.get("toActSeatNo", -1))
+	var to_act := _to_act_seat_no()
 	var turn_key := "%d:%s:%d" % [hand_counter, str(public_view.get("street", "")), to_act]
 	if turn_key != last_turn_key:
 		last_turn_key = turn_key
@@ -421,7 +442,7 @@ func _update_turn_key() -> void:
 
 
 func _update_turn_timer() -> void:
-	var to_act := int(public_view.get("toActSeatNo", -1))
+	var to_act := _to_act_seat_no()
 	var hip: bool = public_view.get("handInProgress", false)
 	for seat_no in range(1, 10):
 		var lbl: Label = seat_timer_labels[seat_no - 1]
@@ -465,7 +486,7 @@ func _update_buttons() -> void:
 
 func _update_action_bar() -> void:
 	var seat_no := _my_seat_no()
-	var to_act := int(public_view.get("toActSeatNo", -1))
+	var to_act := _to_act_seat_no()
 	var show_bar: bool = my_available_actions != null and seat_no != -1 and to_act == seat_no and public_view.get("handInProgress", false)
 	action_bar.visible = show_bar
 	if not show_bar:
@@ -539,8 +560,7 @@ func _send_play_action(action: String, raise_to_amount = null) -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/hands/actions" % table_id, body)
 	action_pending = false
 	if not r.ok:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
+		_show_error(r.error)
 	_update_action_bar()
 
 
@@ -595,8 +615,7 @@ func _send_join(buy_in: int, post_blind: bool) -> void:
 			waiting = true
 			queue_position = int(r.data.position)
 	elif not r.ok:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
+		_show_error(r.error)
 	_update_status_label()
 	_update_buttons()
 	_render_seats()
@@ -611,8 +630,7 @@ func _on_cancel_request_pressed() -> void:
 		_update_buttons()
 		_render_seats()
 	else:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
+		_show_error(r.error)
 
 
 func _on_stand_pressed() -> void:
@@ -620,8 +638,7 @@ func _on_stand_pressed() -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat")
 	stand_button.disabled = false
 	if not r.ok:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
+		_show_error(r.error)
 
 
 func _on_back_pressed() -> void:
