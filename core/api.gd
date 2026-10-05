@@ -83,8 +83,8 @@ func _save_dev_cookie(value: String) -> void:
 
 
 static func refresh_failure_is_final(status: int) -> bool:
-	# 4xx 만 세션 종료다. 네트워크 오류(0)·5xx 는 일시 장애라 로그아웃시키지 않는다
-	return status >= 400 and status < 500
+	# 4xx 만 세션 종료다(408·429 제외). 네트워크 오류(0)·5xx·408·429 는 일시 장애라 로그아웃시키지 않는다
+	return status >= 400 and status < 500 and status != 408 and status != 429
 
 
 static func sends_bearer(path: String) -> bool:
@@ -105,7 +105,7 @@ func _refresh(expire_on_fail := true) -> bool:
 	elif refresh_failure_is_final(r.status):
 		final = true
 		_clear_session()
-	else:
+	elif access_token != "": # 로그아웃 중이던 refresh 가 재시도를 걸면 나중에 로그인 화면을 튕긴다
 		_refresh_due_ticks = Time.get_ticks_msec() + REFRESH_RETRY_MS # 일시 장애 — 세션은 두고 곧 재시도
 	_refreshing = false
 	_refresh_done.emit(ok)
@@ -157,6 +157,8 @@ func signup(username: String, password: String, password_confirm: String, nickna
 
 
 func logout() -> void:
+	if _refreshing: # 진행 중인 갱신이 로그아웃 뒤에 끝나면 토큰을 되살린다 — 끝난 뒤에 로그아웃한다
+		await _refresh_done
 	await request(HTTPClient.METHOD_POST, "/api/auth/logout")
 	_clear_session()
 	get_node("/root/Stomp").disconnect_ws()

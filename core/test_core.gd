@@ -81,6 +81,8 @@ func _init() -> void:
 	check(api.refresh_failure_is_final(503) == false, "refresh 5xx 는 일시 장애")
 	check(api.refresh_failure_is_final(401) == true, "refresh 401 은 확정 실패")
 	check(api.refresh_failure_is_final(400) == true, "refresh 400 은 확정 실패")
+	check(api.refresh_failure_is_final(408) == false, "refresh 408 은 일시 장애")
+	check(api.refresh_failure_is_final(429) == false, "refresh 429 는 일시 장애")
 
 	# receive_interval_ms
 	check(stomp.receive_interval_ms("10000,0") == 10000, "heart-beat 10000,0")
