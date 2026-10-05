@@ -18,6 +18,8 @@ const TEXT := {
 	"REFRESH_TOKEN_INVALID": "세션이 만료되었습니다. 다시 로그인해주세요",
 	"ACCOUNT_LOCKED": "계정이 잠겼습니다",
 	"NETWORK_ERROR": "네트워크 오류가 발생했습니다",
+	"REQUEST_INVALID": "요청이 올바르지 않습니다",
+	"INTERNAL_ERROR": "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요",
 	"TABLE_NOT_FOUND": "방을 찾을 수 없습니다",
 	"TABLE_NAME_INVALID": "방 이름은 1~30자여야 합니다",
 	"ALREADY_SEATED": "이미 착석 중입니다",
@@ -38,6 +40,12 @@ const TEXT := {
 	"HAND_ALREADY_FINISHED": "이미 끝난 판입니다",
 	"HAND_NOT_FOUND": "진행 중인 판이 없습니다",
 	"UNKNOWN_ACTION": "알 수 없는 행동입니다",
+	"CHIPS_NEGATIVE": "칩은 0 이상이어야 합니다",
+	"SEAT_TAKEN": "이미 다른 사람이 앉은 자리입니다",
+	"CONCURRENT_WALLET_UPDATE": "지갑 처리가 겹쳤습니다. 다시 시도해주세요",
+	"GAME_TRANSFER_AMOUNT_INVALID": "옮길 칩 금액이 올바르지 않습니다",
+	"AMOUNT_NOT_POSITIVE": "금액은 0보다 커야 합니다",
+	"AMOUNT_NEGATIVE": "금액은 0 이상이어야 합니다",
 }
 
 

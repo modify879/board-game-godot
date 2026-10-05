@@ -19,6 +19,7 @@ paths: ["core/**"]
 - 페이지 응답은 Spring Data `PagedModel`(HAL 아님): `{content:[...], page:{size,number,totalPages,totalElements}}`. 목록은 `Api.page_items()` 로 꺼낸다
 - refresh 토큰은 `refresh_token` httpOnly 쿠키(`Path=/api/auth`)로만 온다. Web 은 브라우저가 처리하므로 토큰을 코드·디스크에 두지 않는다.
   데스크톱(개발용)만 `Set-Cookie` 를 직접 파싱해 `user://session.cfg` 에 둔다
+- refresh 쿠키는 `Secure`·`SameSite=Strict` 다. Web 빌드는 HTTPS 또는 localhost 에서만 쿠키가 저장된다 — `http://<LAN IP>` 로 열면 자동 로그인·갱신이 안 되고 access 만료 때 로그아웃된다
 - refresh 는 회전식이다. 동시에 두 번 보내면 방금 받은 토큰이 무효가 된다 — `_refresh()` 의 단일 비행을 우회하지 않는다
 - `/me` 가 없다. 내 userId 는 access 토큰 JWT 의 `sub`(`Api.user_id`)
 - 서버에 CORS·허용 origin 설정이 없다. Web 빌드는 같은 origin 프록시(`/` = 빌드, `/api`·`/ws` → 8080)로 서빙한다

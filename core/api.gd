@@ -7,6 +7,7 @@ signal _refresh_done(ok: bool)
 const DEV_ORIGIN := "http://localhost:8080"
 const LOGIN_SCENE := "res://auth/login.tscn"
 const REFRESH_MARGIN_SEC := 300.0 # exp 몇 초 전에 선제 갱신할지
+const REQUEST_TIMEOUT_SEC := 15.0 # 응답 없는 연결이 영영 안 끝나면 _refreshing 이 묶여 이후 갱신·401 재시도가 전부 멈춘다 — 타임아웃은 status 0 일시 장애로 처리된다
 const REFRESH_RETRY_MS := 5000 # 네트워크·5xx 로 갱신이 실패했을 때 재시도 간격
 
 var access_token := ""
@@ -35,6 +36,7 @@ func request(method: int, path: String, body = null) -> Dictionary:
 func _do_request(method: int, path: String, body) -> Dictionary:
 	var req := HTTPRequest.new()
 	req.accept_gzip = not OS.has_feature("web") # 브라우저가 이미 압축을 풀어 주는데 Content-Encoding 헤더가 남아 있어, 켜 두면 이중 해제로 실패한다
+	req.timeout = REQUEST_TIMEOUT_SEC
 	add_child(req)
 	var headers := ["Content-Type: application/json"]
 	if access_token != "" and sends_bearer(path):
@@ -83,8 +85,8 @@ func _save_dev_cookie(value: String) -> void:
 
 
 static func refresh_failure_is_final(status: int) -> bool:
-	# 4xx 만 세션 종료다. 네트워크 오류(0)·5xx 는 일시 장애라 로그아웃시키지 않는다
-	return status >= 400 and status < 500
+	# 4xx 만 세션 종료다(408·429 제외). 네트워크 오류(0)·5xx·408·429 는 일시 장애라 로그아웃시키지 않는다
+	return status >= 400 and status < 500 and status != 408 and status != 429
 
 
 static func sends_bearer(path: String) -> bool:
@@ -105,7 +107,7 @@ func _refresh(expire_on_fail := true) -> bool:
 	elif refresh_failure_is_final(r.status):
 		final = true
 		_clear_session()
-	else:
+	elif access_token != "": # 로그아웃 중이던 refresh 가 재시도를 걸면 나중에 로그인 화면을 튕긴다
 		_refresh_due_ticks = Time.get_ticks_msec() + REFRESH_RETRY_MS # 일시 장애 — 세션은 두고 곧 재시도
 	_refreshing = false
 	_refresh_done.emit(ok)
@@ -157,6 +159,8 @@ func signup(username: String, password: String, password_confirm: String, nickna
 
 
 func logout() -> void:
+	if _refreshing: # 진행 중인 갱신이 로그아웃 뒤에 끝나면 토큰을 되살린다 — 끝난 뒤에 로그아웃한다
+		await _refresh_done
 	await request(HTTPClient.METHOD_POST, "/api/auth/logout")
 	_clear_session()
 	get_node("/root/Stomp").disconnect_ws()

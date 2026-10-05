@@ -62,7 +62,9 @@ func _process(_delta: float) -> void:
 
 
 func connect_ws() -> void:
+	_cancel_rotate() # 교체 중 새로 연결하면 _finish_rotate 가 새 ws 를 덮어 고아로 만든다
 	_intentional_close = false
+	_connected = false # 새 소켓은 CONNECTED 전까지 STOMP 연결이 아니다
 	ws = WebSocketPeer.new()
 	ws.connect_to_url(_ws_url())
 	# 즉시 거부되면 첫 poll 이 바로 CLOSED 다 — CLOSED 로 두면 전이가 안 보여 재연결이 영영 멈춘다
@@ -103,13 +105,17 @@ func unsubscribe(id: String) -> void:
 	_subs.erase(id)
 
 
-func disconnect_ws() -> void:
-	_intentional_close = true
+func _cancel_rotate() -> void:
 	if _rotate_ws != null: # 교체 중 로그아웃하면 새 소켓이 유령 연결로 남는다
 		_rotate_ws.close()
 		_rotate_ws = null
 	_rotating = false
 	_auth_deadline_generation += 1
+
+
+func disconnect_ws() -> void:
+	_intentional_close = true
+	_cancel_rotate()
 	if _connected:
 		_send(build_frame("DISCONNECT", {}, ""))
 	ws.close()
@@ -150,6 +156,7 @@ func _handle_packet(text: String) -> void:
 	var frame := parse_frame(text)
 	match frame.command:
 		"CONNECTED":
+			_auth_deadline_generation += 1 # 새 연결은 현재 토큰으로 인증됐다 — 옛 소켓에서 건 연장 마감은 무효
 			_connected = true
 			_recv_interval_ms = receive_interval_ms(frame.headers.get("heart-beat", ""))
 			_last_recv_ticks = Time.get_ticks_msec()
@@ -169,8 +176,8 @@ func _handle_packet(text: String) -> void:
 				if not await get_node("/root/Api")._refresh() and get_node("/root/Api").access_token == "":
 					_intentional_close = true # 세션이 사라진 경우만. 일시 장애면 소켓 종료 경로가 재연결한다
 			else:
+				_intentional_close = true # emit 먼저 하면 핸들러의 connect_ws() 가 푼 플래그를 다시 덮어 새 소켓이 재연결을 안 한다
 				error.emit(code)
-				_intentional_close = true
 
 
 func _schedule_reconnect() -> void:
@@ -262,6 +269,7 @@ func _finish_rotate(recv_interval_ms: int) -> void:
 	_last_recv_ticks = Time.get_ticks_msec()
 	_rotate_ws = null
 	_rotating = false
+	_auth_deadline_generation += 1 # 교체된 소켓은 새 토큰으로 인증됐다 — 남은 연장 마감이 또 교체하지 않게
 	while old_ws.get_available_packet_count() > 0: # 교체 직전에 옛 소켓에 도착한 메시지(대기열 알림 등)를 버리지 않는다
 		_handle_packet(decode(old_ws.get_packet()))
 	_send_on(old_ws, build_frame("DISCONNECT", {}, ""))
@@ -296,6 +304,28 @@ static func decode(bytes: PackedByteArray) -> String:
 	return bytes.slice(0, end).get_string_from_utf8()
 
 
+static func unescape_header(s: String) -> String:
+	# STOMP 1.2 헤더 이스케이프를 왼쪽부터 한 번씩만 푼다 — replace 를 이어 쓰면 "\\\\n" 이 두 번 풀린다
+	if not s.contains("\\"):
+		return s
+	var out := ""
+	var i := 0
+	while i < s.length():
+		var ch := s[i]
+		if ch == "\\" and i + 1 < s.length():
+			i += 1
+			match s[i]:
+				"r": out += "\r"
+				"n": out += "\n"
+				"c": out += ":"
+				"\\": out += "\\"
+				_: out += ch + s[i]
+		else:
+			out += ch
+		i += 1
+	return out
+
+
 static func parse_frame(text: String) -> Dictionary:
 	var t := text.lstrip("\n")
 	var parts := t.split("\n\n", true, 1)
@@ -305,5 +335,5 @@ static func parse_frame(text: String) -> Dictionary:
 		var line: String = head_lines[i]
 		var idx := line.find(":")
 		if idx >= 0:
-			headers[line.substr(0, idx)] = line.substr(idx + 1)
+			headers[unescape_header(line.substr(0, idx))] = unescape_header(line.substr(idx + 1))
 	return {"command": head_lines[0], "headers": headers, "body": parts[1] if parts.size() > 1 else ""}

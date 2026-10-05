@@ -34,6 +34,12 @@ func _init() -> void:
 	var korean_frame := stomp.build_frame("SEND", {"destination": "/app/hello"}, "한글")
 	check(stomp.decode(stomp.encode(korean_frame)) == korean_frame, "encode/decode round trip with Korean body")
 
+	# 헤더 이스케이프 (리터럴의 "\\" 는 백슬래시 한 글자)
+	check(stomp.unescape_header("a\\cb") == "a:b", "unescape \\c")
+	check(stomp.unescape_header("x\\ny") == "x\ny", "unescape \\n")
+	check(stomp.unescape_header("\\\\n") == "\\n" and stomp.unescape_header("\\\\n").length() == 2, "unescape backslash then n, no double decode")
+	check(stomp.parse_frame("ERROR\nmessage:a\\cb\n\n").headers.get("message", "") == "a:b", "parse_frame unescapes header value")
+
 	# heartbeat frame
 	var hb := stomp.parse_frame("\n")
 	check(hb.command == "", "heartbeat parses to empty command")
@@ -81,6 +87,8 @@ func _init() -> void:
 	check(api.refresh_failure_is_final(503) == false, "refresh 5xx 는 일시 장애")
 	check(api.refresh_failure_is_final(401) == true, "refresh 401 은 확정 실패")
 	check(api.refresh_failure_is_final(400) == true, "refresh 400 은 확정 실패")
+	check(api.refresh_failure_is_final(408) == false, "refresh 408 은 일시 장애")
+	check(api.refresh_failure_is_final(429) == false, "refresh 429 는 일시 장애")
 
 	# receive_interval_ms
 	check(stomp.receive_interval_ms("10000,0") == 10000, "heart-beat 10000,0")
