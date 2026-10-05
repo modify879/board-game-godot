@@ -65,7 +65,7 @@ var action_pending := false
 var hand_counter := 0
 var last_hand_in_progress := false
 var last_turn_key := ""
-var turn_started_at := 0.0
+var turn_started_ticks := -1 # 카운트다운은 OS 시계가 아니라 get_ticks_msec 로 센다
 
 
 func _ready() -> void:
@@ -438,7 +438,7 @@ func _update_turn_key() -> void:
 	var turn_key := "%d:%s:%d" % [hand_counter, str(public_view.get("street", "")), to_act]
 	if turn_key != last_turn_key:
 		last_turn_key = turn_key
-		turn_started_at = Time.get_unix_time_from_system()
+		turn_started_ticks = Time.get_ticks_msec()
 
 
 func _update_turn_timer() -> void:
@@ -446,8 +446,8 @@ func _update_turn_timer() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	for seat_no in range(1, 10):
 		var lbl: Label = seat_timer_labels[seat_no - 1]
-		if hip and seat_no == to_act and turn_started_at > 0.0:
-			var remaining := int(ceil(TURN_SECONDS - (Time.get_unix_time_from_system() - turn_started_at)))
+		if hip and seat_no == to_act and turn_started_ticks >= 0:
+			var remaining := int(ceil(TURN_SECONDS - (Time.get_ticks_msec() - turn_started_ticks) / 1000.0))
 			lbl.text = "%d초" % max(remaining, 0)
 			lbl.show()
 		else:
@@ -465,8 +465,8 @@ func _nickname_for(user_id: int) -> String:
 
 func _fetch_nickname(user_id: int) -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % user_id)
-	nickname_fetching.erase(user_id)
 	if r.ok:
+		nickname_fetching.erase(user_id) # 실패하면 이 화면에서는 다시 묻지 않는다 — 메시지마다 좌석 수만큼 재요청하지 않게
 		nickname_cache[user_id] = r.data.nickname
 		_render_seats()
 
