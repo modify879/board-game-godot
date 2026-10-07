@@ -66,7 +66,7 @@ var hand_counter := 0
 var last_hand_in_progress := false
 var last_turn_key := ""
 var raise_turn_key := "" # 레이즈 슬라이더를 초기화한 턴
-var turn_started_ticks := -1 # 카운트다운은 OS 시계가 아니라 get_ticks_msec 로 센다
+var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시계 아님). -1 이면 카운트다운 없음
 
 
 func _ready() -> void:
@@ -151,6 +151,9 @@ func _handle_public(body: Dictionary) -> void:
 			_send_join(last_buy_in, last_post_blind)
 	_sync_private_subscription()
 	_update_turn_key()
+	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 60초 어림을 그대로 쓴다
+		var left_ms = body.turnRemainingMs
+		turn_deadline_ticks = -1 if left_ms == null else Time.get_ticks_msec() + int(left_ms)
 	if _to_act_seat_no() != _my_seat_no():
 		my_available_actions = null
 	_update_status_label()
@@ -439,7 +442,7 @@ func _update_turn_key() -> void:
 	var turn_key := "%d:%s:%d" % [hand_counter, str(public_view.get("street", "")), to_act]
 	if turn_key != last_turn_key:
 		last_turn_key = turn_key
-		turn_started_ticks = Time.get_ticks_msec()
+		turn_deadline_ticks = Time.get_ticks_msec() + int(TURN_SECONDS * 1000) # 옛 서버용 어림
 
 
 func _update_turn_timer() -> void:
@@ -447,8 +450,8 @@ func _update_turn_timer() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	for seat_no in range(1, 10):
 		var lbl: Label = seat_timer_labels[seat_no - 1]
-		if hip and seat_no == to_act and turn_started_ticks >= 0:
-			var remaining := int(ceil(TURN_SECONDS - (Time.get_ticks_msec() - turn_started_ticks) / 1000.0))
+		if hip and seat_no == to_act and turn_deadline_ticks >= 0:
+			var remaining := int(ceil((turn_deadline_ticks - Time.get_ticks_msec()) / 1000.0))
 			lbl.text = "%d초" % max(remaining, 0)
 			lbl.show()
 		else:

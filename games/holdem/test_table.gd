@@ -100,6 +100,24 @@ func _ready() -> void:
 	table._handle_public(_view(14, seats, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN"}))
 	check(table.action_bar.visible and int(table.raise_slider.value) == 200 and table.raise_button.text == "베팅 200", "turn bet default, private first: '%s'" % table.raise_button.text)
 
+	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 60초 어림
+	var timer_lbl: Label = table.seat_timer_labels[0]
+	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
+	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
+	table._update_turn_timer()
+	check(timer_lbl.visible and timer_lbl.text == "31초", "turn timer from turnRemainingMs: '%s'" % timer_lbl.text)
+	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0})))
+	table._update_turn_timer()
+	check(timer_lbl.visible and timer_lbl.text == "20초", "same-turn view re-syncs timer: '%s'" % timer_lbl.text)
+	table._handle_public(_view(17, seats, turn_extra.merged({"turnRemainingMs": null})))
+	table._update_turn_timer()
+	check(not timer_lbl.visible, "null turnRemainingMs hides timer")
+	table._handle_public(_view(18, seats, turn_extra.merged({"toActSeatNo": 2.0}, true)))
+	table._handle_public(_view(19, seats, turn_extra))
+	table._handle_public(_view(20, seats, turn_extra.merged({"street": "TURN"}, true)))
+	table._update_turn_timer()
+	check(timer_lbl.visible and timer_lbl.text == "60초", "absent turnRemainingMs falls back to 60s: '%s'" % timer_lbl.text)
+
 	get_tree().quit(1 if failures else 0)
 
 
