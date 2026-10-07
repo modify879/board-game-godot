@@ -65,6 +65,7 @@ var action_pending := false
 var hand_counter := 0
 var last_hand_in_progress := false
 var last_turn_key := ""
+var raise_turn_key := "" # 레이즈 슬라이더를 초기화한 턴
 var turn_started_ticks := -1 # 카운트다운은 OS 시계가 아니라 get_ticks_msec 로 센다
 
 
@@ -419,7 +420,7 @@ func _render_seat_panel(seat_no: int) -> void:
 	var contributed := int(seat.totalContributed)
 	if hand_in_progress and contributed > 0:
 		var bet_label := Label.new()
-		bet_label.text = "베팅 %d" % contributed
+		bet_label.text = "총 베팅 %d" % contributed
 		vbox.add_child(bet_label)
 
 	var payout := _payout_for(seat_no)
@@ -506,7 +507,9 @@ func _update_action_bar() -> void:
 		raise_spin.min_value = min_v
 		raise_spin.max_value = max_v
 		raise_spin.step = 100
-		if int(raise_slider.value) < min_v or int(raise_slider.value) > max_v:
+		var raise_key := "%s:%d" % [last_turn_key, min_v] # 턴+최소값이 바뀔 때만 초기화 — 공개/개인 뷰 도착 순서와 무관하고, 같은 턴 갱신은 사용자 조정을 덮지 않는다
+		if raise_turn_key != raise_key or int(raise_slider.value) < min_v or int(raise_slider.value) > max_v:
+			raise_turn_key = raise_key
 			raise_slider.value = min_v
 		raise_spin.value = raise_slider.value
 		_update_raise_button_label()
@@ -515,7 +518,8 @@ func _update_action_bar() -> void:
 
 func _update_raise_button_label() -> void:
 	var v := int(raise_slider.value)
-	raise_button.text = ("올인 %d" % v) if v == int(raise_slider.max_value) else ("레이즈 %d" % v)
+	var is_bet: bool = my_available_actions != null and my_available_actions.get("canCheck", false) and public_view.get("street", "") != "PREFLOP"
+	raise_button.text = ("올인 %d" % v) if v == int(raise_slider.max_value) else (("베팅 %d" if is_bet else "레이즈 %d") % v)
 
 
 func _set_action_bar_disabled(disabled: bool) -> void:
