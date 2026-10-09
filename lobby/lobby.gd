@@ -6,12 +6,16 @@ const GAMES := [
 ]
 
 @onready var nickname_label: Label = %NicknameLabel
+@onready var balance_label: Label = %BalanceLabel
+@onready var wallet_button: Button = %WalletButton
 @onready var logout_button: Button = %LogoutButton
 @onready var game_list: VBoxContainer = %GameList
 
 
 func _ready() -> void:
 	logout_button.pressed.connect(_on_logout_pressed)
+	wallet_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/wallet.tscn"))
+	_load_balance()
 	for game in GAMES:
 		var button := Button.new()
 		button.text = game.title
@@ -23,6 +27,12 @@ func _ready() -> void:
 		nickname_label.text = "%s님" % r.data.nickname
 	else:
 		nickname_label.text = ErrorText.of(r.error)
+
+
+func _load_balance() -> void:
+	var r := await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
+	if r.ok:
+		balance_label.text = "잔액 %s" % preload("res://lobby/wallet.gd").comma(int(r.data.balance))
 
 
 func _on_logout_pressed() -> void:

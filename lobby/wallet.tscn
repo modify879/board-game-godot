@@ -1,0 +1,174 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://lobby/wallet.gd" id="1"]
+
+[node name="Wallet" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBar" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "← 로비"
+
+[node name="BalanceLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = ""
+
+[node name="ErrorLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+autowrap_mode = 2
+text = ""
+
+[node name="Tabs" type="TabContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="충전" type="VBoxContainer" parent="VBoxContainer/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DepositEdit" type="LineEdit" parent="VBoxContainer/Tabs/충전"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "충전 금액"
+
+[node name="DepositHint" type="Label" parent="VBoxContainer/Tabs/충전"]
+layout_mode = 2
+text = "1,000 이상, 100 단위"
+
+[node name="DepositButton" type="Button" parent="VBoxContainer/Tabs/충전"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "충전 요청"
+
+[node name="DepositResult" type="Label" parent="VBoxContainer/Tabs/충전"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+text = ""
+
+[node name="DepositScroll" type="ScrollContainer" parent="VBoxContainer/Tabs/충전"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DepositRows" type="VBoxContainer" parent="VBoxContainer/Tabs/충전/DepositScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="환전" type="VBoxContainer" parent="VBoxContainer/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="WithdrawAmountEdit" type="LineEdit" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "환전 금액"
+
+[node name="BankNameEdit" type="LineEdit" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "은행명"
+
+[node name="AccountNumberEdit" type="LineEdit" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "계좌번호"
+
+[node name="AccountHolderEdit" type="LineEdit" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "예금주"
+
+[node name="WithdrawHint" type="Label" parent="VBoxContainer/Tabs/환전"]
+layout_mode = 2
+autowrap_mode = 2
+text = "1,000 이상, 100 단위. 신청하면 잔액에서 바로 빠지고, 취소하면 돌아옵니다. 게임 중인 칩은 자리에서 일어나야 지갑으로 돌아옵니다"
+
+[node name="WithdrawButton" type="Button" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "환전 요청"
+
+[node name="WithdrawScroll" type="ScrollContainer" parent="VBoxContainer/Tabs/환전"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="WithdrawRows" type="VBoxContainer" parent="VBoxContainer/Tabs/환전/WithdrawScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="내역" type="VBoxContainer" parent="VBoxContainer/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LedgerScroll" type="ScrollContainer" parent="VBoxContainer/Tabs/내역"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LedgerRows" type="VBoxContainer" parent="VBoxContainer/Tabs/내역/LedgerScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="EmptyLabel" type="Label" parent="VBoxContainer/Tabs/내역"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+horizontal_alignment = 1
+text = "내역이 없습니다"
+
+[node name="Pager" type="HBoxContainer" parent="VBoxContainer/Tabs/내역"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="PrevButton" type="Button" parent="VBoxContainer/Tabs/내역/Pager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "이전"
+
+[node name="PageLabel" type="Label" parent="VBoxContainer/Tabs/내역/Pager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1 / 1"
+
+[node name="NextButton" type="Button" parent="VBoxContainer/Tabs/내역/Pager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "다음"
