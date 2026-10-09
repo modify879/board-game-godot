@@ -103,7 +103,8 @@ static func refresh_failure_is_final(status: int) -> bool:
 
 static func retries_unavailable(r: Dictionary) -> bool:
 	# errorCode 가 없는 게이트웨이 503(HTTP_503)은 롤백 보장이 없어 다시 보내지 않는다
-	return r.error == "TEMPORARILY_UNAVAILABLE"
+	# IDEMPOTENCY_KEY_CONFLICT 는 같은 키로 다시 보내면 원래 결과를 받는다
+	return r.error == "TEMPORARILY_UNAVAILABLE" or r.error == "IDEMPOTENCY_KEY_CONFLICT"
 
 
 static func sends_bearer(path: String) -> bool:

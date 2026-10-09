@@ -92,6 +92,7 @@ func _init() -> void:
 
 	# retries_unavailable
 	check(api.retries_unavailable({"error": "TEMPORARILY_UNAVAILABLE"}) == true, "TEMPORARILY_UNAVAILABLE 은 재시도")
+	check(api.retries_unavailable({"error": "IDEMPOTENCY_KEY_CONFLICT"}) == true, "IDEMPOTENCY_KEY_CONFLICT 는 같은 키로 재시도")
 	check(api.retries_unavailable({"error": "HTTP_503"}) == false, "게이트웨이 503 은 재시도 안 함")
 	check(api.retries_unavailable({"error": "INTERNAL_ERROR"}) == false, "INTERNAL_ERROR 는 재시도 안 함")
 

@@ -60,6 +60,8 @@ const TEXT := {
 	"ADJUSTMENT_REASON_BLANK": "조정 사유를 입력해주세요",
 	"WALLET_OWNER_NOT_FOUND": "회원을 찾을 수 없습니다",
 	"ADJUSTMENT_ALREADY_APPLIED": "이미 반영된 조정입니다",
+	"IDEMPOTENCY_KEY_REUSED": "입력이 바뀌었습니다. 다시 시도해주세요",
+	"IDEMPOTENCY_KEY_CONFLICT": "같은 요청을 처리 중입니다. 잠시 후 다시 시도해주세요",
 	"IDEMPOTENCY_KEY_INVALID": "요청 키가 올바르지 않습니다",
 	"USER_ROLE_INVALID": "역할이 올바르지 않습니다",
 	"GAME_TRANSFER_AMOUNT_INVALID": "옮길 칩 금액이 올바르지 않습니다",

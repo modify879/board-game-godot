@@ -44,6 +44,9 @@ var pages := [0, 0, 0]
 var total_pages := [0, 0, 0]
 var gens := [0, 0, 0] # 목록 응답이 낡았는지 가리는 세대
 var _busy := false
+# 입력이 바뀌거나 성공했을 때만 새 키 — 실패 뒤 그대로 다시 누르면 같은 키가 나가 요청이 두 번 생기지 않는다
+var deposit_key := ""
+var withdraw_key := ""
 
 
 func _ready() -> void:
@@ -51,12 +54,25 @@ func _ready() -> void:
 	tabs.tab_changed.connect(_load_tab)
 	deposit_button.pressed.connect(_on_deposit)
 	withdraw_button.pressed.connect(_on_withdraw)
+	_new_deposit_key()
+	_new_withdraw_key()
+	deposit_edit.text_changed.connect(func(_t: String) -> void: _new_deposit_key())
+	for e in [withdraw_amount_edit, bank_name_edit, account_number_edit, account_holder_edit]:
+		e.text_changed.connect(func(_t: String) -> void: _new_withdraw_key())
 	var loaders := [_load_deposits, _load_withdrawals, _load_ledger]
 	for k in 3:
 		prevs[k].pressed.connect(func() -> void: loaders[k].call(pages[k] - 1))
 		nexts[k].pressed.connect(func() -> void: loaders[k].call(pages[k] + 1))
 	_load_balance()
 	_load_tab(tabs.current_tab)
+
+
+func _new_deposit_key() -> void:
+	deposit_key = Crypto.new().generate_random_bytes(16).hex_encode()
+
+
+func _new_withdraw_key() -> void:
+	withdraw_key = Crypto.new().generate_random_bytes(16).hex_encode()
 
 
 func _load_tab(index: int) -> void:
@@ -217,13 +233,17 @@ func _on_deposit() -> void:
 	_busy = true
 	deposit_button.disabled = true
 	var amount := int(deposit_edit.text)
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount})
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount}, ["Idempotency-Key: " + deposit_key])
 	_busy = false
 	deposit_button.disabled = false
 	if not r.ok:
+		if r.error == "IDEMPOTENCY_KEY_REUSED":
+			_new_deposit_key()
 		_show_error(r.error)
 		return
 	error_label.hide()
+	deposit_edit.text = "" # 코드 대입은 text_changed 를 안 울린다
+	_new_deposit_key()
 	var a: Dictionary = r.data.depositAccount
 	deposit_result.text = "아래 계좌로 %s 원을 입금해주세요\n%s %s (예금주 %s)\n관리자 확인 후 잔액에 들어옵니다" % [
 		Format.comma(amount), a.bankName, a.accountNumber, a.accountHolder]
@@ -240,14 +260,17 @@ func _on_withdraw() -> void:
 		"bankName": bank_name_edit.text,
 		"accountNumber": account_number_edit.text,
 		"accountHolder": account_holder_edit.text,
-	})
+	}, ["Idempotency-Key: " + withdraw_key])
 	_busy = false
 	withdraw_button.disabled = false
 	if not r.ok:
+		if r.error == "IDEMPOTENCY_KEY_REUSED":
+			_new_withdraw_key()
 		_show_error(r.error)
 		return
 	error_label.hide()
 	for e in [withdraw_amount_edit, bank_name_edit, account_number_edit, account_holder_edit]:
 		e.text = ""
+	_new_withdraw_key()
 	_load_withdrawals(0) # 새 요청은 최신순 첫 페이지에 있다
 	_load_balance()
