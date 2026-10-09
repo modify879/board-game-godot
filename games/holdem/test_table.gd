@@ -118,6 +118,13 @@ func _ready() -> void:
 	table._update_turn_timer()
 	check(timer_lbl.visible and timer_lbl.text == "60초", "absent turnRemainingMs falls back to 60s: '%s'" % timer_lbl.text)
 
+	# 10. 방 생성 중(table_id 0): join-queue 이벤트는 버리지 않고 모아 둔다
+	script.table_id = 0
+	table._handle_join_queue({"tableId": 5.0, "type": "SEATED"})
+	check(table.pending_join_queue.size() == 1 and table.pending_join_queue[0].type == "SEATED", "join-queue buffered while table_id is 0")
+	script.table_id = 1
+	table.pending_join_queue = []
+
 	get_tree().quit(1 if failures else 0)
 
 
