@@ -8,6 +8,7 @@ const GAMES := [
 @onready var nickname_label: Label = %NicknameLabel
 @onready var balance_label: Label = %BalanceLabel
 @onready var wallet_button: Button = %WalletButton
+@onready var admin_button: Button = %AdminButton
 @onready var logout_button: Button = %LogoutButton
 @onready var game_list: VBoxContainer = %GameList
 
@@ -15,6 +16,8 @@ const GAMES := [
 func _ready() -> void:
 	logout_button.pressed.connect(_on_logout_pressed)
 	wallet_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/wallet.tscn"))
+	admin_button.visible = Api.is_admin()
+	admin_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://admin/admin.tscn"))
 	_load_balance()
 	for game in GAMES:
 		var button := Button.new()

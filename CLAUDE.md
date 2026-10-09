@@ -26,6 +26,7 @@ res://
 ├── core/          autoload(Api, Stomp) + 공용 UI(ui/theme.tres). 게임 코드를 참조하지 않는다
 ├── auth/          로그인·회원가입
 ├── lobby/         로비
+├── admin/         관리자 화면(입출금 승인·잔액 조정·회원 관리). 관리자에게만 로비에 보인다
 └── games/<game>/  게임별 씬·스크립트·에셋. 이 폴더만 떼면 게임 하나가 빠진다
 ```
 
@@ -48,4 +49,4 @@ res://
 
 - `master` 에 직접 커밋하지 않는다
 - 작업 브랜치는 **항상 `feature/` 로 시작한다** — 버그 수정·리팩터링·문서도 예외 없다. 그 뒤에 영역 접두를 붙인다(`feature/auth-signup`, `feature/holdem-table`)
-- 커밋은 Conventional Commits + 영역 스코프(`feat(lobby): ...`, 스코프는 `core`·`auth`·`lobby`·게임 이름)
+- 커밋은 Conventional Commits + 영역 스코프(`feat(lobby): ...`, 스코프는 `core`·`auth`·`lobby`·`admin`·게임 이름)
