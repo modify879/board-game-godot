@@ -12,6 +12,14 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var error_label: Label = %ErrorLabel
 @onready var result_label: Label = %ResultLabel
 @onready var tabs: TabContainer = %Tabs
+@onready var search_edit: LineEdit = %SearchEdit
+@onready var search_button: Button = %SearchButton
+@onready var user_rows: VBoxContainer = %UserRows
+@onready var user_empty: Label = %UserEmpty
+@onready var user_pager: HBoxContainer = %UserPager
+@onready var user_prev: Button = %UserPrev
+@onready var user_page_label: Label = %UserPage
+@onready var user_next: Button = %UserNext
 @onready var user_id_edit: LineEdit = %UserIdEdit
 @onready var lookup_button: Button = %LookupButton
 @onready var user_info_label: Label = %UserInfoLabel
@@ -34,6 +42,10 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 var pages := [0, 0]
 var total_pages := [0, 0]
 var adjust_key := ""
+var user_query := ""
+var user_page := 0
+var user_total_pages := 0
+var user_items := {} # 현재 페이지 회원 (id → item)
 var _busy := false
 
 
@@ -44,7 +56,13 @@ func _ready() -> void:
 		statuses[k].item_selected.connect(func(_i: int) -> void: _load(k, 0))
 		prevs[k].pressed.connect(func() -> void: _load(k, pages[k] - 1))
 		nexts[k].pressed.connect(func() -> void: _load(k, pages[k] + 1))
-	lookup_button.pressed.connect(_on_lookup)
+	search_button.pressed.connect(_on_search)
+	search_edit.text_submitted.connect(func(_t: String) -> void: _on_search())
+	user_prev.pressed.connect(func() -> void: _load_users(user_page - 1))
+	user_next.pressed.connect(func() -> void: _load_users(user_page + 1))
+	lookup_button.pressed.connect(func() -> void:
+		error_label.hide() # 직접 조회할 때만 이전 오류를 지운다 — _finish 가 부를 때는 방금 띄운 오류를 남긴다
+		_on_lookup())
 	unlock_button.pressed.connect(_on_unlock)
 	role_button.pressed.connect(_on_role)
 	adjust_button.pressed.connect(_on_adjust)
@@ -64,6 +82,8 @@ func _on_tab_changed(index: int) -> void:
 	result_label.hide()
 	if index < 2:
 		_load(index, pages[index])
+	elif index == 2:
+		_load_users(user_page)
 
 
 func _show_error(code: String) -> void:
@@ -193,6 +213,14 @@ func _finish(r: Dictionary, done: String) -> void:
 		_show_error(r.error)
 	if tabs.current_tab < 2:
 		_load(tabs.current_tab, pages[tabs.current_tab])
+	elif tabs.current_tab == 2:
+		await _load_users(user_page)
+		if user_id_edit.text != "":
+			var item = user_items.get(int(user_id_edit.text))
+			if item != null:
+				_select_user(item)
+			else:
+				_on_lookup()
 
 
 func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
@@ -210,15 +238,91 @@ func _on_reject(kind: int, id: int, reason: LineEdit) -> void:
 		_finish(r, "거절했습니다")
 
 
+func _on_search() -> void:
+	user_query = search_edit.text.strip_edges()
+	_load_users(0)
+
+
+## 회원 검색 목록 읽기. user_query 는 username/nickname 부분 일치
+func _load_users(page: int) -> void:
+	user_prev.disabled = true
+	user_next.disabled = true
+	var path := "/api/admin/users?query=%s&page=%d&size=%d" % [user_query.uri_encode(), page, PAGE_SIZE]
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
+	if not r.ok:
+		_show_error(r.error)
+		_update_user_pager()
+		return
+	var new_total: int = r.data.page.totalPages
+	if page >= new_total and new_total > 0:
+		await _load_users(new_total - 1)
+		return
+	user_page = r.data.page.number
+	user_total_pages = new_total
+	var items := Api.page_items(r.data)
+	_clear(user_rows)
+	user_items.clear()
+	user_empty.visible = items.is_empty()
+	for item in items:
+		user_items[int(item.id)] = item
+		user_rows.add_child(_user_row(item))
+	_update_user_pager()
+
+
+func _update_user_pager() -> void:
+	user_pager.visible = user_total_pages > 1
+	user_page_label.text = "%d / %d" % [user_page + 1, user_total_pages]
+	user_prev.disabled = user_page <= 0
+	user_next.disabled = user_page >= user_total_pages - 1
+
+
+func _user_row(item: Dictionary) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_child(_label("#%d" % int(item.id)))
+	row.add_child(_label(item.username))
+	row.add_child(_label(item.nickname, true))
+	row.add_child(_label("관리자" if item.role == "ADMIN" else "일반"))
+	if item.locked:
+		row.add_child(_label("잠김"))
+	row.add_child(_button("선택", _select_user.bind(item)))
+	return row
+
+
+func _select_user(item: Dictionary) -> void:
+	var id := int(item.id)
+	if user_id_edit.text != str(id):
+		user_id_edit.text = str(id)
+		_new_key() # text_changed 는 코드 대입으로 안 울린다
+	role_option.select(1 if item.role == "ADMIN" else 0)
+	var info := "%s (%s) · %s" % [item.nickname, item.username, "관리자" if item.role == "ADMIN" else "일반"]
+	if item.locked:
+		info += " · 잠김"
+	user_info_label.text = info
+	_append_balance(id, info)
+
+
+## 잔액을 읽어 info 끝에 붙인다. 그 사이 다른 회원이 선택됐으면 버린다
+func _append_balance(id: int, info: String) -> void:
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/wallets/%d" % id)
+	if user_id_edit.text != str(id):
+		return
+	if r.ok:
+		user_info_label.text = "%s · 잔액 %s" % [info, Wallet.comma(int(r.data.balance))]
+	else:
+		_show_error(r.error)
+
+
 func _on_lookup() -> void:
 	if _busy:
 		return
 	_busy = true
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % int(user_id_edit.text))
+	var id := int(user_id_edit.text)
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
 	_busy = false
 	if r.ok:
-		user_info_label.text = "%s (%s)" % [r.data.nickname, r.data.username]
-		error_label.hide()
+		var info := "%s (%s)" % [r.data.nickname, r.data.username]
+		user_info_label.text = info
+		_append_balance(id, info)
 	else:
 		user_info_label.text = ""
 		_show_error(r.error)

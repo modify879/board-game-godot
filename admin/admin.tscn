@@ -160,6 +160,60 @@ text = "다음"
 layout_mode = 2
 theme_override_constants/separation = 8
 
+[node name="SearchRow" type="HBoxContainer" parent="VBoxContainer/Tabs/회원"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SearchEdit" type="LineEdit" parent="VBoxContainer/Tabs/회원/SearchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "아이디 또는 닉네임"
+
+[node name="SearchButton" type="Button" parent="VBoxContainer/Tabs/회원/SearchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "검색"
+
+[node name="UserScroll" type="ScrollContainer" parent="VBoxContainer/Tabs/회원"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+
+[node name="UserRows" type="VBoxContainer" parent="VBoxContainer/Tabs/회원/UserScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="UserEmpty" type="Label" parent="VBoxContainer/Tabs/회원"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+horizontal_alignment = 1
+text = "회원이 없습니다"
+
+[node name="UserPager" type="HBoxContainer" parent="VBoxContainer/Tabs/회원"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="UserPrev" type="Button" parent="VBoxContainer/Tabs/회원/UserPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "이전"
+
+[node name="UserPage" type="Label" parent="VBoxContainer/Tabs/회원/UserPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1 / 1"
+
+[node name="UserNext" type="Button" parent="VBoxContainer/Tabs/회원/UserPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "다음"
+
 [node name="UserIdEdit" type="LineEdit" parent="VBoxContainer/Tabs/회원"]
 unique_name_in_owner = true
 layout_mode = 2
