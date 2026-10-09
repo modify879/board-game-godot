@@ -55,6 +55,7 @@ const TEXT := {
 	"WITHDRAWAL_REQUEST_NOT_FOUND": "환전 요청을 찾을 수 없습니다",
 	"WITHDRAWAL_REQUEST_ALREADY_PROCESSED": "이미 처리된 환전 요청입니다",
 	"REJECTION_REASON_BLANK": "거절 사유를 입력해주세요",
+	"USER_ID_INVALID": "회원 ID 를 숫자로 입력해주세요",
 	"ADJUSTMENT_AMOUNT_INVALID": "조정 금액은 0이 아닌 100 단위여야 합니다",
 	"ADJUSTMENT_REASON_BLANK": "조정 사유를 입력해주세요",
 	"WALLET_OWNER_NOT_FOUND": "회원을 찾을 수 없습니다",

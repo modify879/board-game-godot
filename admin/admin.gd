@@ -3,7 +3,6 @@ extends Control
 
 const Wallet := preload("res://lobby/wallet.gd")
 const PAGE_SIZE := 20
-const STATUS_TEXT := {"PENDING": "대기", "APPROVED": "승인", "REJECTED": "거절", "CANCELED": "취소"}
 const DEPOSIT := 0
 const WITHDRAW := 1
 const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
@@ -42,6 +41,7 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 var pages := [0, 0]
 var total_pages := [0, 0]
 var adjust_key := ""
+var selected_id := -1 # 잔액 응답이 낡았는지 가리는 기준
 var user_query := ""
 var user_page := 0
 var user_total_pages := 0
@@ -169,7 +169,7 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	info.add_child(_label("회원 %d" % int(item.userId)))
 	info.add_child(_label(Wallet.format_time(item.requestedAt)))
 	info.add_child(_label("%s원" % Wallet.comma(amount), true))
-	var status: String = STATUS_TEXT.get(item.status, item.status)
+	var status: String = Wallet.STATUS_TEXT.get(item.status, item.status)
 	if kind == DEPOSIT and item.status == "APPROVED" and item.creditedAmount != null:
 		status += " (%s)" % Wallet.comma(int(item.creditedAmount))
 	elif item.status == "REJECTED" and item.rejectionReason != null:
@@ -293,6 +293,7 @@ func _select_user(item: Dictionary) -> void:
 	if user_id_edit.text != str(id):
 		user_id_edit.text = str(id)
 		_new_key() # text_changed 는 코드 대입으로 안 울린다
+	selected_id = id
 	role_option.select(1 if item.role == "ADMIN" else 0)
 	var info := "%s (%s) · %s" % [item.nickname, item.username, "관리자" if item.role == "ADMIN" else "일반"]
 	if item.locked:
@@ -304,19 +305,31 @@ func _select_user(item: Dictionary) -> void:
 ## 잔액을 읽어 info 끝에 붙인다. 그 사이 다른 회원이 선택됐으면 버린다
 func _append_balance(id: int, info: String) -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/wallets/%d" % id)
-	if user_id_edit.text != str(id):
+	if selected_id != id:
 		return
 	if r.ok:
 		user_info_label.text = "%s · 잔액 %s" % [info, Wallet.comma(int(r.data.balance))]
 	else:
-		_show_error(r.error)
+		user_info_label.text = info + " · 잔액 확인 실패" # 오류 표시는 방금 띄운 결과를 지운다
+
+
+## 회원 ID 입력을 숫자로. int() 는 빈 칸·"a1" 을 조용히 0·1 로 바꾸므로 막는다. 실패하면 -1
+func _target_id() -> int:
+	var t := user_id_edit.text.strip_edges()
+	if not t.is_valid_int():
+		_show_error("USER_ID_INVALID")
+		return -1
+	return int(t)
 
 
 func _on_lookup() -> void:
 	if _busy:
 		return
+	var id := _target_id()
+	if id < 0:
+		return
 	_busy = true
-	var id := int(user_id_edit.text)
+	selected_id = id
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
 	_busy = false
 	if r.ok:
@@ -329,28 +342,45 @@ func _on_lookup() -> void:
 
 
 func _on_unlock() -> void:
-	var r := await _post("/api/admin/users/%d/unlock" % int(user_id_edit.text))
+	var id := _target_id()
+	if id < 0:
+		return
+	var r := await _post("/api/admin/users/%d/unlock" % id)
 	if not r.is_empty():
 		_finish(r, "잠금을 해제했습니다")
 
 
 func _on_role() -> void:
-	var r := await _post("/api/admin/users/%d/role" % int(user_id_edit.text), {"role": role_option.get_item_text(role_option.selected)})
+	var id := _target_id()
+	if id < 0:
+		return
+	var r := await _post("/api/admin/users/%d/role" % id, {"role": role_option.get_item_text(role_option.selected)})
 	if not r.is_empty():
 		_finish(r, "역할을 변경했습니다")
 
 
 func _on_adjust() -> void:
-	var r := await _post("/api/admin/wallets/%d/adjustments" % int(user_id_edit.text), {
-		"amount": int(adjust_amount_edit.text),
+	var id := _target_id()
+	if id < 0:
+		return
+	var amount := adjust_amount_edit.text.strip_edges()
+	if not amount.is_valid_int(): # 형식 검증이 아니라, 문자열→숫자 변환이 조용히 다른 값을 만드는 것을 막는다
+		_show_error("ADJUSTMENT_AMOUNT_INVALID")
+		return
+	var r := await _post("/api/admin/wallets/%d/adjustments" % id, {
+		"amount": int(amount),
 		"reason": adjust_reason_edit.text,
 	}, ["Idempotency-Key: " + adjust_key])
 	if r.is_empty():
 		return
 	if not r.ok and r.error == "ADJUSTMENT_ALREADY_APPLIED":
 		_show_result("이미 반영된 조정입니다")
+		adjust_amount_edit.text = ""
+		adjust_reason_edit.text = ""
 		_new_key()
 	else:
 		_finish(r, "조정했습니다")
 		if r.ok:
+			adjust_amount_edit.text = ""
+			adjust_reason_edit.text = ""
 			_new_key()
