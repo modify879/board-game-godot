@@ -254,13 +254,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "참가하기"
 
-[node name="SitPopupSpin" type="SpinBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="SitPopupInfo" type="Label" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 200.0
-max_value = 20000.0
-step = 100.0
-value = 200.0
+autowrap_mode = 2
+text = ""
 
 [node name="PostBlindCheck" type="CheckBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

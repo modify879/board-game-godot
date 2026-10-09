@@ -23,7 +23,7 @@ const TEXT := {
 	"TABLE_NOT_FOUND": "방을 찾을 수 없습니다",
 	"TABLE_NAME_INVALID": "방 이름은 1~30자여야 합니다",
 	"ALREADY_SEATED": "이미 착석 중입니다",
-	"BUY_IN_OUT_OF_RANGE": "바이인 금액이 허용 범위를 벗어났습니다",
+	"BUY_IN_OUT_OF_RANGE": "잔액이 부족해 앉을 수 없습니다(최소 200)",
 	"INSUFFICIENT_BALANCE": "잔액이 부족합니다",
 	"JOIN_REQUEST_NOT_FOUND": "참가 요청을 찾을 수 없습니다",
 	"NOT_SEATED": "착석 중이 아닙니다",

@@ -23,7 +23,7 @@ const TURN_SECONDS := 60.0
 @onready var stand_button: Button = %StandButton
 @onready var cancel_request_button: Button = %CancelRequestButton
 @onready var sit_popup: Control = %SitPopup
-@onready var sit_popup_spin: SpinBox = %SitPopupSpin
+@onready var sit_popup_info: Label = %SitPopupInfo
 @onready var sit_popup_post_blind: CheckBox = %PostBlindCheck
 @onready var sit_popup_error: Label = %SitPopupError
 @onready var sit_popup_ok: Button = %SitPopupOk
@@ -54,7 +54,6 @@ var stomp_connected := false
 var waiting := false
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
-var last_buy_in := 0
 var last_post_blind := false
 var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
 
@@ -148,7 +147,7 @@ func _handle_public(body: Dictionary) -> void:
 	if rejoin_pending:
 		rejoin_pending = false
 		if not _is_seated():
-			_send_join(last_buy_in, last_post_blind)
+			_send_join(last_post_blind)
 	_sync_private_subscription()
 	_update_turn_key()
 	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 60초 어림을 그대로 쓴다
@@ -578,6 +577,7 @@ func _on_join_pressed() -> void:
 
 
 func _open_sit_popup() -> void:
+	sit_popup_info.text = ""
 	sit_popup_error.hide()
 	sit_popup_post_blind.button_pressed = false
 	sit_popup_ok.disabled = true
@@ -587,16 +587,12 @@ func _open_sit_popup() -> void:
 		sit_popup_error.text = ErrorText.of(r.error)
 		sit_popup_error.show()
 		return
-	var balance: int = r.data.balance
+	var balance := int(r.data.balance)
 	if balance < 200:
-		sit_popup_error.text = "잔액이 부족합니다"
+		sit_popup_error.text = ErrorText.of("BUY_IN_OUT_OF_RANGE")
 		sit_popup_error.show()
 		return
-	var max_buy_in: int = int(balance / 100) * 100
-	sit_popup_spin.min_value = 200
-	sit_popup_spin.step = 100
-	sit_popup_spin.max_value = max_buy_in
-	sit_popup_spin.value = min(max_buy_in, 20000)
+	sit_popup_info.text = "착석하면 지갑 잔액 %d 전부가 칩으로 들어갑니다" % balance
 	sit_popup_ok.disabled = false
 
 
@@ -606,17 +602,15 @@ func _on_sit_popup_cancel() -> void:
 
 func _on_sit_popup_ok() -> void:
 	sit_popup_ok.disabled = true
-	var buy_in := int(sit_popup_spin.value)
 	var post_blind := sit_popup_post_blind.button_pressed
 	sit_popup.hide()
-	_send_join(buy_in, post_blind)
+	_send_join(post_blind)
 
 
-func _send_join(buy_in: int, post_blind: bool) -> void:
+func _send_join(post_blind: bool) -> void:
 	got_seated = false
-	last_buy_in = buy_in
 	last_post_blind = post_blind
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"buyIn": buy_in, "postBlindImmediately": post_blind})
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"postBlindImmediately": post_blind})
 	if r.status == 202:
 		if not _is_seated() and not got_seated: # SEATED 나 공개 뷰가 202 보다 먼저 왔을 수 있다
 			waiting = true
