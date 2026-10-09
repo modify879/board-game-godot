@@ -86,6 +86,28 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
+[node name="DepositPager" type="HBoxContainer" parent="VBoxContainer/Tabs/충전"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="DepositPrev" type="Button" parent="VBoxContainer/Tabs/충전/DepositPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "이전"
+
+[node name="DepositPage" type="Label" parent="VBoxContainer/Tabs/충전/DepositPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1 / 1"
+
+[node name="DepositNext" type="Button" parent="VBoxContainer/Tabs/충전/DepositPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "다음"
+
 [node name="환전" type="VBoxContainer" parent="VBoxContainer/Tabs"]
 layout_mode = 2
 theme_override_constants/separation = 8
@@ -129,6 +151,28 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
+
+[node name="WithdrawPager" type="HBoxContainer" parent="VBoxContainer/Tabs/환전"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="WithdrawPrev" type="Button" parent="VBoxContainer/Tabs/환전/WithdrawPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "이전"
+
+[node name="WithdrawPage" type="Label" parent="VBoxContainer/Tabs/환전/WithdrawPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1 / 1"
+
+[node name="WithdrawNext" type="Button" parent="VBoxContainer/Tabs/환전/WithdrawPager"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "다음"
 
 [node name="내역" type="VBoxContainer" parent="VBoxContainer/Tabs"]
 layout_mode = 2

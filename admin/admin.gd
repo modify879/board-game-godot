@@ -39,9 +39,12 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var nexts: Array[Button] = [%DepositNext, %WithdrawNext]
 
 var pages := [0, 0]
+var gens := [0, 0] # 목록 응답이 낡았는지 가리는 세대
+var users_gen := 0
 var total_pages := [0, 0]
 var adjust_key := ""
 var selected_id := -1 # 잔액 응답이 낡았는지 가리는 기준
+var role_synced_id := -1 # 역할 드롭다운을 서버 값으로 맞춘 회원 — 같은 회원을 다시 그릴 때는 관리자가 고른 값을 유지한다
 var user_query := ""
 var user_page := 0
 var user_total_pages := 0
@@ -134,7 +137,11 @@ func _load(kind: int, page: int) -> void:
 	var path: String = PATHS[kind] + "?page=%d&size=%d" % [page, PAGE_SIZE]
 	if statuses[kind].selected == 0:
 		path += "&status=PENDING"
+	var gen: int = gens[kind] + 1
+	gens[kind] = gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
+	if gen != gens[kind]:
+		return
 	if not r.ok:
 		_show_error(r.error)
 		_update_pager(kind)
@@ -167,11 +174,11 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	var info := HBoxContainer.new()
 	info.add_child(_label("#%d" % id))
 	info.add_child(_label("회원 %d" % int(item.userId)))
-	info.add_child(_label(Wallet.format_time(item.requestedAt)))
-	info.add_child(_label("%s원" % Wallet.comma(amount), true))
+	info.add_child(_label(Format.time(item.requestedAt)))
+	info.add_child(_label("%s원" % Format.comma(amount), true))
 	var status: String = Wallet.STATUS_TEXT.get(item.status, item.status)
 	if kind == DEPOSIT and item.status == "APPROVED" and item.creditedAmount != null:
-		status += " (%s)" % Wallet.comma(int(item.creditedAmount))
+		status += " (%s)" % Format.comma(int(item.creditedAmount))
 	elif item.status == "REJECTED" and item.rejectionReason != null:
 		status += " (%s)" % item.rejectionReason
 	info.add_child(_label(status))
@@ -183,7 +190,7 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	var approve := HBoxContainer.new()
 	var credited: LineEdit = null
 	if kind == DEPOSIT:
-		credited = _edit("승인액 (%s)" % Wallet.comma(amount))
+		credited = _edit("승인액 (%s)" % Format.comma(amount))
 		approve.add_child(credited)
 	approve.add_child(_button("승인", _on_approve.bind(kind, id, credited)))
 	box.add_child(approve)
@@ -248,7 +255,11 @@ func _load_users(page: int) -> void:
 	user_prev.disabled = true
 	user_next.disabled = true
 	var path := "/api/admin/users?query=%s&page=%d&size=%d" % [user_query.uri_encode(), page, PAGE_SIZE]
+	users_gen += 1
+	var gen := users_gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
+	if gen != users_gen:
+		return
 	if not r.ok:
 		_show_error(r.error)
 		_update_user_pager()
@@ -293,8 +304,10 @@ func _select_user(item: Dictionary) -> void:
 	if user_id_edit.text != str(id):
 		user_id_edit.text = str(id)
 		_new_key() # text_changed 는 코드 대입으로 안 울린다
+	if role_synced_id != id:
+		role_option.select(1 if item.role == "ADMIN" else 0)
+		role_synced_id = id
 	selected_id = id
-	role_option.select(1 if item.role == "ADMIN" else 0)
 	var info := "%s (%s) · %s" % [item.nickname, item.username, "관리자" if item.role == "ADMIN" else "일반"]
 	if item.locked:
 		info += " · 잠김"
@@ -308,7 +321,7 @@ func _append_balance(id: int, info: String) -> void:
 	if selected_id != id:
 		return
 	if r.ok:
-		user_info_label.text = "%s · 잔액 %s" % [info, Wallet.comma(int(r.data.balance))]
+		user_info_label.text = "%s · 잔액 %s" % [info, Format.comma(int(r.data.balance))]
 	else:
 		user_info_label.text = info + " · 잔액 확인 실패" # 오류 표시는 방금 띄운 결과를 지운다
 

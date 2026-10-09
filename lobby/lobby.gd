@@ -35,7 +35,7 @@ func _ready() -> void:
 func _load_balance() -> void:
 	var r := await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
 	if r.ok:
-		balance_label.text = "잔액 %s" % preload("res://lobby/wallet.gd").comma(int(r.data.balance))
+		balance_label.text = "잔액 %s" % Format.comma(int(r.data.balance))
 
 
 func _on_logout_pressed() -> void:
