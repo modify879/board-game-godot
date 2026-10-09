@@ -233,7 +233,11 @@ static func jwt_claims(token: String) -> Dictionary:
 
 ## 로그인 응답에는 role 이 없다 — access 토큰 클레임으로 판단한다(화면 표시용일 뿐, 인가는 서버가 한다)
 func is_admin() -> bool:
-	return jwt_claims(access_token).get("role") == "ADMIN"
+	return is_admin_token(access_token)
+
+
+static func is_admin_token(token: String) -> bool:
+	return jwt_claims(token).get("role") == "ADMIN"
 
 
 static func jwt_sub(token: String) -> int:
