@@ -8,6 +8,7 @@ const DEV_ORIGIN := "http://localhost:8080"
 const LOGIN_SCENE := "res://auth/login.tscn"
 const REFRESH_MARGIN_SEC := 300.0 # exp 몇 초 전에 선제 갱신할지
 const REQUEST_TIMEOUT_SEC := 15.0 # 응답 없는 연결이 영영 안 끝나면 _refreshing 이 묶여 이후 갱신·401 재시도가 전부 멈춘다 — 타임아웃은 status 0 일시 장애로 처리된다
+const UNAVAILABLE_RETRY_SEC := [1.0, 2.0] # 서버가 롤백을 보장해 POST 도 다시 보내도 안전하다
 const REFRESH_RETRY_MS := 5000 # 네트워크·5xx 로 갱신이 실패했을 때 재시도 간격
 
 var access_token := ""
@@ -25,6 +26,16 @@ func origin() -> String:
 
 
 func request(method: int, path: String, body = null) -> Dictionary:
+	var r := await _request_once(method, path, body)
+	for delay in UNAVAILABLE_RETRY_SEC:
+		if not retries_unavailable(r):
+			break
+		await get_tree().create_timer(delay).timeout
+		r = await _request_once(method, path, body)
+	return r
+
+
+func _request_once(method: int, path: String, body) -> Dictionary:
 	var sent_token := access_token
 	var r := await _do_request(method, path, body)
 	if r.status == 401 and sends_bearer(path):
@@ -87,6 +98,11 @@ func _save_dev_cookie(value: String) -> void:
 static func refresh_failure_is_final(status: int) -> bool:
 	# 4xx 만 세션 종료다(408·429 제외). 네트워크 오류(0)·5xx·408·429 는 일시 장애라 로그아웃시키지 않는다
 	return status >= 400 and status < 500 and status != 408 and status != 429
+
+
+static func retries_unavailable(r: Dictionary) -> bool:
+	# errorCode 가 없는 게이트웨이 503(HTTP_503)은 롤백 보장이 없어 다시 보내지 않는다
+	return r.error == "TEMPORARILY_UNAVAILABLE"
 
 
 static func sends_bearer(path: String) -> bool:

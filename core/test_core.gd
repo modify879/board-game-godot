@@ -90,6 +90,11 @@ func _init() -> void:
 	check(api.refresh_failure_is_final(408) == false, "refresh 408 은 일시 장애")
 	check(api.refresh_failure_is_final(429) == false, "refresh 429 는 일시 장애")
 
+	# retries_unavailable
+	check(api.retries_unavailable({"error": "TEMPORARILY_UNAVAILABLE"}) == true, "TEMPORARILY_UNAVAILABLE 은 재시도")
+	check(api.retries_unavailable({"error": "HTTP_503"}) == false, "게이트웨이 503 은 재시도 안 함")
+	check(api.retries_unavailable({"error": "INTERNAL_ERROR"}) == false, "INTERNAL_ERROR 는 재시도 안 함")
+
 	# receive_interval_ms
 	check(stomp.receive_interval_ms("10000,0") == 10000, "heart-beat 10000,0")
 	check(stomp.receive_interval_ms("5000,0") == 10000, "heart-beat 5000,0 은 10000 으로 올림")

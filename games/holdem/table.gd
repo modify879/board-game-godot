@@ -55,6 +55,7 @@ var waiting := false
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
+var dropped_retried := false # TEMPORARILY_UNAVAILABLE 로 대기열에서 빠지면 한 번만 자동으로 다시 요청한다
 var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
 
 var my_available_actions = null # SeatPrivateView.availableActions (Dictionary) or null
@@ -187,6 +188,15 @@ func _handle_join_queue(body: Dictionary) -> void:
 			_update_status_label()
 			_update_buttons()
 		"DROPPED":
+			if body.errorCode == "TEMPORARILY_UNAVAILABLE" and not dropped_retried:
+				dropped_retried = true
+				error_label.text = "서버가 잠시 바빠 다시 대기열에 등록합니다"
+				error_label.show()
+				await get_tree().create_timer(1.0).timeout
+				if not _is_seated():
+					waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
+					_send_join(last_post_blind)
+				return
 			waiting = false
 			_show_error(body.errorCode)
 			_update_status_label()
@@ -604,6 +614,7 @@ func _on_sit_popup_ok() -> void:
 	sit_popup_ok.disabled = true
 	var post_blind := sit_popup_post_blind.button_pressed
 	sit_popup.hide()
+	dropped_retried = false
 	_send_join(post_blind)
 
 
