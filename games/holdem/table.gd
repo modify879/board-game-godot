@@ -200,6 +200,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 		"POSITION":
 			queue_position = int(body.position)
 			rejoin_pending = false # 서버가 아직 대기열에 두고 있다(재연결 스냅샷) — 다시 요청하면 중복
+			_hide_retry_notice()
 			_update_status_label()
 		"SEATED":
 			got_seated = true

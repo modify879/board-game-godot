@@ -86,8 +86,12 @@ func _ready() -> void:
 
 	# 6b. 재연결 스냅샷(POSITION)을 받으면 rejoin_pending 해제, 재시도 안내가 아니면 SEATED 가 오류 문구를 숨기지 않는다
 	table.rejoin_pending = true
+	table.error_label.show()
+	table.retry_notice_shown = true
 	table._handle_join_queue({"tableId": 1.0, "type": "POSITION", "position": 2.0})
 	check(not table.rejoin_pending, "POSITION clears rejoin_pending")
+	check(not table.error_label.visible, "POSITION hides retry notice")
+	table.error_label.visible = err_was
 	table.retry_notice_shown = false
 	table.error_label.show()
 	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})

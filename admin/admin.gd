@@ -4,6 +4,7 @@ extends Control
 const PAGE_SIZE := 20
 const DEPOSIT := 0
 const WITHDRAW := 1
+const USERS := 2
 const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 
 @onready var back_button: Button = %BackButton
@@ -45,7 +46,7 @@ var _busy := false
 func _ready() -> void:
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
 	tabs.tab_changed.connect(_on_tab_changed)
-	for k in 2:
+	for k in [DEPOSIT, WITHDRAW]:
 		statuses[k].item_selected.connect(func(_i: int) -> void: _load(k, 0))
 	search_button.pressed.connect(_on_search)
 	search_edit.text_submitted.connect(func(_t: String) -> void: _on_search())
@@ -69,9 +70,9 @@ func _new_key() -> void:
 func _on_tab_changed(index: int) -> void:
 	error_label.hide()
 	result_label.hide()
-	if index < 2:
+	if index < USERS:
 		_load(index, pagers[index].page)
-	elif index == 2:
+	elif index == USERS:
 		_load_users(users.page)
 
 
@@ -81,10 +82,10 @@ func _show_error(code: String) -> void:
 	result_label.hide()
 
 
-func _show_result(text: String) -> void:
+func _show_result(text: String, keep_error := false) -> void:
 	result_label.text = text
 	result_label.show()
-	error_label.hide()
+	error_label.visible = keep_error
 
 
 func _edit(placeholder: String) -> LineEdit:
@@ -127,12 +128,7 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	info.add_child(Rows.label("회원 %d" % int(item.userId)))
 	info.add_child(Rows.label(Format.time(item.requestedAt)))
 	info.add_child(Rows.label("%s원" % Format.comma(amount), true))
-	var status: String = Format.request_status(item.status)
-	if kind == DEPOSIT and item.status == "APPROVED" and item.creditedAmount != null:
-		status += " (%s)" % Format.comma(int(item.creditedAmount))
-	elif item.status == "REJECTED" and item.rejectionReason != null:
-		status += " (%s)" % item.rejectionReason
-	info.add_child(Rows.label(status))
+	info.add_child(Rows.label(Format.request_status_line(item)))
 	box.add_child(info)
 	if kind == WITHDRAW:
 		box.add_child(Rows.label("%s %s (예금주 %s)" % [item.bankName, item.accountNumber, item.accountHolder]))
@@ -168,9 +164,10 @@ func _post(path: String, body = null, headers: Array = []) -> Dictionary:
 ## target_id 가 있으면 회원 탭을 그 회원으로 다시 그린다(입력칸이 아니라 실제로 보낸 대상)
 func _finish(r: Dictionary, done: String, target_id := -1) -> void:
 	# 호출부가 busy 를 쥐고 있다 — 재조회는 _lookup 의 busy 가드를 건너뛴다(force)
-	if tabs.current_tab < 2:
+	error_label.hide() # 재조회 중 오류가 났는지 가리려고 비운다 — 실패한 작업의 오류는 아래에서 다시 띄운다
+	if tabs.current_tab < USERS:
 		await _load(tabs.current_tab, pagers[tabs.current_tab].page)
-	elif tabs.current_tab == 2:
+	elif tabs.current_tab == USERS:
 		await _load_users(users.page)
 		if target_id > 0:
 			var item = user_items.get(target_id)
@@ -179,7 +176,7 @@ func _finish(r: Dictionary, done: String, target_id := -1) -> void:
 			else:
 				await _do_lookup(target_id, true)
 	if r.ok:
-		_show_result(done)
+		_show_result(done, error_label.visible) # 재조회 오류는 결과와 함께 남긴다
 	else:
 		_show_error(r.error)
 
@@ -265,6 +262,7 @@ func _show_user(item: Dictionary) -> void:
 		_new_key() # text_changed 는 코드 대입으로 안 울린다
 	if role_synced_id != id:
 		role_option.select(1 if item.role == "ADMIN" else 0)
+		role_button.disabled = false
 		role_synced_id = id
 	selected_id = id
 	var info := "%s (%s) · %s" % [item.nickname, item.username, "관리자" if item.role == "ADMIN" else "일반"]
@@ -328,15 +326,24 @@ func _do_lookup(id: int, quiet: bool) -> void:
 				if int(item.id) == id:
 					await _show_user(item)
 					return
-		role_synced_id = -1 # 서버 값을 못 읽었다 — 다음 선택 때 맞춘다
+		_clear_role()
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
 		await _append_balance(id, info)
 	elif quiet: # 작업 뒤 재조회 실패가 방금 띄운 결과를 덮지 않게
+		_clear_role()
 		user_info_label.text = "회원 정보 확인 실패"
 	else:
+		_clear_role()
 		user_info_label.text = ""
 		_show_error(r.error)
+
+
+## 역할을 모르면 이전 회원 값으로 변경되지 않게 막는다
+func _clear_role() -> void:
+	role_synced_id = -1 # 서버 값을 못 읽었다 — 다음 선택 때 맞춘다
+	role_option.select(-1) # 이전 회원 값이 새 회원에게 가지 않게
+	role_button.disabled = true
 
 
 func _on_unlock() -> void:
@@ -353,7 +360,7 @@ func _on_unlock() -> void:
 
 func _on_role() -> void:
 	var id := _target_id()
-	if id < 0:
+	if id < 0 or role_option.selected < 0:
 		return
 	if _busy:
 		return
