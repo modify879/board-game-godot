@@ -320,29 +320,11 @@ func _lookup(id: int) -> void:
 ## 회원 조회 본체. busy 는 호출부가 쥔다
 func _do_lookup(id: int, quiet: bool) -> void:
 	selected_id = id
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/users/%d" % id)
 	if selected_id != id:
 		return
 	if r.ok:
-		# /api/users/{id} 에는 role·locked 가 없다 — 관리자 목록에서 같은 회원을 찾아 맞춘다
-		# 서버에 단건 조회 API 를 요청했다 — 생기면 바꾼다
-		var query := str(r.data.username).uri_encode()
-		for p in 5: # 부분 일치라 같은 id 가 첫 쪽에 없을 수 있다 — 최대 5쪽(500명)까지 찾는다
-			var list: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/users?query=%s&page=%d&size=100" % [query, p])
-			if selected_id != id:
-				return
-			if not list.ok:
-				break
-			for item in Api.page_items(list.data):
-				if int(item.id) == id:
-					await _show_user(item)
-					return
-			if p + 1 >= int(list.data.page.totalPages):
-				break
-		_clear_role()
-		var info := "%s (%s)" % [r.data.nickname, r.data.username]
-		user_info_label.text = info
-		await _append_balance(id, info)
+		await _show_user(r.data)
 	elif quiet: # 작업 뒤 재조회 실패가 방금 띄운 결과를 덮지 않게
 		_clear_role()
 		user_info_label.text = "회원 정보 확인 실패"
