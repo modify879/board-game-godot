@@ -2,11 +2,22 @@ class_name Format
 ## 화면 표시용 포매터.
 
 const REQUEST_STATUS := {"PENDING": "대기", "APPROVED": "승인", "REJECTED": "거절", "CANCELED": "취소"} # 충전·환전 요청 상태
+static var _re_grouped := RegEx.create_from_string("^-?\\d{1,3}(,\\d{3})+$")
 
 
 ## 충전·환전 요청 상태 문구. 모르는 값은 그대로
 static func request_status(status: String) -> String:
 	return REQUEST_STATUS.get(status, status)
+
+
+## 요청 행 상태 문구 — 승인액(충전만 있다)·거절 사유가 있으면 괄호로 붙인다
+static func request_status_line(item: Dictionary) -> String:
+	var s := request_status(item.status)
+	if item.status == "APPROVED" and item.get("creditedAmount") != null:
+		s += " (%s)" % comma(int(item.creditedAmount))
+	elif item.status == "REJECTED" and item.get("rejectionReason") != null:
+		s += " (%s)" % item.rejectionReason
+	return s
 
 
 const BALANCE_FAILED := "잔액 확인 실패"
@@ -29,7 +40,11 @@ static func comma(n: int) -> String:
 
 ## 금액 입력 → 정수. int() 가 "1a000" 을 조용히 1 로 바꾸는 변환 오류를 막는 것 — 금액 형식 검사는 InputRules. 못 읽으면 null
 static func parse_amount(text: String) -> Variant:
-	var t := text.strip_edges().replace(",", "")
+	var t := text.strip_edges()
+	if "," in t:
+		if _re_grouped.search(t) == null: # 천 단위 묶음이 아닌 쉼표는 오타로 본다
+			return null
+		t = t.replace(",", "")
 	return int(t) if t.is_valid_int() else null
 
 

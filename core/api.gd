@@ -151,12 +151,17 @@ func _apply_tokens(data: Dictionary) -> void:
 	_schedule_refresh(data.get("accessTokenExpiresInMs"))
 
 
+## 선제 갱신까지 ms. 여유가 수명의 절반을 넘지 않게 해, 짧은 토큰이 매초 갱신되지 않게 한다
+static func refresh_delay_ms(expires_in_ms: int) -> int:
+	return maxi(expires_in_ms - int(minf(REFRESH_MARGIN_SEC * 1000.0, expires_in_ms / 2.0)), 1000)
+
+
 func _schedule_refresh(expires_in_ms) -> void:
 	# 서버가 준 남은 ms 를 단조 시계로 센다 — OS 시계가 어긋나도, 탭이 가려져 루프가 멈췄다 돌아와도 정확하다
 	if expires_in_ms == null:
 		var exp: float = jwt_claims(access_token).get("exp", 0)
 		expires_in_ms = (exp - Time.get_unix_time_from_system()) * 1000.0
-	_refresh_due_ticks = Time.get_ticks_msec() + max(int(expires_in_ms) - int(REFRESH_MARGIN_SEC * 1000), 1000)
+	_refresh_due_ticks = Time.get_ticks_msec() + refresh_delay_ms(int(expires_in_ms))
 
 
 func _process(_delta: float) -> void:
@@ -188,6 +193,7 @@ func signup(username: String, password: String, password_confirm: String, nickna
 func logout() -> void:
 	if _refreshing: # 진행 중인 갱신이 로그아웃 뒤에 끝나면 토큰을 되살린다 — 끝난 뒤에 로그아웃한다
 		await _refresh_done
+	_refresh_due_ticks = -1 # 로그아웃 요청 중에 선제 갱신이 시작돼 세션이 되살아나지 않게
 	await request(HTTPClient.METHOD_POST, "/api/auth/logout")
 	_clear_session()
 	get_node("/root/Stomp").disconnect_ws()
