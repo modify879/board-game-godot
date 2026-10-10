@@ -10,7 +10,9 @@ var _label: Label
 var _next: Button
 
 
-func _init(box: HBoxContainer, prev: Button, label: Label, next: Button) -> void:
+func _init(box: HBoxContainer, prev: Button, label: Label, next: Button, loader: Callable) -> void:
+	prev.pressed.connect(func() -> void: loader.call(page - 1))
+	next.pressed.connect(func() -> void: loader.call(page + 1))
 	_box = box
 	_prev = prev
 	_label = label
@@ -29,13 +31,14 @@ func is_stale(gen: int) -> bool:
 	return gen != _gen
 
 
-## 응답 공통 처리. 낡았거나 실패·마지막 페이지 초과면 false. 실패 오류 표시는 호출부 몫(낡은 응답이 아닐 때만 — is_stale)
+## 응답 공통 처리. 낡았거나 실패·마지막 페이지 초과면 false. 실패면 낡지 않았을 때만 on_error.call(errorCode)
 ## 초과는 reload.call(마지막 페이지)를 기다린 뒤 false
-func accept(gen: int, page_req: int, r: Dictionary, reload: Callable) -> bool:
+func accept(gen: int, page_req: int, r: Dictionary, reload: Callable, on_error: Callable) -> bool:
 	if gen != _gen:
 		return false
 	if not r.ok:
 		update()
+		on_error.call(r.error)
 		return false
 	var new_total: int = r.data.page.totalPages
 	if page_req >= new_total and new_total > 0:
