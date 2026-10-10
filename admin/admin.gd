@@ -225,8 +225,9 @@ func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
 	var body = null # 비우면 본문 없이 요청 금액 그대로 승인
 	if credited != null and credited.text.strip_edges() != "":
 		var amount = Format.parse_amount(credited.text)
-		if amount == null:
-			_show_error("DEPOSIT_AMOUNT_INVALID")
+		var invalid := "DEPOSIT_AMOUNT_INVALID" if amount == null else InputRules.credited_amount(amount)
+		if invalid != "":
+			_show_error(invalid)
 			return
 		body = {"creditedAmount": amount}
 	var r := await _post("%s/%d/approve" % [PATHS[kind], id], body)
@@ -235,6 +236,10 @@ func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
 
 
 func _on_reject(kind: int, id: int, reason: LineEdit) -> void:
+	var invalid := InputRules.reject_reason(reason.text)
+	if invalid != "":
+		_show_error(invalid)
+		return
 	var r := await _post("%s/%d/reject" % [PATHS[kind], id], {"reason": reason.text})
 	if not r.is_empty():
 		_finish(r, "거절했습니다")
@@ -382,9 +387,10 @@ func _on_adjust() -> void:
 	var id := _target_id()
 	if id < 0:
 		return
-	var amount = Format.parse_amount(adjust_amount_edit.text) # 형식 검증이 아니라, 문자열→숫자 변환이 조용히 다른 값을 만드는 것을 막는다
-	if amount == null:
-		_show_error("ADJUSTMENT_AMOUNT_INVALID")
+	var amount = Format.parse_amount(adjust_amount_edit.text) # 변환 오류를 막고, 형식은 InputRules 가 본다
+	var invalid := "ADJUSTMENT_AMOUNT_INVALID" if amount == null else InputRules.adjust(amount, adjust_reason_edit.text)
+	if invalid != "":
+		_show_error(invalid)
 		return
 	var r := await _post("/api/admin/wallets/%d/adjustments" % id, {
 		"amount": amount,
