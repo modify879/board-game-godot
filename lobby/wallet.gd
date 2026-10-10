@@ -15,7 +15,6 @@ const CREDIT_TYPES := ["DEPOSIT", "WITHDRAWAL_REFUND", "ADMIN_ADJUSTMENT_CREDIT"
 const DEPOSIT := 0
 const WITHDRAW := 1
 const LEDGER := 2
-const STATUS_TEXT := {"PENDING": "대기", "APPROVED": "승인", "REJECTED": "거절", "CANCELED": "취소"}
 
 @onready var back_button: Button = %BackButton
 @onready var balance_label: Label = %BalanceLabel
@@ -136,7 +135,7 @@ func _load_deposits(page: int) -> void:
 		var row := HBoxContainer.new()
 		row.add_child(Rows.label(Format.time(item.requestedAt)))
 		row.add_child(Rows.label("%s원" % Format.comma(int(item.requestedAmount)), true))
-		var status: String = STATUS_TEXT.get(item.status, item.status)
+		var status: String = Format.request_status(item.status)
 		if item.status == "APPROVED" and item.creditedAmount != null:
 			status += " (%s)" % Format.comma(int(item.creditedAmount))
 		elif item.status == "REJECTED" and item.rejectionReason != null:
@@ -159,7 +158,7 @@ func _load_withdrawals(page: int) -> void:
 		row.add_child(Rows.label(Format.time(item.requestedAt)))
 		row.add_child(Rows.label("%s원" % Format.comma(int(item.amount))))
 		row.add_child(Rows.label("%s %s" % [item.bankName, item.accountNumber], true))
-		var status: String = STATUS_TEXT.get(item.status, item.status)
+		var status: String = Format.request_status(item.status)
 		if item.status == "REJECTED" and item.rejectionReason != null:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
@@ -233,7 +232,7 @@ func _on_deposit() -> void:
 	_set_busy(false)
 	deposit_button.disabled = false
 	if not r.ok:
-		if r.error == "IDEMPOTENCY_KEY_REUSED":
+		if r.status >= 400 and r.status < 500 and r.error != "IDEMPOTENCY_KEY_CONFLICT": # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지 — CONFLICT 는 같은 키 요청이 아직 처리 중이라 키를 바꾸면 요청이 두 번 생긴다
 			_new_deposit_key()
 		_show_error(r.error)
 		return
@@ -267,7 +266,7 @@ func _on_withdraw() -> void:
 	_set_busy(false)
 	withdraw_button.disabled = false
 	if not r.ok:
-		if r.error == "IDEMPOTENCY_KEY_REUSED":
+		if r.status >= 400 and r.status < 500 and r.error != "IDEMPOTENCY_KEY_CONFLICT": # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지 — CONFLICT 는 같은 키 요청이 아직 처리 중이라 키를 바꾸면 요청이 두 번 생긴다
 			_new_withdraw_key()
 		_show_error(r.error)
 		return
