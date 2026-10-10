@@ -24,15 +24,13 @@ var seat_error := "" # /me/seat 실패 errorCode. 204·200 이면 빈 문자열
 
 
 func _ready() -> void:
-	pager = Pager.new(pager_box, prev_button, page_label, next_button)
+	pager = Pager.new(pager_box, prev_button, page_label, next_button, _load)
 	create_button.disabled = true # /me/seat 확인이 끝나기 전에는 만들 수 없다
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
 	refresh_button.pressed.connect(func() -> void:
 		await _load(pager.page)
 		await _check_seat()
 		_show_seat_error())
-	prev_button.pressed.connect(func() -> void: _load(pager.page - 1))
-	next_button.pressed.connect(func() -> void: _load(pager.page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
 	if await _check_seat():
@@ -80,10 +78,9 @@ func _load(page: int) -> void:
 	var gen := pager.begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables?page=%d&size=%d" % [page, PAGE_SIZE])
 	refresh_button.disabled = false
-	if not await pager.accept(gen, page, r, _load):
-		if not r.ok and not pager.is_stale(gen):
-			error_label.text = ErrorText.of(r.error)
-			error_label.show()
+	if not await pager.accept(gen, page, r, _load, func(code: String) -> void:
+			error_label.text = ErrorText.of(code)
+			error_label.show()):
 		return
 	error_label.hide()
 	_build_rows(Api.page_items(r.data))

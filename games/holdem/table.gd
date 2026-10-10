@@ -61,6 +61,7 @@ var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
 var retry_pending := false # DROPPED 재시도 대기 중 — 그 1초 동안 참가 버튼을 숨긴다
+var retry_notice_shown := false # error_label 에 DROPPED 재시도 안내가 떠 있다 — 착석·대기 뒤 이 안내만 지운다
 var dropped_retried := false # TEMPORARILY_UNAVAILABLE 로 대기열에서 빠지면 한 번만 자동으로 다시 요청한다
 var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
 var pending_join_queue: Array = [] # 방 생성 응답 전에는 table_id 를 몰라 join-queue 이벤트를 모아 둔다 — SEATED 가 201 보다 먼저 올 수 있다
@@ -161,7 +162,7 @@ func _handle_public(body: Dictionary) -> void:
 	if rejoin_pending:
 		rejoin_pending = false
 		if not _is_seated():
-			_send_join(last_post_blind)
+			_send_join(last_post_blind, true)
 	_sync_private_subscription()
 	_update_turn_key()
 	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 60초 어림을 그대로 쓴다
@@ -198,12 +199,14 @@ func _handle_join_queue(body: Dictionary) -> void:
 	match body.type:
 		"POSITION":
 			queue_position = int(body.position)
+			rejoin_pending = false # 서버가 아직 대기열에 두고 있다(재연결 스냅샷) — 다시 요청하면 중복
 			_update_status_label()
 		"SEATED":
 			got_seated = true
 			dropped_retried = false # 다음 착석 시도마다 1회 기회
 			waiting = false
-			error_label.hide() # DROPPED 재시도 안내가 착석 뒤에 남지 않게
+			rejoin_pending = false
+			_hide_retry_notice() # DROPPED 재시도 안내가 착석 뒤에 남지 않게
 			_update_status_label()
 			_update_buttons()
 		"DROPPED":
@@ -212,6 +215,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 				waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
 				error_label.text = "서버가 잠시 바빠 다시 대기열에 등록합니다"
 				error_label.show()
+				retry_notice_shown = true
 				_update_status_label()
 				retry_pending = true
 				_update_buttons()
@@ -221,6 +225,12 @@ func _handle_join_queue(body: Dictionary) -> void:
 			_show_error(body.errorCode)
 			_update_status_label()
 			_update_buttons()
+
+
+func _hide_retry_notice() -> void:
+	if retry_notice_shown:
+		retry_notice_shown = false
+		error_label.hide()
 
 
 func _retry_dropped_join() -> void:
@@ -254,6 +264,7 @@ func _show_error(code: String) -> void:
 	if code == "TABLE_NOT_FOUND": # 닫힘 알림이 유실됐을 수 있다 — REST 가 이 코드면 닫힘과 똑같이 목록으로 돌아간다
 		_leave_closed_table()
 		return
+	retry_notice_shown = false
 	error_label.text = ErrorText.of(code)
 	error_label.show()
 
@@ -339,6 +350,7 @@ func _on_stomp_closed() -> void:
 		rejoin_pending = true
 		error_label.text = "연결이 끊겨 다시 대기열에 등록합니다"
 		error_label.show()
+		retry_notice_shown = true # 착석·재등록 뒤 지운다
 	_update_buttons()
 
 
@@ -712,15 +724,17 @@ func _on_sit_popup_ok() -> void:
 	_send_join(post_blind)
 
 
-func _send_join(post_blind: bool) -> void:
+func _send_join(post_blind: bool, rejoin := false) -> void:
 	got_seated = false
 	last_post_blind = post_blind
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"postBlindImmediately": post_blind})
 	if r.status == 202:
-		error_label.hide() # 재시도 안내가 대기 중에 남지 않게
+		_hide_retry_notice() # 재시도 안내가 대기 중에 남지 않게
 		if not _is_seated() and not got_seated: # SEATED 나 공개 뷰가 202 보다 먼저 왔을 수 있다
 			waiting = true
 			queue_position = int(r.data.position)
+	elif rejoin and r.error == "ALREADY_SEATED":
+		waiting = true # 재연결 전부터 대기열에 있었다 — 착석은 공개 뷰가 정한다
 	elif not r.ok:
 		_show_error(r.error)
 	_update_status_label()
