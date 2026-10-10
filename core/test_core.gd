@@ -218,18 +218,19 @@ func _init() -> void:
 	var fresh := pg.begin()
 	check(pprev.disabled and pnext.disabled, "Pager begin 은 버튼 잠금")
 	var ok_resp := {"ok": true, "data": {"page": {"number": 1, "totalPages": 3}, "content": []}}
-	check(not await pg.accept(stale, 0, ok_resp, func(_p: int) -> void: pass, func(_e: String) -> void: pass), "Pager 낡은 gen 은 false")
-	check(await pg.accept(fresh, 1, ok_resp, func(_p: int) -> void: pass, func(_e: String) -> void: pass) and pg.page == 1 and pg.total == 3, "Pager 정상 응답 반영")
+	check(not await pg.accept(stale, 0, ok_resp, func(_e: String) -> void: pass), "Pager 낡은 gen 은 false")
+	check(await pg.accept(fresh, 1, ok_resp, func(_e: String) -> void: pass) and pg.page == 1 and pg.total == 3, "Pager 정상 응답 반영")
 	var called := [-1]
-	var over := pg.begin()
-	var res: bool = await pg.accept(over, 5, ok_resp, func(p: int) -> void: called[0] = p, func(_e: String) -> void: pass)
+	var pg_over := Pager.new(pbox, pprev, plabel, pnext, func(p: int) -> void: called[0] = p)
+	var over := pg_over.begin()
+	var res: bool = await pg_over.accept(over, 5, ok_resp, func(_e: String) -> void: pass)
 	check(not res and called[0] == 2, "Pager 초과는 마지막 페이지로 reload")
 	var errs := []
 	var bad := pg.begin()
-	await pg.accept(bad, 0, {"ok": false, "error": "X"}, func(_p: int) -> void: pass, func(e: String) -> void: errs.append(e))
+	await pg.accept(bad, 0, {"ok": false, "error": "X"}, func(e: String) -> void: errs.append(e))
 	var bad_stale := pg.begin()
 	pg.begin()
-	await pg.accept(bad_stale, 0, {"ok": false, "error": "Y"}, func(_p: int) -> void: pass, func(e: String) -> void: errs.append(e))
+	await pg.accept(bad_stale, 0, {"ok": false, "error": "Y"}, func(e: String) -> void: errs.append(e))
 	check(errs == ["X"], "Pager 실패면 낡지 않았을 때만 on_error")
 	var loaded := []
 	var pg2 := Pager.new(pbox, pprev, plabel, pnext, func(p: int) -> void: loaded.append(p))

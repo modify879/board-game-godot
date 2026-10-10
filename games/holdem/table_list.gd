@@ -37,12 +37,16 @@ func _ready() -> void:
 		return
 	await _load(0)
 	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
-	if seat_error != "":
-		_show_seat_error()
-	elif pending_error != "":
-		error_label.text = ErrorText.of(pending_error)
-		error_label.show()
+	if pending_error != "":
 		name_edit.text = pending_name
+	var msgs: Array[String] = []
+	if seat_error != "":
+		msgs.append(ErrorText.of(seat_error))
+	if pending_error != "":
+		msgs.append(ErrorText.of(pending_error))
+	if not msgs.is_empty():
+		error_label.text = "\n".join(msgs)
+		error_label.show()
 	pending_error = ""
 	pending_name = ""
 
@@ -77,8 +81,9 @@ func _load(page: int) -> void:
 	refresh_button.disabled = true
 	var gen := pager.begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables?page=%d&size=%d" % [page, PAGE_SIZE])
-	refresh_button.disabled = false
-	if not await pager.accept(gen, page, r, _load, func(code: String) -> void:
+	if not pager.is_stale(gen):
+		refresh_button.disabled = false # 낡은 응답이 뒤 요청의 잠금을 풀지 않게
+	if not await pager.accept(gen, page, r, func(code: String) -> void:
 			error_label.text = ErrorText.of(code)
 			error_label.show()):
 		return

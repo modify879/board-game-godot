@@ -56,6 +56,7 @@ var nickname_fetching := {} # userId -> true while request in flight
 
 var stomp_connected := false
 var waiting := false
+var sit_popup_gen := 0 # 착석 팝업을 열 때마다 올린다 — 늦게 온 지갑 응답을 거른다
 var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·SEATED·DROPPED)를 하나라도 받았다 — 방 생성 뒤 착석 확인을 건너뛴다
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
@@ -347,6 +348,8 @@ func _check_create_seat(id: int) -> void:
 
 func _on_stomp_closed() -> void:
 	stomp_connected = false
+	if private_subscribed: # 재연결 때 낡은 개인 구독이 재생되면 서버가 소켓을 닫아 루프가 생긴다. 공개 스냅샷으로 다시 구독한다
+		_drop_private()
 	if waiting:
 		rejoin_pending = true
 		error_label.text = "연결이 끊겨 다시 대기열에 등록합니다"
@@ -699,7 +702,16 @@ func _open_sit_popup() -> void:
 	sit_popup_post_blind.button_pressed = false
 	sit_popup_ok.disabled = true
 	sit_popup.show()
+	sit_popup_gen += 1
+	var gen := sit_popup_gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
+	_apply_sit_wallet(gen, r)
+
+
+## 지갑 응답을 팝업에 반영. 그사이 팝업이 닫히거나 다시 열렸으면 버린다
+func _apply_sit_wallet(gen: int, r: Dictionary) -> void:
+	if gen != sit_popup_gen or not sit_popup.visible:
+		return
 	if not r.ok:
 		sit_popup_error.text = ErrorText.of(r.error)
 		sit_popup_error.show()
@@ -735,12 +747,18 @@ func _send_join(post_blind: bool, rejoin := false) -> void:
 			waiting = true
 			queue_position = int(r.data.position)
 	elif rejoin and r.error == "ALREADY_SEATED":
-		waiting = true # 재연결 전부터 대기열에 있었다 — 착석은 공개 뷰가 정한다
+		_apply_already_seated()
 	elif not r.ok:
 		_show_error(r.error)
 	_update_status_label()
 	_update_buttons()
 	_render_seats()
+
+
+## 재연결 전부터 대기열에 있었다 — 착석은 공개 뷰가 정한다. 그새 착석한 뷰가 왔으면 대기로 되돌리지 않는다
+func _apply_already_seated() -> void:
+	if not _is_seated():
+		waiting = true
 
 
 func _on_cancel_request_pressed() -> void:
@@ -756,6 +774,8 @@ func _on_cancel_request_pressed() -> void:
 
 
 func _on_stand_pressed() -> void:
+	if private_subscribed: # 일어서면 개인 채널이 필요 없다. 늦게 닿은 SUBSCRIBE 가 거부돼 소켓이 닫히는 창을 줄인다
+		_drop_private()
 	stand_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat")
 	stand_button.disabled = false

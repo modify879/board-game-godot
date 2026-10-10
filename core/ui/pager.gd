@@ -4,6 +4,7 @@ class_name Pager extends RefCounted
 var page := 0
 var total := 0
 var _gen := 0
+var _loader: Callable
 var _box: HBoxContainer
 var _prev: Button
 var _label: Label
@@ -11,6 +12,7 @@ var _next: Button
 
 
 func _init(box: HBoxContainer, prev: Button, label: Label, next: Button, loader: Callable) -> void:
+	_loader = loader
 	prev.pressed.connect(func() -> void: loader.call(page - 1))
 	next.pressed.connect(func() -> void: loader.call(page + 1))
 	_box = box
@@ -32,8 +34,8 @@ func is_stale(gen: int) -> bool:
 
 
 ## 응답 공통 처리. 낡았거나 실패·마지막 페이지 초과면 false. 실패면 낡지 않았을 때만 on_error.call(errorCode)
-## 초과는 reload.call(마지막 페이지)를 기다린 뒤 false
-func accept(gen: int, page_req: int, r: Dictionary, reload: Callable, on_error: Callable) -> bool:
+## 초과는 loader.call(마지막 페이지)를 기다린 뒤 false
+func accept(gen: int, page_req: int, r: Dictionary, on_error: Callable) -> bool:
 	if gen != _gen:
 		return false
 	if not r.ok:
@@ -42,7 +44,7 @@ func accept(gen: int, page_req: int, r: Dictionary, reload: Callable, on_error: 
 		return false
 	var new_total: int = r.data.page.totalPages
 	if page_req >= new_total and new_total > 0:
-		await reload.call(new_total - 1)
+		await _loader.call(new_total - 1)
 		return false
 	page = r.data.page.number
 	total = new_total

@@ -170,6 +170,41 @@ func _ready() -> void:
 	check(not table.join_button.visible, "join button hidden while retry_pending")
 	table.retry_pending = false
 
+	# 13. 재참가가 ALREADY_SEATED 를 받아도 이미 앉았으면 대기로 되돌리지 않는다
+	table.waiting = false
+	table.public_view = _view(21, [_seat(1, 7)])
+	table.waiting = false
+	table._apply_already_seated()
+	check(not table.waiting, "ALREADY_SEATED while seated keeps waiting false")
+	table.public_view = _view(22, [_seat(2, 8)])
+	table._apply_already_seated()
+	check(table.waiting, "ALREADY_SEATED while not seated sets waiting")
+	table.waiting = false
+
+	# 14. 늦은 지갑 응답은 팝업 세대가 바뀌거나 닫히면 버린다
+	table.sit_popup_gen = 5
+	table.sit_popup.show()
+	table.sit_popup_ok.disabled = true
+	table._apply_sit_wallet(4, {"ok": true, "data": {"balance": 100000.0}})
+	check(table.sit_popup_ok.disabled, "stale-generation wallet response ignored")
+	table.sit_popup.hide()
+	table._apply_sit_wallet(5, {"ok": true, "data": {"balance": 100000.0}})
+	check(table.sit_popup_ok.disabled, "wallet response ignored when popup hidden")
+	table.sit_popup.show()
+	table._apply_sit_wallet(5, {"ok": true, "data": {"balance": 100000.0}})
+	check(not table.sit_popup_ok.disabled, "current wallet response applied")
+	table.sit_popup.hide()
+
+	# 연결이 끊기면 개인 구독을 지우고, 재연결 뒤 앉은 공개 뷰로 다시 구독한다
+	table._handle_public(_view(1000, [_seat(1, 7)]))
+	var sub_id: String = table.private_sub_id
+	check(table.private_subscribed and Stomp._subs.has(sub_id), "앉으면 개인 구독")
+	table._on_stomp_closed()
+	check(not table.private_subscribed and not Stomp._subs.has(sub_id), "연결이 끊기면 개인 구독을 지운다")
+	table.last_public_seq = -1 # 재연결 뒤 seq 리셋
+	table._handle_public(_view(1, [_seat(1, 7)]))
+	check(table.private_subscribed and Stomp._subs.has(table.private_sub_id), "재연결 뒤 앉은 뷰에서 다시 구독")
+
 	get_tree().quit(1 if failures else 0)
 
 

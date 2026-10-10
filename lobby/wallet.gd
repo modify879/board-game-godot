@@ -89,18 +89,15 @@ func _show_error(code: String) -> void:
 
 
 func _load_balance() -> void:
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
-	if r.ok:
-		balance_label.text = Format.balance(int(r.data.balance))
-	else:
-		balance_label.text = Format.BALANCE_FAILED
+	var r := await Balance.load_into(balance_label)
+	if not r.ok:
 		_show_error(r.error)
 
 
 func _load_deposits(page: int) -> void:
 	var gen := pagers[DEPOSIT].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/deposit-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await pagers[DEPOSIT].accept(gen, page, r, _load_deposits, _show_error):
+	if not await pagers[DEPOSIT].accept(gen, page, r, _show_error):
 		return
 	Rows.clear(deposit_rows)
 	for item in Api.page_items(r.data):
@@ -117,7 +114,7 @@ func _load_deposits(page: int) -> void:
 func _load_withdrawals(page: int) -> void:
 	var gen := pagers[WITHDRAW].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/withdrawal-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await pagers[WITHDRAW].accept(gen, page, r, _load_withdrawals, _show_error):
+	if not await pagers[WITHDRAW].accept(gen, page, r, _show_error):
 		return
 	Rows.clear(withdraw_rows)
 	for item in Api.page_items(r.data):
@@ -160,7 +157,7 @@ func _on_cancel(button: Button, path: String, reload: Callable, refund: bool) ->
 func _load_ledger(page: int) -> void:
 	var gen := pagers[LEDGER].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/ledger?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await pagers[LEDGER].accept(gen, page, r, _load_ledger, _show_error):
+	if not await pagers[LEDGER].accept(gen, page, r, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(ledger_rows)

@@ -33,11 +33,7 @@ func _ready() -> void:
 
 
 func _load_balance() -> void:
-	var r := await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
-	if r.ok:
-		balance_label.text = Format.balance(int(r.data.balance))
-	else:
-		balance_label.text = Format.BALANCE_FAILED
+	await Balance.load_into(balance_label)
 
 
 func _on_logout_pressed() -> void:
