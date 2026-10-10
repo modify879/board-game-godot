@@ -221,13 +221,13 @@ func _update_pager(kind: int) -> void:
 func _on_deposit() -> void:
 	if _busy:
 		return
+	deposit_result.text = "" # 실패 시 지난 안내가 새 요청 것처럼 남지 않게
 	var amount = Format.parse_amount(deposit_edit.text)
 	if amount == null:
 		_show_error("DEPOSIT_AMOUNT_INVALID")
 		return
 	_set_busy(true)
 	deposit_button.disabled = true
-	deposit_result.text = "" # 실패 시 지난 안내가 새 요청 것처럼 남지 않게
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount}, ["Idempotency-Key: " + deposit_key])
 	_set_busy(false)
 	deposit_button.disabled = false
