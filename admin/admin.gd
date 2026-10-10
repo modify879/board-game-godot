@@ -1,7 +1,6 @@
 extends Control
 ## 관리자: 충전·환전 요청 처리, 회원 관리(잠금 해제·역할·잔액 조정).
 
-const Wallet := preload("res://lobby/wallet.gd")
 const PAGE_SIZE := 20
 const DEPOSIT := 0
 const WITHDRAW := 1
@@ -133,7 +132,7 @@ func _load(kind: int, page: int) -> void:
 		return
 	var new_total: int = r.data.page.totalPages
 	if page >= new_total and new_total > 0:
-		_load(kind, new_total - 1)
+		await _load(kind, new_total - 1)
 		return
 	pages[kind] = r.data.page.number
 	total_pages[kind] = new_total
@@ -161,7 +160,7 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	info.add_child(Rows.label("회원 %d" % int(item.userId)))
 	info.add_child(Rows.label(Format.time(item.requestedAt)))
 	info.add_child(Rows.label("%s원" % Format.comma(amount), true))
-	var status: String = Wallet.STATUS_TEXT.get(item.status, item.status)
+	var status: String = Format.request_status(item.status)
 	if kind == DEPOSIT and item.status == "APPROVED" and item.creditedAmount != null:
 		status += " (%s)" % Format.comma(int(item.creditedAmount))
 	elif item.status == "REJECTED" and item.rejectionReason != null:
@@ -403,4 +402,6 @@ func _on_adjust() -> void:
 		adjust_amount_edit.text = ""
 		adjust_reason_edit.text = ""
 		_new_key()
+	elif r.status >= 400 and r.status < 500:
+		_new_key() # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지
 	_finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다")
