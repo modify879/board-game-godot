@@ -60,6 +60,7 @@ var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·S
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
+var retry_pending := false # DROPPED 재시도 대기 중 — 그 1초 동안 참가 버튼을 숨긴다
 var dropped_retried := false # TEMPORARILY_UNAVAILABLE 로 대기열에서 빠지면 한 번만 자동으로 다시 요청한다
 var rejoin_pending := false # Stomp closed 될 때 대기 중이었다 — 재연결 후 다시 요청해야 한다
 var pending_join_queue: Array = [] # 방 생성 응답 전에는 table_id 를 몰라 join-queue 이벤트를 모아 둔다 — SEATED 가 201 보다 먼저 올 수 있다
@@ -212,6 +213,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 				error_label.text = "서버가 잠시 바빠 다시 대기열에 등록합니다"
 				error_label.show()
 				_update_status_label()
+				retry_pending = true
 				_update_buttons()
 				get_tree().create_timer(1.0).timeout.connect(_retry_dropped_join) # await 은 노드가 해제돼도 재개된다 — connect 는 끊긴다
 				return
@@ -222,6 +224,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 
 
 func _retry_dropped_join() -> void:
+	retry_pending = false
 	if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
 		_send_join(last_post_blind)
 
@@ -282,11 +285,12 @@ func _create_table(new_name: String) -> void:
 	waiting = true
 	_update_status_label()
 	_update_buttons()
+	var queue_before := pending_join_queue.size() # POST 전에 온 이벤트(구독 직후 스냅샷 등)는 이 방 것이 아니다
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name})
 	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다
-		# 서버는 생성 즉시 대기열에 넣고 join-queue 로 알린다(구독 스냅샷 포함) — 대기 중이어도 버퍼에 tableId 가 남는다
-		for event in pending_join_queue:
-			_enter_created_table(int(event.tableId))
+		# 서버는 생성 즉시 대기열에 넣고 join-queue 로 알린다 — POST 뒤에 버퍼에 쌓인 이벤트에 tableId 가 있다
+		if pending_join_queue.size() > queue_before:
+			_enter_created_table(int(pending_join_queue[queue_before].tableId))
 			return
 		var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
 		if seat_r.status == 200:
@@ -575,7 +579,7 @@ func _update_buttons() -> void:
 	var seated := _is_seated()
 	stand_button.visible = seated
 	stand_button.disabled = public_view.get("handInProgress", false)
-	join_button.visible = not seated and not waiting
+	join_button.visible = not seated and not waiting and not retry_pending
 	join_button.disabled = not stomp_connected or table_id == 0
 	cancel_request_button.visible = waiting
 	cancel_request_button.disabled = table_id == 0
@@ -711,6 +715,7 @@ func _send_join(post_blind: bool) -> void:
 	last_post_blind = post_blind
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"postBlindImmediately": post_blind})
 	if r.status == 202:
+		error_label.hide() # 재시도 안내가 대기 중에 남지 않게
 		if not _is_seated() and not got_seated: # SEATED 나 공개 뷰가 202 보다 먼저 왔을 수 있다
 			waiting = true
 			queue_position = int(r.data.position)

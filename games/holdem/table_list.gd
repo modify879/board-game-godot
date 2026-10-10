@@ -21,31 +21,51 @@ static var pending_name := "" # 실패해 돌아왔을 때 입력했던 방 이�
 
 var current_page := 0
 var total_pages := 0
+var seat_error := "" # /me/seat 실패 errorCode. 204·200 이면 빈 문자열
 
 
 func _ready() -> void:
 	create_button.disabled = true # /me/seat 확인이 끝나기 전에는 만들 수 없다
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
-	refresh_button.pressed.connect(func() -> void: _load(current_page))
+	refresh_button.pressed.connect(func() -> void:
+		await _load(current_page)
+		await _check_seat()
+		_show_seat_error())
 	prev_button.pressed.connect(func() -> void: _load(current_page - 1))
 	next_button.pressed.connect(func() -> void: _load(current_page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
-	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
-	if seat_r.status == 200:
-		enter(seat_r.data.tableId)
-		pending_error = ""
-		pending_name = ""
+	if await _check_seat():
 		return
-	create_button.disabled = false
 	await _load(0)
 	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
-	if pending_error != "":
+	if seat_error != "":
+		_show_seat_error()
+	elif pending_error != "":
 		error_label.text = ErrorText.of(pending_error)
 		error_label.show()
 		name_edit.text = pending_name
 	pending_error = ""
 	pending_name = ""
+
+
+## /me/seat 확인. 이미 앉아 있으면 테이블로 가고 true. 204 일 때만 만들기를 풀고, 그 외(0·5xx 등)는 막아 두고 errorCode 를 seat_error 에 담는다
+func _check_seat() -> bool:
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if r.status == 200:
+		enter(r.data.tableId)
+		pending_error = ""
+		pending_name = ""
+		return true
+	create_button.disabled = r.status != 204
+	seat_error = "" if r.status == 204 else r.error
+	return false
+
+
+func _show_seat_error() -> void:
+	if seat_error != "":
+		error_label.text = ErrorText.of(seat_error)
+		error_label.show()
 
 
 func enter(id: int, join := false) -> void:

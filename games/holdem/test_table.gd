@@ -144,6 +144,17 @@ func _ready() -> void:
 	check(table.join_event_seen, "join_event_seen set by own-table join-queue event")
 	table.join_event_seen = seen_before
 
+	# 12. DROPPED 재시도 대기(retry_pending) 동안 참가 버튼을 숨긴다
+	table.waiting = false
+	table.retry_pending = false
+	table.public_view = _view(20, [_seat(2, 8)])
+	table._update_buttons()
+	check(table.join_button.visible, "join button visible when not seated and no retry pending")
+	table.retry_pending = true
+	table._update_buttons()
+	check(not table.join_button.visible, "join button hidden while retry_pending")
+	table.retry_pending = false
+
 	get_tree().quit(1 if failures else 0)
 
 
