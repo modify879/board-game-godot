@@ -116,10 +116,10 @@ func _cancel_rotate() -> void:
 	_auth_deadline_generation += 1
 
 
-func disconnect_ws() -> void:
+func disconnect_ws(send_disconnect := true) -> void:
 	_intentional_close = true
 	_cancel_rotate()
-	if _connected:
+	if _connected and send_disconnect:
 		_send(build_frame("DISCONNECT", {}, ""))
 	ws.close()
 	_subs.clear()

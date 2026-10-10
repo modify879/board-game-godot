@@ -196,7 +196,7 @@ func logout() -> void:
 	_refresh_due_ticks = -1 # 로그아웃 요청 중에 선제 갱신이 시작돼 세션이 되살아나지 않게
 	await request(HTTPClient.METHOD_POST, "/api/auth/logout")
 	_clear_session()
-	get_node("/root/Stomp").disconnect_ws()
+	get_node("/root/Stomp").disconnect_ws(false) # 서버가 로그아웃 때 세션을 이미 닫았다 — DISCONNECT 는 죽은 세션에 닿아 서버 오류만 남긴다
 
 
 func try_resume() -> bool:
