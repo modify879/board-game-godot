@@ -201,6 +201,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 			got_seated = true
 			dropped_retried = false # 다음 착석 시도마다 1회 기회
 			waiting = false
+			error_label.hide() # DROPPED 재시도 안내가 착석 뒤에 남지 않게
 			_update_status_label()
 			_update_buttons()
 		"DROPPED":
@@ -316,15 +317,13 @@ func _check_create_seat(id: int) -> void:
 	if table_id != id or join_event_seen or _is_seated() or not waiting:
 		return
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
-	if not r.ok:
-		_show_error(r.error)
-	elif r.status == 200 and r.data is Dictionary and int(r.data.tableId) == id:
+	if r.ok and r.status == 200 and r.data is Dictionary and int(r.data.tableId) == id:
 		return # 공개 뷰가 곧 착석을 그린다
-	else: # 204 거나 다른 테이블에 앉아 있다 — 이 방에는 착석하지 못했다
-		waiting = false
-		_show_error("CREATE_SEAT_FAILED")
-		_update_status_label()
-		_update_buttons()
+	# 요청 실패거나 204 거나 다른 테이블에 앉아 있다 — 대기를 풀어 둔다. 실제로 앉아 있었다면 공개 뷰가 곧 좌석을 그린다
+	waiting = false
+	_show_error(r.error if not r.ok else "CREATE_SEAT_FAILED")
+	_update_status_label()
+	_update_buttons()
 
 
 func _on_stomp_closed() -> void:

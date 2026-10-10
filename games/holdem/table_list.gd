@@ -16,6 +16,7 @@ const PAGE_SIZE := 20
 @onready var next_button: Button = %NextButton
 
 static var pending_error := "" # 테이블 화면이 방 만들기에 실패하면 errorCode 를 넘긴다
+static var pending_name := "" # 실패해 돌아왔을 때 입력했던 방 이름을 되살린다
 
 var current_page := 0
 var total_pages := 0
@@ -32,13 +33,16 @@ func _ready() -> void:
 	if seat_r.status == 200:
 		enter(seat_r.data.tableId)
 		pending_error = ""
+		pending_name = ""
 		return
 	await _load(0)
 	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
 	if pending_error != "":
 		error_label.text = ErrorText.of(pending_error)
 		error_label.show()
-		pending_error = ""
+		name_edit.text = pending_name
+	pending_error = ""
+	pending_name = ""
 
 
 func enter(id: int, join := false) -> void:
@@ -72,17 +76,11 @@ func _load(page: int) -> void:
 
 
 func _build_rows(items: Array) -> void:
-	for child in rows.get_children():
-		child.queue_free()
+	Rows.clear(rows)
 	empty_label.visible = items.is_empty()
 	for item in items:
 		var row := HBoxContainer.new()
-		var name_label := Label.new()
-		name_label.text = item.name
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		name_label.clip_text = true
-		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		row.add_child(name_label)
+		row.add_child(Rows.label(item.name, true))
 		var seats_label := Label.new()
 		seats_label.text = "%d/%d명" % [item.occupiedSeats, item.maxSeats]
 		row.add_child(seats_label)
@@ -105,6 +103,7 @@ func _update_pager() -> void:
 
 
 func _on_create() -> void:
+	pending_name = name_edit.text
 	var table_script = preload("res://games/holdem/table.gd")
 	table_script.table_id = 0
 	table_script.auto_join = false
