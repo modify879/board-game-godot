@@ -31,10 +31,17 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	var state := ws.get_ready_state()
+	var peer := ws
+	var state := peer.get_ready_state()
 	if state != WebSocketPeer.STATE_CLOSED:
-		ws.poll()
-		state = ws.get_ready_state()
+		peer.poll()
+		state = peer.get_ready_state()
+	# 서버는 ERROR 프레임 직후 소켓을 닫는다 — close 와 같은 poll 에 온 마지막 프레임을 전이 처리보다 먼저 읽는다
+	while peer.get_available_packet_count() > 0:
+		_last_recv_ticks = Time.get_ticks_msec()
+		_handle_packet(decode(peer.get_packet()))
+	if ws != peer:
+		return # 핸들러가 connect_ws() 로 소켓을 바꿨다 — 옛 피어의 CLOSED 를 새 피어 것으로 오인하지 않는다
 	if state != _last_state:
 		if state == WebSocketPeer.STATE_OPEN:
 			_send_connect()
@@ -49,10 +56,6 @@ func _process(_delta: float) -> void:
 				else:
 					_schedule_reconnect()
 	_last_state = state
-	if state == WebSocketPeer.STATE_OPEN:
-		while ws.get_available_packet_count() > 0:
-			_last_recv_ticks = Time.get_ticks_msec()
-			_handle_packet(decode(ws.get_packet()))
 	# 패킷을 다 비운 뒤에 검사한다 — 가려진 탭에서 돌아오면 쌓인 패킷이 먼저 시각을 갱신해야 한다
 	if _connected and _recv_interval_ms > 0 and Time.get_ticks_msec() - _last_recv_ticks > _recv_interval_ms * 3:
 		ws.close() # 죽은 TCP 는 closing handshake 가 오지 않으니 기다리지 않고 닫힌 피어로 바꿔, 다음 프레임에 평소 재연결 경로를 태운다
