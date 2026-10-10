@@ -195,6 +195,16 @@ func _ready() -> void:
 	check(not table.sit_popup_ok.disabled, "current wallet response applied")
 	table.sit_popup.hide()
 
+	# 연결이 끊기면 개인 구독을 지우고, 재연결 뒤 앉은 공개 뷰로 다시 구독한다
+	table._handle_public(_view(1000, [_seat(1, 7)]))
+	var sub_id: String = table.private_sub_id
+	check(table.private_subscribed and Stomp._subs.has(sub_id), "앉으면 개인 구독")
+	table._on_stomp_closed()
+	check(not table.private_subscribed and not Stomp._subs.has(sub_id), "연결이 끊기면 개인 구독을 지운다")
+	table.last_public_seq = -1 # 재연결 뒤 seq 리셋
+	table._handle_public(_view(1, [_seat(1, 7)]))
+	check(table.private_subscribed and Stomp._subs.has(table.private_sub_id), "재연결 뒤 앉은 뷰에서 다시 구독")
+
 	get_tree().quit(1 if failures else 0)
 
 

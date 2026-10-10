@@ -348,6 +348,8 @@ func _check_create_seat(id: int) -> void:
 
 func _on_stomp_closed() -> void:
 	stomp_connected = false
+	if private_subscribed: # 재연결 때 낡은 개인 구독이 재생되면 서버가 소켓을 닫아 루프가 생긴다. 공개 스냅샷으로 다시 구독한다
+		_drop_private()
 	if waiting:
 		rejoin_pending = true
 		error_label.text = "연결이 끊겨 다시 대기열에 등록합니다"
@@ -772,6 +774,8 @@ func _on_cancel_request_pressed() -> void:
 
 
 func _on_stand_pressed() -> void:
+	if private_subscribed: # 일어서면 개인 채널이 필요 없다. 늦게 닿은 SUBSCRIBE 가 거부돼 소켓이 닫히는 창을 줄인다
+		_drop_private()
 	stand_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat")
 	stand_button.disabled = false
