@@ -125,6 +125,13 @@ func _ready() -> void:
 	script.table_id = 1
 	table.pending_join_queue = []
 
+	# 11. 이 테이블의 join-queue 이벤트를 받으면 join_event_seen 이 선다
+	var seen_before: bool = table.join_event_seen
+	table.join_event_seen = false
+	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})
+	check(table.join_event_seen, "join_event_seen set by own-table join-queue event")
+	table.join_event_seen = seen_before
+
 	get_tree().quit(1 if failures else 0)
 
 

@@ -11,6 +11,7 @@ const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
 const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
 const TURN_SECONDS := 60.0
+const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
@@ -53,6 +54,7 @@ var nickname_fetching := {} # userId -> true while request in flight
 
 var stomp_connected := false
 var waiting := false
+var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·SEATED·DROPPED)를 하나라도 받았다 — 방 생성 뒤 착석 확인을 건너뛴다
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
@@ -188,6 +190,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 		return
 	if int(body.tableId) != table_id:
 		return
+	join_event_seen = true
 	match body.type:
 		"POSITION":
 			queue_position = int(body.position)
@@ -287,6 +290,23 @@ func _create_table(new_name: String) -> void:
 		_handle_join_queue(event)
 	_update_status_label()
 	_update_buttons()
+	_check_create_seat(table_id)
+
+
+func _check_create_seat(id: int) -> void:
+	await get_tree().create_timer(CREATE_SEAT_CHECK_SEC).timeout
+	if table_id != id or join_event_seen or _is_seated() or not waiting:
+		return
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if r.status == 204:
+		waiting = false
+		_show_error("CREATE_SEAT_FAILED")
+		_update_status_label()
+		_update_buttons()
+	elif r.ok and r.data is Dictionary and int(r.data.tableId) == id:
+		return # 공개 뷰가 곧 착석을 그린다
+	elif not r.ok:
+		_show_error(r.error)
 
 
 func _on_stomp_closed() -> void:
