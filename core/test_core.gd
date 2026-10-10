@@ -152,6 +152,7 @@ func _init() -> void:
 	check(ir.signup("Abcd", "닉네임", "12345678", "12345678") == "", "아이디 대문자는 lowercase 로 통과")
 	check(ir.signup("abcd", "가", "12345678", "12345678") == "NICKNAME_LENGTH", "닉네임 1자 거부")
 	check(ir.signup("abcd", "가".repeat(13), "12345678", "12345678") == "NICKNAME_LENGTH", "닉네임 13자 거부")
+	check(ir.signup("abcd", "\u1100\u1161".repeat(7), "12345678", "12345678") != "NICKNAME_LENGTH", "분해형 자모 14자 닉네임은 길이 검사 건너뜀")
 	check(ir.signup("abcd", "가나", "12345678", "12345678") == "", "닉네임 2자 통과")
 	check(ir.signup("abcd", "가".repeat(12), "12345678", "12345678") == "", "닉네임 12자 통과")
 	check(ir.signup("abcd", "   ", "12345678", "12345678") == "NICKNAME_BLANK", "닉네임 공백만 BLANK")
@@ -175,6 +176,8 @@ func _init() -> void:
 	check(ir.bank_account("은행", "1234567", "홍길동") == "BANK_ACCOUNT_INVALID", "계좌 7자리 거부")
 	check(ir.bank_account("은행", "1".repeat(21), "홍길동") == "BANK_ACCOUNT_INVALID", "계좌 21자리 거부")
 	check(ir.bank_account("은행", "123-4567-8", "홍길동") == "", "계좌 123-4567-8 통과")
+	check(ir.bank_account("은행", "\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668", "홍길동") == "", "아랍 숫자 계좌번호 통과")
+	check(ir.bank_account("은행", "１２３４５６７８", "홍길동") == "", "전각 숫자 계좌번호 통과")
 	check(ir.bank_account("가".repeat(51), "12345678", "홍길동") == "BANK_ACCOUNT_INVALID", "은행명 51자 거부")
 	check(ir.bank_account("은행", "12345678", " ") == "BANK_ACCOUNT_INVALID", "예금주 빈 값 거부")
 	check(ir.credited_amount(0) == "DEPOSIT_AMOUNT_INVALID", "승인액 0 거부")
@@ -191,7 +194,7 @@ func _init() -> void:
 	var pprev := Button.new()
 	var plabel := Label.new()
 	var pnext := Button.new()
-	var pg := Pager.new(pbox, pprev, plabel, pnext)
+	var pg := Pager.new(pbox, pprev, plabel, pnext, func(_p: int) -> void: pass)
 	pg.total = 3
 	pg.page = 1
 	pg.update()
@@ -207,12 +210,25 @@ func _init() -> void:
 	var fresh := pg.begin()
 	check(pprev.disabled and pnext.disabled, "Pager begin 은 버튼 잠금")
 	var ok_resp := {"ok": true, "data": {"page": {"number": 1, "totalPages": 3}, "content": []}}
-	check(not await pg.accept(stale, 0, ok_resp, func(_p: int) -> void: pass), "Pager 낡은 gen 은 false")
-	check(await pg.accept(fresh, 1, ok_resp, func(_p: int) -> void: pass) and pg.page == 1 and pg.total == 3, "Pager 정상 응답 반영")
+	check(not await pg.accept(stale, 0, ok_resp, func(_p: int) -> void: pass, func(_e: String) -> void: pass), "Pager 낡은 gen 은 false")
+	check(await pg.accept(fresh, 1, ok_resp, func(_p: int) -> void: pass, func(_e: String) -> void: pass) and pg.page == 1 and pg.total == 3, "Pager 정상 응답 반영")
 	var called := [-1]
 	var over := pg.begin()
-	var res: bool = await pg.accept(over, 5, ok_resp, func(p: int) -> void: called[0] = p)
+	var res: bool = await pg.accept(over, 5, ok_resp, func(p: int) -> void: called[0] = p, func(_e: String) -> void: pass)
 	check(not res and called[0] == 2, "Pager 초과는 마지막 페이지로 reload")
+	var errs := []
+	var bad := pg.begin()
+	await pg.accept(bad, 0, {"ok": false, "error": "X"}, func(_p: int) -> void: pass, func(e: String) -> void: errs.append(e))
+	var bad_stale := pg.begin()
+	pg.begin()
+	await pg.accept(bad_stale, 0, {"ok": false, "error": "Y"}, func(_p: int) -> void: pass, func(e: String) -> void: errs.append(e))
+	check(errs == ["X"], "Pager 실패면 낡지 않았을 때만 on_error")
+	var loaded := []
+	var pg2 := Pager.new(pbox, pprev, plabel, pnext, func(p: int) -> void: loaded.append(p))
+	pg2.page = 1
+	pprev.pressed.emit()
+	pnext.pressed.emit()
+	check(loaded == [0, 2], "Pager prev/next 가 loader 호출")
 	pbox.free()
 	pprev.free()
 	plabel.free()

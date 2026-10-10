@@ -79,8 +79,19 @@ func _ready() -> void:
 
 	var err_was: bool = table.error_label.visible
 	table.error_label.show()
+	table.retry_notice_shown = true
 	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})
 	check(not table.error_label.visible, "SEATED hides retry notice")
+	table.error_label.visible = err_was
+
+	# 6b. 재연결 스냅샷(POSITION)을 받으면 rejoin_pending 해제, 재시도 안내가 아니면 SEATED 가 오류 문구를 숨기지 않는다
+	table.rejoin_pending = true
+	table._handle_join_queue({"tableId": 1.0, "type": "POSITION", "position": 2.0})
+	check(not table.rejoin_pending, "POSITION clears rejoin_pending")
+	table.retry_notice_shown = false
+	table.error_label.show()
+	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})
+	check(table.error_label.visible, "SEATED keeps non-retry error")
 	table.error_label.visible = err_was
 
 	# 7. ACCESS_DENIED 후 테이블이 연 새 소켓은 재연결 대상이어야 한다(의도적 종료 플래그가 덮이면 안 됨)

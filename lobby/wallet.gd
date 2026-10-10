@@ -36,12 +36,10 @@ const LEDGER := 2
 
 # 목록 탭별 페이저 (DEPOSIT, WITHDRAW, LEDGER 순)
 @onready var pagers: Array[Pager] = [
-	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext),
-	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext),
-	Pager.new(%Pager, %PrevButton, %PageLabel, %NextButton),
+	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext, _load_deposits),
+	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext, _load_withdrawals),
+	Pager.new(%Pager, %PrevButton, %PageLabel, %NextButton, _load_ledger),
 ]
-@onready var prevs: Array[Button] = [%DepositPrev, %WithdrawPrev, %PrevButton]
-@onready var nexts: Array[Button] = [%DepositNext, %WithdrawNext, %NextButton]
 
 var _busy := false
 # 입력이 바뀌거나 성공했을 때만 새 키 — 실패 뒤 그대로 다시 누르면 같은 키가 나가 요청이 두 번 생기지 않는다
@@ -59,10 +57,6 @@ func _ready() -> void:
 	deposit_edit.text_changed.connect(func(_t: String) -> void: _new_deposit_key())
 	for e in [withdraw_amount_edit, bank_name_edit, account_number_edit, account_holder_edit]:
 		e.text_changed.connect(func(_t: String) -> void: _new_withdraw_key())
-	var loaders := [_load_deposits, _load_withdrawals, _load_ledger]
-	for k in 3:
-		prevs[k].pressed.connect(func() -> void: loaders[k].call(pagers[k].page - 1))
-		nexts[k].pressed.connect(func() -> void: loaders[k].call(pagers[k].page + 1))
 	_load_balance()
 	_load_tab(tabs.current_tab)
 
@@ -97,24 +91,16 @@ func _show_error(code: String) -> void:
 func _load_balance() -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
 	if r.ok:
-		balance_label.text = "잔액 %s" % Format.comma(int(r.data.balance))
+		balance_label.text = Format.balance(int(r.data.balance))
 	else:
+		balance_label.text = Format.BALANCE_FAILED
 		_show_error(r.error)
-
-
-## 목록 응답 공통 처리 뒤 false 면 호출부가 끝낸다. 실패 오류는 낡은 응답이 아닐 때만 띄운다
-func _accept(kind: int, gen: int, page: int, r: Dictionary, reload: Callable) -> bool:
-	if await pagers[kind].accept(gen, page, r, reload):
-		return true
-	if not r.ok and not pagers[kind].is_stale(gen):
-		_show_error(r.error)
-	return false
 
 
 func _load_deposits(page: int) -> void:
 	var gen := pagers[DEPOSIT].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/deposit-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await _accept(DEPOSIT, gen, page, r, _load_deposits):
+	if not await pagers[DEPOSIT].accept(gen, page, r, _load_deposits, _show_error):
 		return
 	Rows.clear(deposit_rows)
 	for item in Api.page_items(r.data):
@@ -136,7 +122,7 @@ func _load_deposits(page: int) -> void:
 func _load_withdrawals(page: int) -> void:
 	var gen := pagers[WITHDRAW].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/withdrawal-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await _accept(WITHDRAW, gen, page, r, _load_withdrawals):
+	if not await pagers[WITHDRAW].accept(gen, page, r, _load_withdrawals, _show_error):
 		return
 	Rows.clear(withdraw_rows)
 	for item in Api.page_items(r.data):
@@ -182,7 +168,7 @@ func _on_cancel(button: Button, path: String, reload: Callable, refund: bool) ->
 func _load_ledger(page: int) -> void:
 	var gen := pagers[LEDGER].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/ledger?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not await _accept(LEDGER, gen, page, r, _load_ledger):
+	if not await pagers[LEDGER].accept(gen, page, r, _load_ledger, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(ledger_rows)
@@ -193,7 +179,7 @@ func _load_ledger(page: int) -> void:
 		row.add_child(Rows.label(LEDGER_TYPE.get(item.type, item.type), true))
 		var sign := "+" if item.type in CREDIT_TYPES else ("-" if item.type in DEBIT_TYPES else "") # 모르는 종류는 부호 없이
 		row.add_child(Rows.label(sign + Format.comma(int(item.amount))))
-		row.add_child(Rows.label("잔액 %s" % Format.comma(int(item.balanceAfter))))
+		row.add_child(Rows.label(Format.balance(int(item.balanceAfter))))
 		ledger_rows.add_child(row)
 	pagers[LEDGER].update()
 

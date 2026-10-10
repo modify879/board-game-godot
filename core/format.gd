@@ -9,6 +9,14 @@ static func request_status(status: String) -> String:
 	return REQUEST_STATUS.get(status, status)
 
 
+const BALANCE_FAILED := "잔액 확인 실패"
+
+
+## 잔액 표시 문구
+static func balance(n: int) -> String:
+	return "잔액 %s" % comma(n)
+
+
 ## 천 단위 쉼표
 static func comma(n: int) -> String:
 	var s := str(absi(n))
