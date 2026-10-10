@@ -175,11 +175,13 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 min_value = 200.0
+step = 100.0
 
 [node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/ActionBarMargin/ActionBar/RaiseBox"]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 200.0
+step = 100.0
 
 [node name="RaiseButton" type="Button" parent="VBoxContainer/ActionBarMargin/ActionBar/RaiseBox"]
 unique_name_in_owner = true

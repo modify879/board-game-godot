@@ -625,8 +625,10 @@ func _update_action_bar() -> void:
 		var max_v := int(actions.get("maxRaiseTo"))
 		raise_slider.min_value = min_v
 		raise_slider.max_value = max_v
+		raise_slider.step = 100 # 서버 칩은 100 단위다 — holdem/domain/model/Chips.kt:10 CHIP_UNIT
 		raise_spin.min_value = min_v
 		raise_spin.max_value = max_v
+		raise_spin.step = 100 # 서버 칩은 100 단위다 — holdem/domain/model/Chips.kt:10 CHIP_UNIT
 		var raise_key := "%s:%d" % [last_turn_key, min_v] # 턴+최소값이 바뀔 때만 초기화 — 공개/개인 뷰 도착 순서와 무관하고, 같은 턴 갱신은 사용자 조정을 덮지 않는다
 		if raise_turn_key != raise_key or int(raise_slider.value) < min_v or int(raise_slider.value) > max_v:
 			raise_turn_key = raise_key

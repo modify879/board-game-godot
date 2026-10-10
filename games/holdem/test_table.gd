@@ -127,13 +127,13 @@ func _ready() -> void:
 	table._handle_public(_view(14, seats, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN"}))
 	check(table.action_bar.visible and int(table.raise_slider.value) == 200 and table.raise_button.text == "베팅 200", "turn bet default, private first: '%s'" % table.raise_button.text)
 
-	# 8b. 레이즈 금액은 100 단위로 묶지 않는다 — 올인(1290)·짧은 올인 뒤 최소값(777)도 그대로
-	table.my_available_actions = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 350.0, "maxRaiseTo": 1290.0}
-	table._update_action_bar()
-	table.raise_spin.value = 1290
-	check(int(table.raise_slider.value) == 1290, "raise 1290 exact (got %d)" % int(table.raise_slider.value))
-	table.raise_spin.value = 777
-	check(int(table.raise_slider.value) == 777, "raise 777 exact (got %d)" % int(table.raise_slider.value))
+	# 8b. 레이즈는 100 단위 — 새 턴마다 최소값이 선택되고, 최대(올인)도 그대로 선택된다
+	for mm in [[400, 63800], [300, 20500], [200, 200]]:
+		table.my_available_actions = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": float(mm[0]), "maxRaiseTo": float(mm[1])}
+		table._update_action_bar()
+		check(int(table.raise_slider.value) == mm[0], "raise min %d selected (got %d)" % [mm[0], int(table.raise_slider.value)])
+		table.raise_spin.value = mm[1]
+		check(int(table.raise_slider.value) == mm[1], "raise max %d exact (got %d)" % [mm[1], int(table.raise_slider.value)])
 
 	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 60초 어림
 	var timer_lbl: Label = table.seat_timer_labels[0]
