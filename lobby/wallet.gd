@@ -143,7 +143,7 @@ func _load_deposits(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: _load_deposits(pages[DEPOSIT])))
+			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: await _load_deposits(pages[DEPOSIT])))
 		deposit_rows.add_child(row)
 	_update_pager(DEPOSIT)
 
@@ -164,7 +164,7 @@ func _load_withdrawals(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: _load_withdrawals(pages[WITHDRAW]), true))
+			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: await _load_withdrawals(pages[WITHDRAW]), true))
 		withdraw_rows.add_child(row)
 	_update_pager(WITHDRAW)
 
