@@ -92,6 +92,7 @@ func _init() -> void:
 
 	# retries_unavailable
 	check(api.retries_unavailable({"error": "TEMPORARILY_UNAVAILABLE"}) == true, "TEMPORARILY_UNAVAILABLE 은 재시도")
+	check(api.retries_unavailable({"error": "IDEMPOTENCY_KEY_CONFLICT"}) == true, "IDEMPOTENCY_KEY_CONFLICT 는 같은 키로 재시도")
 	check(api.retries_unavailable({"error": "HTTP_503"}) == false, "게이트웨이 503 은 재시도 안 함")
 	check(api.retries_unavailable({"error": "INTERNAL_ERROR"}) == false, "INTERNAL_ERROR 는 재시도 안 함")
 
@@ -106,7 +107,27 @@ func _init() -> void:
 	check(et.of("LOGIN_FAILED") == "아이디 또는 비밀번호가 올바르지 않습니다", "ErrorText known code")
 	check(et.of("NOPE") == "오류가 발생했습니다 (NOPE)", "ErrorText fallback")
 
+	# is_admin_token
+	check(api.is_admin_token(role_token(api, '{"sub":"1","role":"ADMIN"}')), "role ADMIN 은 관리자")
+	check(not api.is_admin_token(role_token(api, '{"sub":"1","role":"USER"}')), "role USER 는 관리자 아님")
+	check(not api.is_admin_token(role_token(api, '{"sub":"1"}')), "role 없으면 관리자 아님")
+
+	# Format
+	var fmt := preload("res://core/format.gd")
+	check(fmt.comma(0) == "0", "comma 0")
+	check(fmt.comma(999) == "999", "comma 999")
+	check(fmt.comma(1000) == "1,000", "comma 1000")
+	check(fmt.comma(1234567) == "1,234,567", "comma 1234567")
+	check(fmt.comma(-12300) == "-12,300", "comma 음수")
+	check(fmt.time("2026-10-10T01:02:03.456Z") == fmt.time("2026-10-10T01:02:03"), "time 소수 초·Z 무시")
+	check(fmt.time("2026-10-10T01:02:03Z").length() == 11, "time 은 MM-DD HH:MM")
+
 	quit(1 if failures else 0)
+
+
+func role_token(_api, json: String) -> String:
+	var b64 := Marshalls.raw_to_base64(json.to_utf8_buffer()).replace("+", "-").replace("/", "_").rstrip("=")
+	return "x." + b64 + ".y"
 
 
 func check(cond: bool, name: String) -> void:

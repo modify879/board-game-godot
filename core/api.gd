@@ -25,31 +25,32 @@ func origin() -> String:
 	return DEV_ORIGIN
 
 
-func request(method: int, path: String, body = null) -> Dictionary:
-	var r := await _request_once(method, path, body)
+func request(method: int, path: String, body = null, extra_headers: Array = []) -> Dictionary:
+	var r := await _request_once(method, path, body, extra_headers)
 	for delay in UNAVAILABLE_RETRY_SEC:
 		if not retries_unavailable(r):
 			break
 		await get_tree().create_timer(delay).timeout
-		r = await _request_once(method, path, body)
+		r = await _request_once(method, path, body, extra_headers)
 	return r
 
 
-func _request_once(method: int, path: String, body) -> Dictionary:
+func _request_once(method: int, path: String, body, extra_headers: Array) -> Dictionary:
 	var sent_token := access_token
-	var r := await _do_request(method, path, body)
+	var r := await _do_request(method, path, body, extra_headers)
 	if r.status == 401 and sends_bearer(path):
 		if access_token != sent_token or await _refresh():
-			r = await _do_request(method, path, body)
+			r = await _do_request(method, path, body, extra_headers)
 	return r
 
 
-func _do_request(method: int, path: String, body) -> Dictionary:
+func _do_request(method: int, path: String, body, extra_headers: Array = []) -> Dictionary:
 	var req := HTTPRequest.new()
 	req.accept_gzip = not OS.has_feature("web") # 브라우저가 이미 압축을 풀어 주는데 Content-Encoding 헤더가 남아 있어, 켜 두면 이중 해제로 실패한다
 	req.timeout = REQUEST_TIMEOUT_SEC
 	add_child(req)
 	var headers := ["Content-Type: application/json"]
+	headers.append_array(extra_headers)
 	if access_token != "" and sends_bearer(path):
 		headers.append("Authorization: Bearer " + access_token)
 	var is_auth_path := path.begins_with("/api/auth/")
@@ -102,7 +103,8 @@ static func refresh_failure_is_final(status: int) -> bool:
 
 static func retries_unavailable(r: Dictionary) -> bool:
 	# errorCode 가 없는 게이트웨이 503(HTTP_503)은 롤백 보장이 없어 다시 보내지 않는다
-	return r.error == "TEMPORARILY_UNAVAILABLE"
+	# IDEMPOTENCY_KEY_CONFLICT 는 같은 키로 다시 보내면 원래 결과를 받는다
+	return r.error == "TEMPORARILY_UNAVAILABLE" or r.error == "IDEMPOTENCY_KEY_CONFLICT"
 
 
 static func sends_bearer(path: String) -> bool:
@@ -228,6 +230,15 @@ static func jwt_claims(token: String) -> Dictionary:
 	var text := Marshalls.base64_to_raw(b64).get_string_from_utf8()
 	var data = JSON.parse_string(text)
 	return data if data is Dictionary else {}
+
+
+## 로그인 응답에는 role 이 없다 — access 토큰 클레임으로 판단한다(화면 표시용일 뿐, 인가는 서버가 한다)
+func is_admin() -> bool:
+	return is_admin_token(access_token)
+
+
+static func is_admin_token(token: String) -> bool:
+	return jwt_claims(token).get("role") == "ADMIN"
 
 
 static func jwt_sub(token: String) -> int:
