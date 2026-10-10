@@ -11,7 +11,7 @@ const PAGE_SIZE := 20
 @onready var error_label: Label = %ErrorLabel
 @onready var rows: VBoxContainer = %Rows
 @onready var empty_label: Label = %EmptyLabel
-@onready var pager: HBoxContainer = %Pager
+@onready var pager_box: HBoxContainer = %Pager
 @onready var prev_button: Button = %PrevButton
 @onready var page_label: Label = %PageLabel
 @onready var next_button: Button = %NextButton
@@ -19,20 +19,20 @@ const PAGE_SIZE := 20
 static var pending_error := "" # 테이블 화면이 방 만들기에 실패하면 errorCode 를 넘긴다
 static var pending_name := "" # 실패해 돌아왔을 때 입력했던 방 이름을 되살린다
 
-var current_page := 0
-var total_pages := 0
+var pager: Pager
 var seat_error := "" # /me/seat 실패 errorCode. 204·200 이면 빈 문자열
 
 
 func _ready() -> void:
+	pager = Pager.new(pager_box, prev_button, page_label, next_button)
 	create_button.disabled = true # /me/seat 확인이 끝나기 전에는 만들 수 없다
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
 	refresh_button.pressed.connect(func() -> void:
-		await _load(current_page)
+		await _load(pager.page)
 		await _check_seat()
 		_show_seat_error())
-	prev_button.pressed.connect(func() -> void: _load(current_page - 1))
-	next_button.pressed.connect(func() -> void: _load(current_page + 1))
+	prev_button.pressed.connect(func() -> void: _load(pager.page - 1))
+	next_button.pressed.connect(func() -> void: _load(pager.page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
 	if await _check_seat():
@@ -77,25 +77,17 @@ func enter(id: int, join := false) -> void:
 
 func _load(page: int) -> void:
 	refresh_button.disabled = true
-	prev_button.disabled = true
-	next_button.disabled = true
+	var gen := pager.begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables?page=%d&size=%d" % [page, PAGE_SIZE])
 	refresh_button.disabled = false
-	if not r.ok:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
-		_update_pager()
-		return
-	var page_info: Dictionary = r.data.page
-	var new_total_pages: int = page_info.totalPages
-	if page >= new_total_pages and new_total_pages > 0:
-		_load(new_total_pages - 1)
+	if not await pager.accept(gen, page, r, _load):
+		if not r.ok and not pager.is_stale(gen):
+			error_label.text = ErrorText.of(r.error)
+			error_label.show()
 		return
 	error_label.hide()
-	current_page = page_info.number
-	total_pages = new_total_pages
 	_build_rows(Api.page_items(r.data))
-	_update_pager()
+	pager.update()
 
 
 func _build_rows(items: Array) -> void:
@@ -116,13 +108,6 @@ func _build_rows(items: Array) -> void:
 		join_button.pressed.connect(enter.bind(item.tableId, true))
 		row.add_child(join_button)
 		rows.add_child(row)
-
-
-func _update_pager() -> void:
-	pager.visible = total_pages > 1
-	page_label.text = "%d / %d" % [current_page + 1, total_pages]
-	prev_button.disabled = current_page <= 0
-	next_button.disabled = current_page >= total_pages - 1
 
 
 func _on_create() -> void:
