@@ -132,6 +132,8 @@ func _init() -> void:
 	check(fmt.parse_amount("5000.5") == null, "parse_amount 소수")
 	check(fmt.parse_amount("") == null, "parse_amount 빈 값")
 	check(fmt.parse_amount("-500") == -500, "parse_amount 음수")
+	check(fmt.request_status("PENDING") == "대기", "request_status 알려진 값")
+	check(fmt.request_status("NEW") == "NEW", "request_status 모르는 값은 그대로")
 
 	# InputRules
 	var ir := preload("res://core/input_rules.gd")
