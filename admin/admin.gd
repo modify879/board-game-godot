@@ -101,21 +101,6 @@ func _show_result(text: String) -> void:
 	error_label.hide()
 
 
-func _label(text: String, expand := false) -> Label:
-	var l := Label.new()
-	l.text = text
-	if expand:
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.clip_text = true
-		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	return l
-
-
-func _clear(box: VBoxContainer) -> void:
-	for child in box.get_children():
-		child.queue_free()
-
-
 func _edit(placeholder: String) -> LineEdit:
 	var e := LineEdit.new()
 	e.placeholder_text = placeholder
@@ -153,7 +138,7 @@ func _load(kind: int, page: int) -> void:
 	pages[kind] = r.data.page.number
 	total_pages[kind] = new_total
 	var items := Api.page_items(r.data)
-	_clear(rows[kind])
+	Rows.clear(rows[kind])
 	empties[kind].visible = items.is_empty()
 	for item in items:
 		rows[kind].add_child(_request_row(kind, item))
@@ -172,19 +157,19 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	var amount := int(item.requestedAmount) if kind == DEPOSIT else int(item.amount)
 	var box := VBoxContainer.new()
 	var info := HBoxContainer.new()
-	info.add_child(_label("#%d" % id))
-	info.add_child(_label("회원 %d" % int(item.userId)))
-	info.add_child(_label(Format.time(item.requestedAt)))
-	info.add_child(_label("%s원" % Format.comma(amount), true))
+	info.add_child(Rows.label("#%d" % id))
+	info.add_child(Rows.label("회원 %d" % int(item.userId)))
+	info.add_child(Rows.label(Format.time(item.requestedAt)))
+	info.add_child(Rows.label("%s원" % Format.comma(amount), true))
 	var status: String = Wallet.STATUS_TEXT.get(item.status, item.status)
 	if kind == DEPOSIT and item.status == "APPROVED" and item.creditedAmount != null:
 		status += " (%s)" % Format.comma(int(item.creditedAmount))
 	elif item.status == "REJECTED" and item.rejectionReason != null:
 		status += " (%s)" % item.rejectionReason
-	info.add_child(_label(status))
+	info.add_child(Rows.label(status))
 	box.add_child(info)
 	if kind == WITHDRAW:
-		box.add_child(_label("%s %s (예금주 %s)" % [item.bankName, item.accountNumber, item.accountHolder]))
+		box.add_child(Rows.label("%s %s (예금주 %s)" % [item.bankName, item.accountNumber, item.accountHolder]))
 	if item.status != "PENDING":
 		return box
 	var approve := HBoxContainer.new()
@@ -202,13 +187,19 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	return box
 
 
+## 요청 중에는 뒤로 가지 못하게 한다 — 화면이 해제된 노드에서 응답이 재개되지 않게
+func _set_busy(on: bool) -> void:
+	_busy = on
+	back_button.disabled = on
+
+
 ## 요청 보내기. 이미 요청 중이면 빈 Dictionary
 func _post(path: String, body = null, headers: Array = []) -> Dictionary:
 	if _busy:
 		return {}
-	_busy = true
+	_set_busy(true)
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, path, body, headers)
-	_busy = false
+	_set_busy(false)
 	return r
 
 
@@ -222,12 +213,12 @@ func _finish(r: Dictionary, done: String) -> void:
 		_load(tabs.current_tab, pages[tabs.current_tab])
 	elif tabs.current_tab == 2:
 		await _load_users(user_page)
-		if user_id_edit.text != "":
-			var item = user_items.get(int(user_id_edit.text))
+		if selected_id > 0:
+			var item = user_items.get(selected_id)
 			if item != null:
 				_select_user(item)
 			else:
-				_on_lookup()
+				_lookup(selected_id, true)
 
 
 func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
@@ -275,7 +266,7 @@ func _load_users(page: int) -> void:
 	user_page = r.data.page.number
 	user_total_pages = new_total
 	var items := Api.page_items(r.data)
-	_clear(user_rows)
+	Rows.clear(user_rows)
 	user_items.clear()
 	user_empty.visible = items.is_empty()
 	for item in items:
@@ -293,12 +284,12 @@ func _update_user_pager() -> void:
 
 func _user_row(item: Dictionary) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.add_child(_label("#%d" % int(item.id)))
-	row.add_child(_label(item.username))
-	row.add_child(_label(item.nickname, true))
-	row.add_child(_label("관리자" if item.role == "ADMIN" else "일반"))
+	row.add_child(Rows.label("#%d" % int(item.id)))
+	row.add_child(Rows.label(item.username))
+	row.add_child(Rows.label(item.nickname, true))
+	row.add_child(Rows.label("관리자" if item.role == "ADMIN" else "일반"))
 	if item.locked:
-		row.add_child(_label("잠김"))
+		row.add_child(Rows.label("잠김"))
 	row.add_child(_button("선택", _select_user.bind(item)))
 	return row
 
@@ -344,19 +335,24 @@ func _target_id() -> int:
 
 
 func _on_lookup() -> void:
+	var id := _target_id()
+	if id > 0:
+		_lookup(id)
+
+
+func _lookup(id: int, quiet := false) -> void:
 	if _busy:
 		return
-	var id := _target_id()
-	if id < 0:
-		return
-	_busy = true
+	_set_busy(true)
 	selected_id = id
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
-	_busy = false
+	_set_busy(false)
 	if r.ok:
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
 		_append_balance(id, info)
+	elif quiet: # 작업 뒤 재조회 실패가 방금 띄운 결과를 덮지 않게
+		user_info_label.text = "회원 정보 확인 실패"
 	else:
 		user_info_label.text = ""
 		_show_error(r.error)
@@ -394,14 +390,9 @@ func _on_adjust() -> void:
 	}, ["Idempotency-Key: " + adjust_key])
 	if r.is_empty():
 		return
-	if not r.ok and r.error == "ADJUSTMENT_ALREADY_APPLIED":
-		_show_result("이미 반영된 조정입니다")
+	var applied: bool = r.ok or r.error == "ADJUSTMENT_ALREADY_APPLIED"
+	if applied:
 		adjust_amount_edit.text = ""
 		adjust_reason_edit.text = ""
 		_new_key()
-	else:
-		_finish(r, "조정했습니다")
-		if r.ok:
-			adjust_amount_edit.text = ""
-			adjust_reason_edit.text = ""
-			_new_key()
+	_finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다")
