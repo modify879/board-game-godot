@@ -15,6 +15,8 @@ const PAGE_SIZE := 20
 @onready var page_label: Label = %PageLabel
 @onready var next_button: Button = %NextButton
 
+static var pending_error := "" # 테이블 화면이 방 만들기에 실패하면 errorCode 를 넘긴다
+
 var current_page := 0
 var total_pages := 0
 
@@ -29,8 +31,14 @@ func _ready() -> void:
 	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
 	if seat_r.status == 200:
 		enter(seat_r.data.tableId)
+		pending_error = ""
 		return
-	_load(0)
+	await _load(0)
+	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
+	if pending_error != "":
+		error_label.text = ErrorText.of(pending_error)
+		error_label.show()
+		pending_error = ""
 
 
 func enter(id: int, join := false) -> void:
@@ -101,4 +109,5 @@ func _on_create() -> void:
 	table_script.table_id = 0
 	table_script.auto_join = false
 	table_script.create_name = name_edit.text
+	table_script.creating = true
 	get_tree().change_scene_to_file("res://games/holdem/table.tscn")

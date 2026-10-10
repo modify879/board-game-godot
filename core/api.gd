@@ -96,6 +96,10 @@ func _save_dev_cookie(value: String) -> void:
 	cfg.save("user://session.cfg")
 
 
+static func new_idempotency_key() -> String:
+	return Crypto.new().generate_random_bytes(16).hex_encode()
+
+
 static func refresh_failure_is_final(status: int) -> bool:
 	# 4xx 만 세션 종료다(408·429 제외). 네트워크 오류(0)·5xx·408·429 는 일시 장애라 로그아웃시키지 않는다
 	return status >= 400 and status < 500 and status != 408 and status != 429

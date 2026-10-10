@@ -3,7 +3,8 @@ extends Control
 
 static var table_id := 0
 static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
-static var create_name := "" # table_list 의 "만들기" 가 넘긴다. 비어 있지 않으면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
+static var create_name := "" # table_list 의 "만들기" 가 넘긴다. creating 이 true 면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
+static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름이 비어도 생성 모드다(이름 검증은 서버 몫)
 
 const Cards := preload("res://games/holdem/cards.gd")
 
@@ -74,7 +75,7 @@ var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시�
 
 
 func _ready() -> void:
-	title_label.text = "새 방" if create_name != "" else "#%d" % table_id
+	title_label.text = "새 방" if creating else "#%d" % table_id
 	back_button.pressed.connect(_on_back_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
@@ -101,6 +102,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	create_name = "" # 연결 전에 나가면 다음 입장 때 방이 만들어지지 않게
+	creating = false
 	Stomp.message.disconnect(_on_stomp_message)
 	Stomp.error.disconnect(_on_stomp_error)
 	Stomp.connected.disconnect(_on_stomp_connected)
@@ -197,17 +199,20 @@ func _handle_join_queue(body: Dictionary) -> void:
 			_update_status_label()
 		"SEATED":
 			got_seated = true
+			dropped_retried = false # 다음 착석 시도마다 1회 기회
 			waiting = false
 			_update_status_label()
 			_update_buttons()
 		"DROPPED":
 			if body.errorCode == "TEMPORARILY_UNAVAILABLE" and not dropped_retried:
 				dropped_retried = true
+				waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
 				error_label.text = "서버가 잠시 바빠 다시 대기열에 등록합니다"
 				error_label.show()
+				_update_status_label()
+				_update_buttons()
 				await get_tree().create_timer(1.0).timeout
-				if not _is_seated():
-					waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
+				if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
 					_send_join(last_post_blind)
 				return
 			waiting = false
@@ -261,9 +266,10 @@ func _on_stomp_connected() -> void:
 	if auto_join and not waiting and not _is_seated():
 		auto_join = false
 		_open_sit_popup()
-	if create_name != "":
+	if creating:
 		var new_name := create_name
 		create_name = "" # 재연결 때 두 번 만들지 않게
+		creating = false
 		_create_table(new_name)
 
 
@@ -272,14 +278,20 @@ func _create_table(new_name: String) -> void:
 	_update_status_label()
 	_update_buttons()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name})
+	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다 — 내 좌석으로 확인한다
+		var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+		if seat_r.status == 200:
+			_enter_created_table(int(seat_r.data.tableId))
+			return
 	if not r.ok:
-		waiting = false
-		_show_error(r.error)
-		title_label.text = "방 만들기 실패"
-		_update_status_label()
-		_update_buttons()
+		preload("res://games/holdem/table_list.gd").pending_error = r.error
+		get_tree().change_scene_to_file("res://games/holdem/table_list.tscn")
 		return
-	table_id = int(r.data.tableId)
+	_enter_created_table(int(r.data.tableId))
+
+
+func _enter_created_table(id: int) -> void:
+	table_id = id
 	title_label.text = "#%d" % table_id
 	Stomp.subscribe("/topic/tables/%d" % table_id)
 	last_post_blind = false
@@ -298,15 +310,15 @@ func _check_create_seat(id: int) -> void:
 	if table_id != id or join_event_seen or _is_seated() or not waiting:
 		return
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
-	if r.status == 204:
+	if not r.ok:
+		_show_error(r.error)
+	elif r.status == 200 and r.data is Dictionary and int(r.data.tableId) == id:
+		return # 공개 뷰가 곧 착석을 그린다
+	else: # 204 거나 다른 테이블에 앉아 있다 — 이 방에는 착석하지 못했다
 		waiting = false
 		_show_error("CREATE_SEAT_FAILED")
 		_update_status_label()
 		_update_buttons()
-	elif r.ok and r.data is Dictionary and int(r.data.tableId) == id:
-		return # 공개 뷰가 곧 착석을 그린다
-	elif not r.ok:
-		_show_error(r.error)
 
 
 func _on_stomp_closed() -> void:

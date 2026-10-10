@@ -77,7 +77,7 @@ func _ready() -> void:
 
 
 func _new_key() -> void:
-	adjust_key = Crypto.new().generate_random_bytes(16).hex_encode()
+	adjust_key = Api.new_idempotency_key()
 
 
 func _on_tab_changed(index: int) -> void:
@@ -232,8 +232,12 @@ func _finish(r: Dictionary, done: String) -> void:
 
 func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
 	var body = null # 비우면 본문 없이 요청 금액 그대로 승인
-	if credited != null and credited.text != "":
-		body = {"creditedAmount": int(credited.text)}
+	if credited != null and credited.text.strip_edges() != "":
+		var amount = Format.parse_amount(credited.text)
+		if amount == null:
+			_show_error("DEPOSIT_AMOUNT_INVALID")
+			return
+		body = {"creditedAmount": amount}
 	var r := await _post("%s/%d/approve" % [PATHS[kind], id], body)
 	if not r.is_empty():
 		_finish(r, "승인했습니다")
@@ -332,7 +336,11 @@ func _target_id() -> int:
 	if not t.is_valid_int():
 		_show_error("USER_ID_INVALID")
 		return -1
-	return int(t)
+	var id := int(t)
+	if id <= 0:
+		_show_error("USER_ID_INVALID")
+		return -1
+	return id
 
 
 func _on_lookup() -> void:
@@ -376,12 +384,12 @@ func _on_adjust() -> void:
 	var id := _target_id()
 	if id < 0:
 		return
-	var amount := adjust_amount_edit.text.strip_edges()
-	if not amount.is_valid_int(): # 형식 검증이 아니라, 문자열→숫자 변환이 조용히 다른 값을 만드는 것을 막는다
+	var amount = Format.parse_amount(adjust_amount_edit.text) # 형식 검증이 아니라, 문자열→숫자 변환이 조용히 다른 값을 만드는 것을 막는다
+	if amount == null:
 		_show_error("ADJUSTMENT_AMOUNT_INVALID")
 		return
 	var r := await _post("/api/admin/wallets/%d/adjustments" % id, {
-		"amount": int(amount),
+		"amount": amount,
 		"reason": adjust_reason_edit.text,
 	}, ["Idempotency-Key: " + adjust_key])
 	if r.is_empty():

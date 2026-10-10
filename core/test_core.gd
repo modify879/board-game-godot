@@ -108,9 +108,9 @@ func _init() -> void:
 	check(et.of("NOPE") == "오류가 발생했습니다 (NOPE)", "ErrorText fallback")
 
 	# is_admin_token
-	check(api.is_admin_token(role_token(api, '{"sub":"1","role":"ADMIN"}')), "role ADMIN 은 관리자")
-	check(not api.is_admin_token(role_token(api, '{"sub":"1","role":"USER"}')), "role USER 는 관리자 아님")
-	check(not api.is_admin_token(role_token(api, '{"sub":"1"}')), "role 없으면 관리자 아님")
+	check(api.is_admin_token(role_token('{"sub":"1","role":"ADMIN"}')), "role ADMIN 은 관리자")
+	check(not api.is_admin_token(role_token('{"sub":"1","role":"USER"}')), "role USER 는 관리자 아님")
+	check(not api.is_admin_token(role_token('{"sub":"1"}')), "role 없으면 관리자 아님")
 
 	# Format
 	var fmt := preload("res://core/format.gd")
@@ -119,13 +119,20 @@ func _init() -> void:
 	check(fmt.comma(1000) == "1,000", "comma 1000")
 	check(fmt.comma(1234567) == "1,234,567", "comma 1234567")
 	check(fmt.comma(-12300) == "-12,300", "comma 음수")
-	check(fmt.time("2026-10-10T01:02:03.456Z") == fmt.time("2026-10-10T01:02:03"), "time 소수 초·Z 무시")
-	check(fmt.time("2026-10-10T01:02:03Z").length() == 11, "time 은 MM-DD HH:MM")
+	check(fmt.time("2026-10-10T01:02:03.456Z", 540) == "10-10 10:02", "time 소수 초·Z 무시, +9h")
+	check(fmt.time("2026-10-10T01:02:03Z", 0) == "10-10 01:02", "time bias 0")
+	check(fmt.time("2026-12-31T20:00:00Z", 540) == "01-01 05:00", "time 해 넘김")
+	check(fmt.parse_amount("1,000") == 1000, "parse_amount 쉼표")
+	check(fmt.parse_amount(" 5000 ") == 5000, "parse_amount 공백")
+	check(fmt.parse_amount("1a000") == null, "parse_amount 문자 섞임")
+	check(fmt.parse_amount("5000.5") == null, "parse_amount 소수")
+	check(fmt.parse_amount("") == null, "parse_amount 빈 값")
+	check(fmt.parse_amount("-500") == -500, "parse_amount 음수")
 
 	quit(1 if failures else 0)
 
 
-func role_token(_api, json: String) -> String:
+func role_token(json: String) -> String:
 	var b64 := Marshalls.raw_to_base64(json.to_utf8_buffer()).replace("+", "-").replace("/", "_").rstrip("=")
 	return "x." + b64 + ".y"
 

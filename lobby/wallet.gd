@@ -68,11 +68,11 @@ func _ready() -> void:
 
 
 func _new_deposit_key() -> void:
-	deposit_key = Crypto.new().generate_random_bytes(16).hex_encode()
+	deposit_key = Api.new_idempotency_key()
 
 
 func _new_withdraw_key() -> void:
-	withdraw_key = Crypto.new().generate_random_bytes(16).hex_encode()
+	withdraw_key = Api.new_idempotency_key()
 
 
 func _load_tab(index: int) -> void:
@@ -230,9 +230,12 @@ func _update_pager(kind: int) -> void:
 func _on_deposit() -> void:
 	if _busy:
 		return
+	var amount = Format.parse_amount(deposit_edit.text)
+	if amount == null:
+		_show_error("DEPOSIT_AMOUNT_INVALID")
+		return
 	_busy = true
 	deposit_button.disabled = true
-	var amount := int(deposit_edit.text)
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount}, ["Idempotency-Key: " + deposit_key])
 	_busy = false
 	deposit_button.disabled = false
@@ -253,10 +256,14 @@ func _on_deposit() -> void:
 func _on_withdraw() -> void:
 	if _busy:
 		return
+	var amount = Format.parse_amount(withdraw_amount_edit.text)
+	if amount == null:
+		_show_error("WITHDRAWAL_AMOUNT_INVALID")
+		return
 	_busy = true
 	withdraw_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/withdrawal-requests", {
-		"amount": int(withdraw_amount_edit.text),
+		"amount": amount,
 		"bankName": bank_name_edit.text,
 		"accountNumber": account_number_edit.text,
 		"accountHolder": account_holder_edit.text,
