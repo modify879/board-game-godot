@@ -192,18 +192,14 @@ func _set_busy(on: bool) -> void:
 	back_button.disabled = on
 
 
-## 요청 보내기. 이미 요청 중이면 빈 Dictionary
+## 요청 보내기. 호출부가 _set_busy(true) 로 잡고 _finish 뒤에 푼다 — 재조회까지 끝나야 뒤로 갈 수 있다
 func _post(path: String, body = null, headers: Array = []) -> Dictionary:
-	if _busy:
-		return {}
-	_set_busy(true)
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, path, body, headers)
-	_set_busy(false)
-	return r
+	return await Api.request(HTTPClient.METHOD_POST, path, body, headers)
 
 
 ## 현재 탭 목록을 다시 읽은 뒤(이미 처리됨 등 반영) 결과를 띄운다 — 재조회 실패가 결과 문구를 숨기지 않게 맨 끝에 둔다
 func _finish(r: Dictionary, done: String) -> void:
+	# 호출부가 busy 를 쥐고 있다 — 재조회는 _lookup 의 busy 가드를 건너뛴다(force)
 	if tabs.current_tab < 2:
 		await _load(tabs.current_tab, pages[tabs.current_tab])
 	elif tabs.current_tab == 2:
@@ -213,7 +209,7 @@ func _finish(r: Dictionary, done: String) -> void:
 			if item != null:
 				_select_user(item)
 			else:
-				await _lookup(selected_id, true)
+				await _lookup(selected_id, true, true)
 	if r.ok:
 		_show_result(done)
 	else:
@@ -229,9 +225,12 @@ func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
 			_show_error(invalid)
 			return
 		body = {"creditedAmount": amount}
+	if _busy:
+		return
+	_set_busy(true)
 	var r := await _post("%s/%d/approve" % [PATHS[kind], id], body)
-	if not r.is_empty():
-		_finish(r, "승인했습니다")
+	await _finish(r, "승인했습니다")
+	_set_busy(false)
 
 
 func _on_reject(kind: int, id: int, reason: LineEdit) -> void:
@@ -239,9 +238,12 @@ func _on_reject(kind: int, id: int, reason: LineEdit) -> void:
 	if invalid != "":
 		_show_error(invalid)
 		return
+	if _busy:
+		return
+	_set_busy(true)
 	var r := await _post("%s/%d/reject" % [PATHS[kind], id], {"reason": reason.text})
-	if not r.is_empty():
-		_finish(r, "거절했습니다")
+	await _finish(r, "거절했습니다")
+	_set_busy(false)
 
 
 func _on_search() -> void:
@@ -344,13 +346,15 @@ func _on_lookup() -> void:
 		_lookup(id)
 
 
-func _lookup(id: int, quiet := false) -> void:
-	if _busy:
+func _lookup(id: int, quiet := false, held := false) -> void:
+	if _busy and not held:
 		return
-	_set_busy(true)
+	if not held:
+		_set_busy(true)
 	selected_id = id
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
-	_set_busy(false)
+	if not held:
+		_set_busy(false)
 	if selected_id != id:
 		return
 	if r.ok:
@@ -368,18 +372,24 @@ func _on_unlock() -> void:
 	var id := _target_id()
 	if id < 0:
 		return
+	if _busy:
+		return
+	_set_busy(true)
 	var r := await _post("/api/admin/users/%d/unlock" % id)
-	if not r.is_empty():
-		_finish(r, "잠금을 해제했습니다")
+	await _finish(r, "잠금을 해제했습니다")
+	_set_busy(false)
 
 
 func _on_role() -> void:
 	var id := _target_id()
 	if id < 0:
 		return
+	if _busy:
+		return
+	_set_busy(true)
 	var r := await _post("/api/admin/users/%d/role" % id, {"role": role_option.get_item_text(role_option.selected)})
-	if not r.is_empty():
-		_finish(r, "역할을 변경했습니다")
+	await _finish(r, "역할을 변경했습니다")
+	_set_busy(false)
 
 
 func _on_adjust() -> void:
@@ -391,17 +401,19 @@ func _on_adjust() -> void:
 	if invalid != "":
 		_show_error(invalid)
 		return
+	if _busy:
+		return
+	_set_busy(true)
 	var r := await _post("/api/admin/wallets/%d/adjustments" % id, {
 		"amount": amount,
 		"reason": adjust_reason_edit.text,
 	}, ["Idempotency-Key: " + adjust_key])
-	if r.is_empty():
-		return
 	var applied: bool = r.ok or r.error == "ADJUSTMENT_ALREADY_APPLIED"
 	if applied:
 		adjust_amount_edit.text = ""
 		adjust_reason_edit.text = ""
 		_new_key()
-	elif r.status >= 400 and r.status < 500:
-		_new_key() # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지
-	_finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다")
+	elif not Api.keeps_idempotency_key(r):
+		_new_key()
+	await _finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다")
+	_set_busy(false)
