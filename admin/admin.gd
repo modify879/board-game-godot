@@ -14,9 +14,7 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var search_button: Button = %SearchButton
 @onready var user_rows: VBoxContainer = %UserRows
 @onready var user_empty: Label = %UserEmpty
-@onready var user_prev: Button = %UserPrev
-@onready var user_next: Button = %UserNext
-@onready var users := Pager.new(%UserPager, %UserPrev, %UserPage, %UserNext)
+@onready var users := Pager.new(%UserPager, %UserPrev, %UserPage, %UserNext, _load_users)
 @onready var user_id_edit: LineEdit = %UserIdEdit
 @onready var lookup_button: Button = %LookupButton
 @onready var user_info_label: Label = %UserInfoLabel
@@ -32,11 +30,9 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var rows: Array[VBoxContainer] = [%DepositRows, %WithdrawRows]
 @onready var empties: Array[Label] = [%DepositEmpty, %WithdrawEmpty]
 @onready var pagers: Array[Pager] = [
-	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext),
-	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext),
+	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext, func(p: int) -> void: _load(DEPOSIT, p)),
+	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext, func(p: int) -> void: _load(WITHDRAW, p)),
 ]
-@onready var prevs: Array[Button] = [%DepositPrev, %WithdrawPrev]
-@onready var nexts: Array[Button] = [%DepositNext, %WithdrawNext]
 
 var adjust_key := ""
 var selected_id := -1 # 잔액 응답이 낡았는지 가리는 기준
@@ -51,12 +47,8 @@ func _ready() -> void:
 	tabs.tab_changed.connect(_on_tab_changed)
 	for k in 2:
 		statuses[k].item_selected.connect(func(_i: int) -> void: _load(k, 0))
-		prevs[k].pressed.connect(func() -> void: _load(k, pagers[k].page - 1))
-		nexts[k].pressed.connect(func() -> void: _load(k, pagers[k].page + 1))
 	search_button.pressed.connect(_on_search)
 	search_edit.text_submitted.connect(func(_t: String) -> void: _on_search())
-	user_prev.pressed.connect(func() -> void: _load_users(users.page - 1))
-	user_next.pressed.connect(func() -> void: _load_users(users.page + 1))
 	lookup_button.pressed.connect(func() -> void:
 		error_label.hide() # 직접 조회할 때만 이전 오류를 지운다 — _finish 가 부를 때는 방금 띄운 오류를 남긴다
 		_on_lookup())
@@ -109,15 +101,6 @@ func _button(text: String, handler: Callable) -> Button:
 	return b
 
 
-## 목록 응답 공통 처리 뒤 false 면 호출부가 끝낸다. 실패 오류는 낡은 응답이 아닐 때만 띄운다
-func _accept(p: Pager, gen: int, page: int, r: Dictionary, reload: Callable) -> bool:
-	if await p.accept(gen, page, r, reload):
-		return true
-	if not r.ok and not p.is_stale(gen):
-		_show_error(r.error)
-	return false
-
-
 ## 목록 읽기. 대기=PENDING, 전체는 status 생략
 func _load(kind: int, page: int) -> void:
 	var gen := pagers[kind].begin()
@@ -125,7 +108,7 @@ func _load(kind: int, page: int) -> void:
 	if statuses[kind].selected == 0:
 		path += "&status=PENDING"
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if not await _accept(pagers[kind], gen, page, r, func(p: int) -> void: await _load(kind, p)):
+	if not await pagers[kind].accept(gen, page, r, func(p: int) -> void: await _load(kind, p), _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(rows[kind])
@@ -241,7 +224,7 @@ func _load_users(page: int) -> void:
 	var gen := users.begin()
 	var path := "/api/admin/users?query=%s&page=%d&size=%d" % [user_query.uri_encode(), page, PAGE_SIZE]
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if not await _accept(users, gen, page, r, _load_users):
+	if not await users.accept(gen, page, r, _load_users, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(user_rows)
@@ -297,9 +280,9 @@ func _append_balance(id: int, info: String) -> void:
 	if selected_id != id:
 		return
 	if r.ok:
-		user_info_label.text = "%s · 잔액 %s" % [info, Format.comma(int(r.data.balance))]
+		user_info_label.text = "%s · %s" % [info, Format.balance(int(r.data.balance))]
 	else:
-		user_info_label.text = info + " · 잔액 확인 실패" # 오류 표시는 방금 띄운 결과를 지운다
+		user_info_label.text = info + " · " + Format.BALANCE_FAILED # 오류 표시는 방금 띄운 결과를 지운다
 
 
 ## 회원 ID 입력을 숫자로. int() 는 빈 칸·"a1" 을 조용히 0·1 로 바꾸므로 막는다. 실패하면 -1
@@ -336,6 +319,16 @@ func _do_lookup(id: int, quiet: bool) -> void:
 	if selected_id != id:
 		return
 	if r.ok:
+		# /api/users/{id} 에는 role·locked 가 없다 — 관리자 목록에서 같은 회원을 찾아 맞춘다
+		var list: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/users?query=%s&size=20" % str(r.data.username).uri_encode())
+		if selected_id != id:
+			return
+		if list.ok:
+			for item in Api.page_items(list.data):
+				if int(item.id) == id:
+					await _show_user(item)
+					return
+		role_synced_id = -1 # 서버 값을 못 읽었다 — 다음 선택 때 맞춘다
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
 		await _append_balance(id, info)
@@ -366,6 +359,8 @@ func _on_role() -> void:
 		return
 	_set_busy(true)
 	var r := await _post("/api/admin/users/%d/role" % id, {"role": role_option.get_item_text(role_option.selected)})
+	if not r.ok:
+		role_synced_id = -1 # 실패하면 드롭다운이 서버 값으로 돌아오게 재그리기에서 강제 동기화
 	await _finish(r, "역할을 변경했습니다", id)
 	_set_busy(false)
 
