@@ -203,14 +203,10 @@ func _post(path: String, body = null, headers: Array = []) -> Dictionary:
 	return r
 
 
-## 성공·실패 표시 뒤 현재 탭 목록을 다시 읽는다(이미 처리됨 등 반영)
+## 현재 탭 목록을 다시 읽은 뒤(이미 처리됨 등 반영) 결과를 띄운다 — 재조회 실패가 결과 문구를 숨기지 않게 맨 끝에 둔다
 func _finish(r: Dictionary, done: String) -> void:
-	if r.ok:
-		_show_result(done)
-	else:
-		_show_error(r.error)
 	if tabs.current_tab < 2:
-		_load(tabs.current_tab, pages[tabs.current_tab])
+		await _load(tabs.current_tab, pages[tabs.current_tab])
 	elif tabs.current_tab == 2:
 		await _load_users(user_page)
 		if selected_id > 0:
@@ -218,7 +214,11 @@ func _finish(r: Dictionary, done: String) -> void:
 			if item != null:
 				_select_user(item)
 			else:
-				_lookup(selected_id, true)
+				await _lookup(selected_id, true)
+	if r.ok:
+		_show_result(done)
+	else:
+		_show_error(r.error)
 
 
 func _on_approve(kind: int, id: int, credited: LineEdit) -> void:
@@ -347,6 +347,8 @@ func _lookup(id: int, quiet := false) -> void:
 	selected_id = id
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
 	_set_busy(false)
+	if selected_id != id:
+		return
 	if r.ok:
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
