@@ -322,6 +322,8 @@ func _check_create_seat(id: int) -> void:
 	if table_id != id or join_event_seen or _is_seated() or not waiting:
 		return
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if table_id != id or join_event_seen or _is_seated() or not waiting:
+		return # 요청 중에 앉았으면 실패 문구를 띄우지 않는다
 	if r.ok and r.status == 200 and r.data is Dictionary and int(r.data.tableId) == id:
 		return # 공개 뷰가 곧 착석을 그린다
 	# 요청 실패거나 204 거나 다른 테이블에 앉아 있다 — 대기를 풀어 둔다. 실제로 앉아 있었다면 공개 뷰가 곧 좌석을 그린다

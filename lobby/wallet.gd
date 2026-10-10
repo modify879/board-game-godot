@@ -35,14 +35,14 @@ const LEDGER := 2
 @onready var empty_label: Label = %EmptyLabel
 
 # 목록 탭별 페이저 (DEPOSIT, WITHDRAW, LEDGER 순)
-@onready var pagers: Array[HBoxContainer] = [%DepositPager, %WithdrawPager, %Pager]
+@onready var pagers: Array[Pager] = [
+	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext),
+	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext),
+	Pager.new(%Pager, %PrevButton, %PageLabel, %NextButton),
+]
 @onready var prevs: Array[Button] = [%DepositPrev, %WithdrawPrev, %PrevButton]
-@onready var page_labels: Array[Label] = [%DepositPage, %WithdrawPage, %PageLabel]
 @onready var nexts: Array[Button] = [%DepositNext, %WithdrawNext, %NextButton]
 
-var pages := [0, 0, 0]
-var total_pages := [0, 0, 0]
-var gens := [0, 0, 0] # 목록 응답이 낡았는지 가리는 세대
 var _busy := false
 # 입력이 바뀌거나 성공했을 때만 새 키 — 실패 뒤 그대로 다시 누르면 같은 키가 나가 요청이 두 번 생기지 않는다
 var deposit_key := ""
@@ -61,8 +61,8 @@ func _ready() -> void:
 		e.text_changed.connect(func(_t: String) -> void: _new_withdraw_key())
 	var loaders := [_load_deposits, _load_withdrawals, _load_ledger]
 	for k in 3:
-		prevs[k].pressed.connect(func() -> void: loaders[k].call(pages[k] - 1))
-		nexts[k].pressed.connect(func() -> void: loaders[k].call(pages[k] + 1))
+		prevs[k].pressed.connect(func() -> void: loaders[k].call(pagers[k].page - 1))
+		nexts[k].pressed.connect(func() -> void: loaders[k].call(pagers[k].page + 1))
 	_load_balance()
 	_load_tab(tabs.current_tab)
 
@@ -78,9 +78,9 @@ func _new_withdraw_key() -> void:
 func _load_tab(index: int) -> void:
 	error_label.hide()
 	match index:
-		0: _load_deposits(pages[DEPOSIT])
-		1: _load_withdrawals(pages[WITHDRAW])
-		2: _load_ledger(pages[LEDGER])
+		0: _load_deposits(pagers[DEPOSIT].page)
+		1: _load_withdrawals(pagers[WITHDRAW].page)
+		2: _load_ledger(pagers[LEDGER].page)
 
 
 ## 요청 중에는 뒤로 가지 못하게 한다 — 화면이 해제된 노드에서 응답이 재개되지 않게
@@ -102,34 +102,19 @@ func _load_balance() -> void:
 		_show_error(r.error)
 
 
-## 목록 응답을 받은 뒤 공통 처리. 낡았거나 실패·마지막 페이지 초과면 false (초과는 마지막 페이지로 다시 읽는다)
+## 목록 응답 공통 처리 뒤 false 면 호출부가 끝낸다. 실패 오류는 낡은 응답이 아닐 때만 띄운다
 func _accept(kind: int, gen: int, page: int, r: Dictionary, reload: Callable) -> bool:
-	if gen != gens[kind]:
-		return false
-	if not r.ok:
+	if await pagers[kind].accept(gen, page, r, reload):
+		return true
+	if not r.ok and not pagers[kind].is_stale(gen):
 		_show_error(r.error)
-		_update_pager(kind)
-		return false
-	var new_total: int = r.data.page.totalPages
-	if page >= new_total and new_total > 0:
-		reload.call(new_total - 1)
-		return false
-	pages[kind] = r.data.page.number
-	total_pages[kind] = new_total
-	return true
-
-
-func _begin(kind: int) -> int:
-	prevs[kind].disabled = true
-	nexts[kind].disabled = true
-	gens[kind] += 1
-	return gens[kind]
+	return false
 
 
 func _load_deposits(page: int) -> void:
-	var gen := _begin(DEPOSIT)
+	var gen := pagers[DEPOSIT].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/deposit-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not _accept(DEPOSIT, gen, page, r, _load_deposits):
+	if not await _accept(DEPOSIT, gen, page, r, _load_deposits):
 		return
 	Rows.clear(deposit_rows)
 	for item in Api.page_items(r.data):
@@ -143,15 +128,15 @@ func _load_deposits(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: await _load_deposits(pages[DEPOSIT])))
+			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: await _load_deposits(pagers[DEPOSIT].page)))
 		deposit_rows.add_child(row)
-	_update_pager(DEPOSIT)
+	pagers[DEPOSIT].update()
 
 
 func _load_withdrawals(page: int) -> void:
-	var gen := _begin(WITHDRAW)
+	var gen := pagers[WITHDRAW].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/withdrawal-requests?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not _accept(WITHDRAW, gen, page, r, _load_withdrawals):
+	if not await _accept(WITHDRAW, gen, page, r, _load_withdrawals):
 		return
 	Rows.clear(withdraw_rows)
 	for item in Api.page_items(r.data):
@@ -164,9 +149,9 @@ func _load_withdrawals(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: await _load_withdrawals(pages[WITHDRAW]), true))
+			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: await _load_withdrawals(pagers[WITHDRAW].page), true))
 		withdraw_rows.add_child(row)
-	_update_pager(WITHDRAW)
+	pagers[WITHDRAW].update()
 
 
 func _cancel_button(path: String, reload: Callable, refund := false) -> Button:
@@ -187,15 +172,17 @@ func _on_cancel(button: Button, path: String, reload: Callable, refund: bool) ->
 	else:
 		error_label.hide()
 	await reload.call()
+	if is_instance_valid(button):
+		button.disabled = false # 취소·재조회가 다 실패해 행이 남았으면 다시 누를 수 있게
 	if r.ok and refund:
 		await _load_balance()
 	_set_busy(false)
 
 
 func _load_ledger(page: int) -> void:
-	var gen := _begin(LEDGER)
+	var gen := pagers[LEDGER].begin()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet/ledger?page=%d&size=%d" % [page, PAGE_SIZE])
-	if not _accept(LEDGER, gen, page, r, _load_ledger):
+	if not await _accept(LEDGER, gen, page, r, _load_ledger):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(ledger_rows)
@@ -208,14 +195,7 @@ func _load_ledger(page: int) -> void:
 		row.add_child(Rows.label(sign + Format.comma(int(item.amount))))
 		row.add_child(Rows.label("잔액 %s" % Format.comma(int(item.balanceAfter))))
 		ledger_rows.add_child(row)
-	_update_pager(LEDGER)
-
-
-func _update_pager(kind: int) -> void:
-	pagers[kind].visible = total_pages[kind] > 1
-	page_labels[kind].text = "%d / %d" % [pages[kind] + 1, total_pages[kind]]
-	prevs[kind].disabled = pages[kind] <= 0
-	nexts[kind].disabled = pages[kind] >= total_pages[kind] - 1
+	pagers[LEDGER].update()
 
 
 func _on_deposit() -> void:
