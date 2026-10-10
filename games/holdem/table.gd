@@ -211,14 +211,17 @@ func _handle_join_queue(body: Dictionary) -> void:
 				error_label.show()
 				_update_status_label()
 				_update_buttons()
-				await get_tree().create_timer(1.0).timeout
-				if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
-					_send_join(last_post_blind)
+				get_tree().create_timer(1.0).timeout.connect(_retry_dropped_join) # await 은 노드가 해제돼도 재개된다 — connect 는 끊긴다
 				return
 			waiting = false
 			_show_error(body.errorCode)
 			_update_status_label()
 			_update_buttons()
+
+
+func _retry_dropped_join() -> void:
+	if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
+		_send_join(last_post_blind)
 
 
 func _sync_private_subscription() -> void:
@@ -278,7 +281,11 @@ func _create_table(new_name: String) -> void:
 	_update_status_label()
 	_update_buttons()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name})
-	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다 — 내 좌석으로 확인한다
+	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다
+		# 서버는 생성 즉시 대기열에 넣고 join-queue 로 알린다(구독 스냅샷 포함) — 대기 중이어도 버퍼에 tableId 가 남는다
+		for event in pending_join_queue:
+			_enter_created_table(int(event.tableId))
+			return
 		var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
 		if seat_r.status == 200:
 			_enter_created_table(int(seat_r.data.tableId))
@@ -302,11 +309,10 @@ func _enter_created_table(id: int) -> void:
 		_handle_join_queue(event)
 	_update_status_label()
 	_update_buttons()
-	_check_create_seat(table_id)
+	get_tree().create_timer(CREATE_SEAT_CHECK_SEC).timeout.connect(_check_create_seat.bind(table_id))
 
 
 func _check_create_seat(id: int) -> void:
-	await get_tree().create_timer(CREATE_SEAT_CHECK_SEC).timeout
 	if table_id != id or join_event_seen or _is_seated() or not waiting:
 		return
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
@@ -680,11 +686,7 @@ func _open_sit_popup() -> void:
 		sit_popup_error.show()
 		return
 	var balance := int(r.data.balance)
-	if balance < 200:
-		sit_popup_error.text = ErrorText.of("BUY_IN_OUT_OF_RANGE")
-		sit_popup_error.show()
-		return
-	sit_popup_info.text = "착석하면 지갑 잔액 %d 전부가 칩으로 들어갑니다" % balance
+	sit_popup_info.text = "착석하면 지갑 잔액 %s 전부가 칩으로 들어갑니다" % Format.comma(balance)
 	sit_popup_ok.disabled = false
 
 
