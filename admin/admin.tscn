@@ -59,6 +59,7 @@ theme_override_constants/separation = 8
 [node name="DepositStatus" type="OptionButton" parent="VBoxContainer/Tabs/충전 요청"]
 unique_name_in_owner = true
 layout_mode = 2
+selected = 0
 item_count = 2
 popup/item_0/text = "대기"
 popup/item_0/id = 0
@@ -111,6 +112,7 @@ theme_override_constants/separation = 8
 [node name="WithdrawStatus" type="OptionButton" parent="VBoxContainer/Tabs/환전 요청"]
 unique_name_in_owner = true
 layout_mode = 2
+selected = 0
 item_count = 2
 popup/item_0/text = "대기"
 popup/item_0/id = 0
@@ -243,6 +245,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
 item_count = 2
 popup/item_0/text = "USER"
 popup/item_0/id = 0
