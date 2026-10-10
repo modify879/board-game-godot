@@ -111,6 +111,11 @@ static func retries_unavailable(r: Dictionary) -> bool:
 	return r.error == "TEMPORARILY_UNAVAILABLE" or r.error == "IDEMPOTENCY_KEY_CONFLICT"
 
 
+static func keeps_idempotency_key(r: Dictionary) -> bool:
+	# 결과를 모르는 실패(status 0·5xx)이거나 같은 키 요청이 아직 처리 중(IDEMPOTENCY_KEY_CONFLICT)이면 같은 키로 다시 보내야 중복이 안 생긴다 — 그 밖의 4xx 는 확정 실패라 새 키를 쓴다
+	return r.status == 0 or r.status >= 500 or r.error == "IDEMPOTENCY_KEY_CONFLICT"
+
+
 static func sends_bearer(path: String) -> bool:
 	# 로그인·refresh 는 permitAll 이지만, 서버 토큰 필터는 Bearer 헤더가 있으면 검증한다 — 만료된 토큰이 실리면 refresh 전에 401 이 난다
 	return path != "/api/auth/login" and path != "/api/auth/refresh"
