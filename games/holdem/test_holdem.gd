@@ -19,6 +19,13 @@ func _init() -> void:
 	check(cards.category_text("NOPE") == "NOPE", "category_text unknown fallback")
 	check(cards.street_text("RIVER") == "리버", "street_text known")
 
+	# table_name
+	var rules := preload("res://games/holdem/rules.gd")
+	check(rules.table_name("  ") == "TABLE_NAME_INVALID", "방 이름 공백만 거부")
+	check(rules.table_name("a".repeat(31)) == "TABLE_NAME_INVALID", "방 이름 31자 거부")
+	check(rules.table_name("a".repeat(30)) == "", "방 이름 30자 통과")
+	check(rules.table_name(" a ") == "", "방 이름 trim 후 1자 통과")
+
 	quit(1 if failures else 0)
 
 

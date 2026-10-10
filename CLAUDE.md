@@ -38,7 +38,7 @@ res://
    같은 이름의 스크립트가 두 게임에 있는 것은 중복이 아니다
 2. 오류는 서버 `errorCode` 로만 판단하고, 문구는 클라이언트가 만든다(`ErrorText.of(code)`).
    서버 응답의 `title` 을 화면에 띄우지 않는다. 새 errorCode 를 다루면 `core/error_text.gd` 에 문구를 추가한다
-3. 입력 규칙(아이디·닉네임·비밀번호 형식)은 서버에만 있다. 클라이언트에서 다시 검증하지 않는다 — 안내 문구만 둔다
+3. 입력 규칙은 서버가 최종 판단한다. 클라이언트는 같은 규칙을 사용성용으로 미리 검사해 요청 전에 같은 errorCode 문구를 보인다 — 규칙은 core/input_rules.gd(게임 규칙은 각 게임 폴더)에 모으고 서버 파일:라인을 주석으로 단다. 서버 errorCode 처리는 그대로 두고, 서버 규칙이 바뀌면 함께 고친다. 로그인은 형식 검사하지 않는다(서버가 형식 오류도 LOGIN_FAILED 로 감춘다)
 4. autoload 는 `Api`, `Stomp` 둘뿐이다. 늘리지 않는다. 화면 전환은 `get_tree().change_scene_to_file()`
 5. UI 는 모두 `core/ui/theme.tres`(Pretendard) 를 거친다. Web 은 기본 폰트에 한글이 없고 시스템 폰트 대체도 안 된다
 6. C# 을 쓰지 않는다(Web 내보내기 불가). 3D 는 쓰되 Forward+ 전용 기능(SDFGI·SSAO·SSR·볼류메트릭 포그)에 기대지 않는다
