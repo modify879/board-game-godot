@@ -28,15 +28,17 @@ func _ready() -> void:
 	next_button.pressed.connect(func() -> void: _load(current_page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
+	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if seat_r.status == 200:
+		enter(seat_r.data.tableId)
+		pending_error = ""
+		return
+	await _load(0)
+	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
 	if pending_error != "":
 		error_label.text = ErrorText.of(pending_error)
 		error_label.show()
 		pending_error = ""
-	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
-	if seat_r.status == 200:
-		enter(seat_r.data.tableId)
-		return
-	_load(0)
 
 
 func enter(id: int, join := false) -> void:
@@ -107,4 +109,5 @@ func _on_create() -> void:
 	table_script.table_id = 0
 	table_script.auto_join = false
 	table_script.create_name = name_edit.text
+	table_script.creating = true
 	get_tree().change_scene_to_file("res://games/holdem/table.tscn")

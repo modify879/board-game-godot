@@ -3,7 +3,8 @@ extends Control
 
 static var table_id := 0
 static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
-static var create_name := "" # table_list 의 "만들기" 가 넘긴다. 비어 있지 않으면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
+static var create_name := "" # table_list 의 "만들기" 가 넘긴다. creating 이 true 면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
+static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름이 비어도 생성 모드다(이름 검증은 서버 몫)
 
 const Cards := preload("res://games/holdem/cards.gd")
 
@@ -74,7 +75,7 @@ var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시�
 
 
 func _ready() -> void:
-	title_label.text = "새 방" if create_name != "" else "#%d" % table_id
+	title_label.text = "새 방" if creating else "#%d" % table_id
 	back_button.pressed.connect(_on_back_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
@@ -101,6 +102,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	create_name = "" # 연결 전에 나가면 다음 입장 때 방이 만들어지지 않게
+	creating = false
 	Stomp.message.disconnect(_on_stomp_message)
 	Stomp.error.disconnect(_on_stomp_error)
 	Stomp.connected.disconnect(_on_stomp_connected)
@@ -264,9 +266,10 @@ func _on_stomp_connected() -> void:
 	if auto_join and not waiting and not _is_seated():
 		auto_join = false
 		_open_sit_popup()
-	if create_name != "":
+	if creating:
 		var new_name := create_name
 		create_name = "" # 재연결 때 두 번 만들지 않게
+		creating = false
 		_create_table(new_name)
 
 
