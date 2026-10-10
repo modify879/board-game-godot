@@ -59,6 +59,11 @@ func _ready() -> void:
 	# 입력이 바뀌면 새 키. 실패 뒤 입력을 그대로 두고 다시 누르면 같은 키가 나가 중복 반영되지 않는다
 	for e in [user_id_edit, adjust_amount_edit, adjust_reason_edit]:
 		e.text_changed.connect(func(_t: String) -> void: _new_key())
+	# 손으로 고치면 화면의 회원 정보·역할이 더는 입력과 맞지 않는다 — 비워서 작업 대상이 어긋나지 않게 한다
+	user_id_edit.text_changed.connect(func(_t: String) -> void:
+		selected_id = -1
+		user_info_label.text = ""
+		_clear_role())
 	_new_key()
 	_on_tab_changed(tabs.current_tab)
 
@@ -109,7 +114,7 @@ func _load(kind: int, page: int) -> void:
 	if statuses[kind].selected == 0:
 		path += "&status=PENDING"
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if not await pagers[kind].accept(gen, page, r, func(p: int) -> void: await _load(kind, p), _show_error):
+	if not await pagers[kind].accept(gen, page, r, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(rows[kind])
@@ -153,6 +158,8 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 func _set_busy(on: bool) -> void:
 	_busy = on
 	back_button.disabled = on
+	for e in [user_id_edit, adjust_amount_edit, adjust_reason_edit]:
+		e.editable = not on # 요청 중 편집이 보낸 값과 어긋나지 않게
 
 
 ## 요청 보내기. 호출부가 _set_busy(true) 로 잡고 _finish 뒤에 푼다 — 재조회까지 끝나야 뒤로 갈 수 있다
@@ -221,7 +228,7 @@ func _load_users(page: int) -> void:
 	var gen := users.begin()
 	var path := "/api/admin/users?query=%s&page=%d&size=%d" % [user_query.uri_encode(), page, PAGE_SIZE]
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if not await users.accept(gen, page, r, _load_users, _show_error):
+	if not await users.accept(gen, page, r, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	Rows.clear(user_rows)
@@ -318,14 +325,20 @@ func _do_lookup(id: int, quiet: bool) -> void:
 		return
 	if r.ok:
 		# /api/users/{id} 에는 role·locked 가 없다 — 관리자 목록에서 같은 회원을 찾아 맞춘다
-		var list: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/users?query=%s&size=20" % str(r.data.username).uri_encode())
-		if selected_id != id:
-			return
-		if list.ok:
+		# 서버에 단건 조회 API 를 요청했다 — 생기면 바꾼다
+		var query := str(r.data.username).uri_encode()
+		for p in 5: # 부분 일치라 같은 id 가 첫 쪽에 없을 수 있다 — 최대 5쪽(500명)까지 찾는다
+			var list: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/admin/users?query=%s&page=%d&size=100" % [query, p])
+			if selected_id != id:
+				return
+			if not list.ok:
+				break
 			for item in Api.page_items(list.data):
 				if int(item.id) == id:
 					await _show_user(item)
 					return
+			if p + 1 >= int(list.data.page.totalPages):
+				break
 		_clear_role()
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
