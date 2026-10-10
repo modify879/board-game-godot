@@ -12,7 +12,7 @@ static func comma(n: int) -> String:
 	return ("-" if n < 0 else "") + s + out
 
 
-## 금액 입력 → 정수. 형식 검증이 아니라 int() 가 "1a000" 을 조용히 1 로 바꾸는 변환 오류를 막는 것(규칙 3 과 무관). 못 읽으면 null
+## 금액 입력 → 정수. int() 가 "1a000" 을 조용히 1 로 바꾸는 변환 오류를 막는 것 — 금액 형식 검사는 InputRules. 못 읽으면 null
 static func parse_amount(text: String) -> Variant:
 	var t := text.strip_edges().replace(",", "")
 	return int(t) if t.is_valid_int() else null
