@@ -24,6 +24,7 @@ var total_pages := 0
 
 
 func _ready() -> void:
+	create_button.disabled = true # /me/seat 확인이 끝나기 전에는 만들 수 없다
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
 	refresh_button.pressed.connect(func() -> void: _load(current_page))
 	prev_button.pressed.connect(func() -> void: _load(current_page - 1))
@@ -36,6 +37,7 @@ func _ready() -> void:
 		pending_error = ""
 		pending_name = ""
 		return
+	create_button.disabled = false
 	await _load(0)
 	# 목록을 다 읽은 뒤에 띄워야 _load 의 error_label.hide() 에 지워지지 않는다
 	if pending_error != "":
@@ -104,6 +106,8 @@ func _update_pager() -> void:
 
 
 func _on_create() -> void:
+	if create_button.disabled:
+		return
 	var invalid := Rules.table_name(name_edit.text)
 	if invalid != "":
 		error_label.text = ErrorText.of(invalid)

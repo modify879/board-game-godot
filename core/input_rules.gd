@@ -6,6 +6,16 @@ class_name InputRules
 const MIN_MONEY := 1000 # 충전·환전 최소 금액
 const MONEY_UNIT := 100
 
+static var _re_username: RegEx
+static var _re_ws: RegEx
+static var _re_spaces: RegEx
+static var _re_account: RegEx
+
+
+## RegEx 는 처음 쓸 때 한 번만 컴파일한다
+static func _re(cached: RegEx, pattern: String) -> RegEx:
+	return cached if cached else RegEx.create_from_string(pattern)
+
 
 ## 서버 검사 순서(confirm → username → nickname → password)대로 첫 오류. SignUpRequest.kt:13-14
 static func signup(username: String, nickname: String, password: String, confirm: String) -> String:
@@ -21,17 +31,18 @@ static func signup(username: String, nickname: String, password: String, confirm
 
 ## trim → lowercase → ^[a-z][a-z0-9_]{3,19}$. user/domain/model/Username.kt:9,12-13
 static func _username(username: String) -> String:
-	var re := RegEx.create_from_string("^[a-z][a-z0-9_]{3,19}$")
-	return "" if re.search(username.strip_edges().to_lower()) else "USERNAME_FORMAT"
+	_re_username = _re(_re_username, "^[a-z][a-z0-9_]{3,19}$")
+	return "" if _re_username.search(username.strip_edges().to_lower()) else "USERNAME_FORMAT"
 
 
 ## 모든 공백 → ' ' → trim → 연속 공백 1칸. BLANK → FORBIDDEN(Cc·Cf) → LENGTH(코드포인트 2~12). user/domain/model/Nickname.kt:13-51
 ## 서버는 먼저 NFC 정규화하지만 Godot 에 없어 생략한다(조합형 한글 입력은 길이가 서버와 다를 수 있다).
 ## 공백·Cf 는 Unicode 전체가 아닌 주요 범위만 옮겼다.
 static func _nickname(nickname: String) -> String:
-	var ws := RegEx.create_from_string("[\\s\\x{1C}-\\x{1F}\\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}]")
-	var n := ws.sub(nickname, " ", true).strip_edges()
-	n = RegEx.create_from_string(" {2,}").sub(n, " ", true)
+	_re_ws = _re(_re_ws, "[\\s\\x{1C}-\\x{1F}\\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}]")
+	_re_spaces = _re(_re_spaces, " {2,}")
+	var n := _re_ws.sub(nickname, " ", true).strip_edges()
+	n = _re_spaces.sub(n, " ", true)
 	if n == "":
 		return "NICKNAME_BLANK"
 	for i in n.length():
@@ -72,7 +83,8 @@ static func bank_account(bank: String, number: String, holder: String) -> String
 	var n := number.strip_edges().replace("-", "").replace(" ", "")
 	if b == "" or h == "" or b.length() > 50 or h.length() > 50:
 		return "BANK_ACCOUNT_INVALID"
-	if not RegEx.create_from_string("^[0-9]{8,20}$").search(n):
+	_re_account = _re(_re_account, "^[0-9]{8,20}$")
+	if not _re_account.search(n):
 		return "BANK_ACCOUNT_INVALID"
 	return ""
 

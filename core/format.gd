@@ -1,6 +1,13 @@
 class_name Format
 ## 화면 표시용 포매터.
 
+const REQUEST_STATUS := {"PENDING": "대기", "APPROVED": "승인", "REJECTED": "거절", "CANCELED": "취소"} # 충전·환전 요청 상태
+
+
+## 충전·환전 요청 상태 문구. 모르는 값은 그대로
+static func request_status(status: String) -> String:
+	return REQUEST_STATUS.get(status, status)
+
 
 ## 천 단위 쉼표
 static func comma(n: int) -> String:
