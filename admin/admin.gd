@@ -14,10 +14,9 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var search_button: Button = %SearchButton
 @onready var user_rows: VBoxContainer = %UserRows
 @onready var user_empty: Label = %UserEmpty
-@onready var user_pager: HBoxContainer = %UserPager
 @onready var user_prev: Button = %UserPrev
-@onready var user_page_label: Label = %UserPage
 @onready var user_next: Button = %UserNext
+@onready var users := Pager.new(%UserPager, %UserPrev, %UserPage, %UserNext)
 @onready var user_id_edit: LineEdit = %UserIdEdit
 @onready var lookup_button: Button = %LookupButton
 @onready var user_info_label: Label = %UserInfoLabel
@@ -32,21 +31,17 @@ const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 @onready var statuses: Array[OptionButton] = [%DepositStatus, %WithdrawStatus]
 @onready var rows: Array[VBoxContainer] = [%DepositRows, %WithdrawRows]
 @onready var empties: Array[Label] = [%DepositEmpty, %WithdrawEmpty]
-@onready var pagers: Array[HBoxContainer] = [%DepositPager, %WithdrawPager]
+@onready var pagers: Array[Pager] = [
+	Pager.new(%DepositPager, %DepositPrev, %DepositPage, %DepositNext),
+	Pager.new(%WithdrawPager, %WithdrawPrev, %WithdrawPage, %WithdrawNext),
+]
 @onready var prevs: Array[Button] = [%DepositPrev, %WithdrawPrev]
-@onready var page_labels: Array[Label] = [%DepositPage, %WithdrawPage]
 @onready var nexts: Array[Button] = [%DepositNext, %WithdrawNext]
 
-var pages := [0, 0]
-var gens := [0, 0] # 목록 응답이 낡았는지 가리는 세대
-var users_gen := 0
-var total_pages := [0, 0]
 var adjust_key := ""
 var selected_id := -1 # 잔액 응답이 낡았는지 가리는 기준
 var role_synced_id := -1 # 역할 드롭다운을 서버 값으로 맞춘 회원 — 같은 회원을 다시 그릴 때는 관리자가 고른 값을 유지한다
 var user_query := ""
-var user_page := 0
-var user_total_pages := 0
 var user_items := {} # 현재 페이지 회원 (id → item)
 var _busy := false
 
@@ -56,12 +51,12 @@ func _ready() -> void:
 	tabs.tab_changed.connect(_on_tab_changed)
 	for k in 2:
 		statuses[k].item_selected.connect(func(_i: int) -> void: _load(k, 0))
-		prevs[k].pressed.connect(func() -> void: _load(k, pages[k] - 1))
-		nexts[k].pressed.connect(func() -> void: _load(k, pages[k] + 1))
+		prevs[k].pressed.connect(func() -> void: _load(k, pagers[k].page - 1))
+		nexts[k].pressed.connect(func() -> void: _load(k, pagers[k].page + 1))
 	search_button.pressed.connect(_on_search)
 	search_edit.text_submitted.connect(func(_t: String) -> void: _on_search())
-	user_prev.pressed.connect(func() -> void: _load_users(user_page - 1))
-	user_next.pressed.connect(func() -> void: _load_users(user_page + 1))
+	user_prev.pressed.connect(func() -> void: _load_users(users.page - 1))
+	user_next.pressed.connect(func() -> void: _load_users(users.page + 1))
 	lookup_button.pressed.connect(func() -> void:
 		error_label.hide() # 직접 조회할 때만 이전 오류를 지운다 — _finish 가 부를 때는 방금 띄운 오류를 남긴다
 		_on_lookup())
@@ -83,9 +78,9 @@ func _on_tab_changed(index: int) -> void:
 	error_label.hide()
 	result_label.hide()
 	if index < 2:
-		_load(index, pages[index])
+		_load(index, pagers[index].page)
 	elif index == 2:
-		_load_users(user_page)
+		_load_users(users.page)
 
 
 func _show_error(code: String) -> void:
@@ -114,41 +109,30 @@ func _button(text: String, handler: Callable) -> Button:
 	return b
 
 
+## 목록 응답 공통 처리 뒤 false 면 호출부가 끝낸다. 실패 오류는 낡은 응답이 아닐 때만 띄운다
+func _accept(p: Pager, gen: int, page: int, r: Dictionary, reload: Callable) -> bool:
+	if await p.accept(gen, page, r, reload):
+		return true
+	if not r.ok and not p.is_stale(gen):
+		_show_error(r.error)
+	return false
+
+
 ## 목록 읽기. 대기=PENDING, 전체는 status 생략
 func _load(kind: int, page: int) -> void:
-	prevs[kind].disabled = true
-	nexts[kind].disabled = true
+	var gen := pagers[kind].begin()
 	var path: String = PATHS[kind] + "?page=%d&size=%d" % [page, PAGE_SIZE]
 	if statuses[kind].selected == 0:
 		path += "&status=PENDING"
-	var gen: int = gens[kind] + 1
-	gens[kind] = gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if gen != gens[kind]:
+	if not await _accept(pagers[kind], gen, page, r, func(p: int) -> void: await _load(kind, p)):
 		return
-	if not r.ok:
-		_show_error(r.error)
-		_update_pager(kind)
-		return
-	var new_total: int = r.data.page.totalPages
-	if page >= new_total and new_total > 0:
-		await _load(kind, new_total - 1)
-		return
-	pages[kind] = r.data.page.number
-	total_pages[kind] = new_total
 	var items := Api.page_items(r.data)
 	Rows.clear(rows[kind])
 	empties[kind].visible = items.is_empty()
 	for item in items:
 		rows[kind].add_child(_request_row(kind, item))
-	_update_pager(kind)
-
-
-func _update_pager(kind: int) -> void:
-	pagers[kind].visible = total_pages[kind] > 1
-	page_labels[kind].text = "%d / %d" % [pages[kind] + 1, total_pages[kind]]
-	prevs[kind].disabled = pages[kind] <= 0
-	nexts[kind].disabled = pages[kind] >= total_pages[kind] - 1
+	pagers[kind].update()
 
 
 func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
@@ -198,18 +182,19 @@ func _post(path: String, body = null, headers: Array = []) -> Dictionary:
 
 
 ## 현재 탭 목록을 다시 읽은 뒤(이미 처리됨 등 반영) 결과를 띄운다 — 재조회 실패가 결과 문구를 숨기지 않게 맨 끝에 둔다
-func _finish(r: Dictionary, done: String) -> void:
+## target_id 가 있으면 회원 탭을 그 회원으로 다시 그린다(입력칸이 아니라 실제로 보낸 대상)
+func _finish(r: Dictionary, done: String, target_id := -1) -> void:
 	# 호출부가 busy 를 쥐고 있다 — 재조회는 _lookup 의 busy 가드를 건너뛴다(force)
 	if tabs.current_tab < 2:
-		await _load(tabs.current_tab, pages[tabs.current_tab])
+		await _load(tabs.current_tab, pagers[tabs.current_tab].page)
 	elif tabs.current_tab == 2:
-		await _load_users(user_page)
-		if selected_id > 0:
-			var item = user_items.get(selected_id)
+		await _load_users(users.page)
+		if target_id > 0:
+			var item = user_items.get(target_id)
 			if item != null:
-				await _select_user(item)
+				await _show_user(item)
 			else:
-				await _lookup(selected_id, true, true)
+				await _do_lookup(target_id, true)
 	if r.ok:
 		_show_result(done)
 	else:
@@ -253,24 +238,11 @@ func _on_search() -> void:
 
 ## 회원 검색 목록 읽기. user_query 는 username/nickname 부분 일치
 func _load_users(page: int) -> void:
-	user_prev.disabled = true
-	user_next.disabled = true
+	var gen := users.begin()
 	var path := "/api/admin/users?query=%s&page=%d&size=%d" % [user_query.uri_encode(), page, PAGE_SIZE]
-	users_gen += 1
-	var gen := users_gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
-	if gen != users_gen:
+	if not await _accept(users, gen, page, r, _load_users):
 		return
-	if not r.ok:
-		_show_error(r.error)
-		_update_user_pager()
-		return
-	var new_total: int = r.data.page.totalPages
-	if page >= new_total and new_total > 0:
-		await _load_users(new_total - 1)
-		return
-	user_page = r.data.page.number
-	user_total_pages = new_total
 	var items := Api.page_items(r.data)
 	Rows.clear(user_rows)
 	user_items.clear()
@@ -278,14 +250,7 @@ func _load_users(page: int) -> void:
 	for item in items:
 		user_items[int(item.id)] = item
 		user_rows.add_child(_user_row(item))
-	_update_user_pager()
-
-
-func _update_user_pager() -> void:
-	user_pager.visible = user_total_pages > 1
-	user_page_label.text = "%d / %d" % [user_page + 1, user_total_pages]
-	user_prev.disabled = user_page <= 0
-	user_next.disabled = user_page >= user_total_pages - 1
+	users.update()
 
 
 func _user_row(item: Dictionary) -> HBoxContainer:
@@ -300,7 +265,17 @@ func _user_row(item: Dictionary) -> HBoxContainer:
 	return row
 
 
+## 목록 행의 "선택" 버튼. 잔액 조회가 끝날 때까지 busy
 func _select_user(item: Dictionary) -> void:
+	if _busy:
+		return
+	_set_busy(true)
+	await _show_user(item)
+	_set_busy(false)
+
+
+## 회원을 입력칸·정보 라벨에 반영하고 잔액을 읽는다. busy 는 호출부가 쥔다
+func _show_user(item: Dictionary) -> void:
 	var id := int(item.id)
 	if user_id_edit.text != str(id):
 		user_id_edit.text = str(id)
@@ -346,15 +321,18 @@ func _on_lookup() -> void:
 		_lookup(id)
 
 
-func _lookup(id: int, quiet := false, held := false) -> void:
-	if _busy and not held:
+func _lookup(id: int) -> void:
+	if _busy:
 		return
-	if not held:
-		_set_busy(true)
+	_set_busy(true)
+	await _do_lookup(id, false)
+	_set_busy(false)
+
+
+## 회원 조회 본체. busy 는 호출부가 쥔다
+func _do_lookup(id: int, quiet: bool) -> void:
 	selected_id = id
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % id)
-	if not held:
-		_set_busy(false)
 	if selected_id != id:
 		return
 	if r.ok:
@@ -376,7 +354,7 @@ func _on_unlock() -> void:
 		return
 	_set_busy(true)
 	var r := await _post("/api/admin/users/%d/unlock" % id)
-	await _finish(r, "잠금을 해제했습니다")
+	await _finish(r, "잠금을 해제했습니다", id)
 	_set_busy(false)
 
 
@@ -388,7 +366,7 @@ func _on_role() -> void:
 		return
 	_set_busy(true)
 	var r := await _post("/api/admin/users/%d/role" % id, {"role": role_option.get_item_text(role_option.selected)})
-	await _finish(r, "역할을 변경했습니다")
+	await _finish(r, "역할을 변경했습니다", id)
 	_set_busy(false)
 
 
@@ -415,5 +393,5 @@ func _on_adjust() -> void:
 		_new_key()
 	elif not Api.keeps_idempotency_key(r):
 		_new_key()
-	await _finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다")
+	await _finish(r if not applied else {"ok": true}, "조정했습니다" if r.ok else "이미 반영된 조정입니다", id)
 	_set_busy(false)
