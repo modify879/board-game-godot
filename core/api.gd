@@ -194,9 +194,10 @@ func logout() -> void:
 	if _refreshing: # 진행 중인 갱신이 로그아웃 뒤에 끝나면 토큰을 되살린다 — 끝난 뒤에 로그아웃한다
 		await _refresh_done
 	_refresh_due_ticks = -1 # 로그아웃 요청 중에 선제 갱신이 시작돼 세션이 되살아나지 않게
+	# 서버가 로그아웃 때 소켓을 1008 로 닫는다 — 먼저 끊어야 재인증 재연결로 오인하지 않고, 살아 있는 세션에 DISCONNECT 를 보낸다
+	get_node("/root/Stomp").disconnect_ws()
 	await request(HTTPClient.METHOD_POST, "/api/auth/logout")
 	_clear_session()
-	get_node("/root/Stomp").disconnect_ws(false) # 서버가 로그아웃 때 세션을 이미 닫았다 — DISCONNECT 는 죽은 세션에 닿아 서버 오류만 남긴다
 
 
 func try_resume() -> bool:
