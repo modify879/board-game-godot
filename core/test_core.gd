@@ -186,6 +186,38 @@ func _init() -> void:
 	check(ir.reject_reason("  ") == "REJECTION_REASON_BLANK", "반려 사유 공백 거부")
 	check(ir.reject_reason("x") == "", "반려 사유 통과")
 
+	# Pager
+	var pbox := HBoxContainer.new()
+	var pprev := Button.new()
+	var plabel := Label.new()
+	var pnext := Button.new()
+	var pg := Pager.new(pbox, pprev, plabel, pnext)
+	pg.total = 3
+	pg.page = 1
+	pg.update()
+	check(pbox.visible and plabel.text == "2 / 3" and not pprev.disabled and not pnext.disabled, "Pager update 가운데 페이지")
+	pg.page = 2
+	pg.update()
+	check(pnext.disabled and not pprev.disabled, "Pager update 마지막 페이지는 다음 비활성")
+	pg.total = 1
+	pg.page = 0
+	pg.update()
+	check(not pbox.visible, "Pager 1쪽이면 숨김")
+	var stale := pg.begin()
+	var fresh := pg.begin()
+	check(pprev.disabled and pnext.disabled, "Pager begin 은 버튼 잠금")
+	var ok_resp := {"ok": true, "data": {"page": {"number": 1, "totalPages": 3}, "content": []}}
+	check(not await pg.accept(stale, 0, ok_resp, func(_p: int) -> void: pass), "Pager 낡은 gen 은 false")
+	check(await pg.accept(fresh, 1, ok_resp, func(_p: int) -> void: pass) and pg.page == 1 and pg.total == 3, "Pager 정상 응답 반영")
+	var called := [-1]
+	var over := pg.begin()
+	var res: bool = await pg.accept(over, 5, ok_resp, func(p: int) -> void: called[0] = p)
+	check(not res and called[0] == 2, "Pager 초과는 마지막 페이지로 reload")
+	pbox.free()
+	pprev.free()
+	plabel.free()
+	pnext.free()
+
 	quit(1 if failures else 0)
 
 
