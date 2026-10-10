@@ -326,17 +326,24 @@ func _do_lookup(id: int, quiet: bool) -> void:
 				if int(item.id) == id:
 					await _show_user(item)
 					return
-		role_synced_id = -1 # 서버 값을 못 읽었다 — 다음 선택 때 맞춘다
-		role_option.select(-1) # 이전 회원 값이 새 회원에게 가지 않게
-		role_button.disabled = true
+		_clear_role()
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
 		await _append_balance(id, info)
 	elif quiet: # 작업 뒤 재조회 실패가 방금 띄운 결과를 덮지 않게
+		_clear_role()
 		user_info_label.text = "회원 정보 확인 실패"
 	else:
+		_clear_role()
 		user_info_label.text = ""
 		_show_error(r.error)
+
+
+## 역할을 모르면 이전 회원 값으로 변경되지 않게 막는다
+func _clear_role() -> void:
+	role_synced_id = -1 # 서버 값을 못 읽었다 — 다음 선택 때 맞춘다
+	role_option.select(-1) # 이전 회원 값이 새 회원에게 가지 않게
+	role_button.disabled = true
 
 
 func _on_unlock() -> void:
