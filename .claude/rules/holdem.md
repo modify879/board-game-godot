@@ -11,6 +11,9 @@ paths: ["games/holdem/**"]
 - 서버 메시지의 `seq` 는 테이블 단위로 단조 증가한다. 마지막으로 반영한 값보다 작은 `seq` 는 버린다 — 순서가 뒤바뀌어 온다
 - 서버 JSON 숫자는 `float` 로 온다. `seatNo`·`userId`·`tableId` 를 `in`·`has()`·Dictionary 키로 쓸 때는 `int()` 로 바꾼다
 - 참가는 대기열이다 — `/user/queue/holdem/join-queue` 를 먼저 구독하고 POST 한다(`SEATED` 가 202 응답보다 먼저 올 수 있다)
+- 방 생성은 서버가 만든 사람을 바로 대기열에 넣는다 — `seats` 를 따로 부르지 않는다. STOMP 연결·join-queue 구독 뒤에 POST 하고, 201 전에 온 join-queue 이벤트는 모아 뒀다 tableId 를 안 뒤 처리한다
+- join-queue 는 구독할 때 현재 상태(POSITION·SEATED)를 스냅샷으로 다시 보낸다 — SEATED 는 두 번 올 수 있다. DROPPED 는 다시 오지 않으므로 방 생성 뒤 5초간 이벤트가 없고 앉지 않았으면 `me/seat`(204 = 미착석)으로 확인한다
+- 공개 토픽에 `type: "TABLE_CLOSED"`(seq 없음)가 오면 목록으로 돌아간다 — 공개 뷰보다 먼저 분기한다 — 테이블 화면의 요청이 `TABLE_NOT_FOUND` 를 받아도 똑같이 한다
 - 연결이 끊기면 대기열에서 빠진다 — 재연결 후 앉아 있지 않으면 다시 요청한다
 - 취소 응답이 `JOIN_REQUEST_NOT_FOUND` 면 이미 앉았거나 이미 빠진 것이다 — 착석 여부는 공개 뷰로 판단한다
 - 액션 문자열은 대문자 `FOLD`·`CHECK`·`CALL`·`RAISE_TO`(+`raiseToAmount`). 턴 남은 시간은 공개 뷰의 `turnRemainingMs`(ms) — 받은 순간부터 `Time.get_ticks_msec()` 로 센다(OS 시계 아님). null 이면 타이머 없음(숨김), 키가 없으면(옛 서버) `toActSeatNo` 가 바뀐 시점부터 60초로 어림한다.

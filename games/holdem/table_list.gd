@@ -17,7 +17,6 @@ const PAGE_SIZE := 20
 
 var current_page := 0
 var total_pages := 0
-var _creating := false
 
 
 func _ready() -> void:
@@ -98,17 +97,8 @@ func _update_pager() -> void:
 
 
 func _on_create() -> void:
-	if _creating:
-		return
-	_creating = true
-	create_button.disabled = true
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": name_edit.text})
-	_creating = false
-	create_button.disabled = false
-	if r.ok:
-		error_label.hide()
-		name_edit.text = ""
-		_load(current_page)
-	else:
-		error_label.text = ErrorText.of(r.error)
-		error_label.show()
+	var table_script = preload("res://games/holdem/table.gd")
+	table_script.table_id = 0
+	table_script.auto_join = false
+	table_script.create_name = name_edit.text
+	get_tree().change_scene_to_file("res://games/holdem/table.tscn")

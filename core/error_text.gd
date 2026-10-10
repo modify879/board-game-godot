@@ -26,6 +26,7 @@ const TEXT := {
 	"ALREADY_SEATED": "이미 착석 중입니다",
 	"BUY_IN_OUT_OF_RANGE": "잔액이 부족해 앉을 수 없습니다(최소 200)",
 	"INSUFFICIENT_BALANCE": "잔액이 부족합니다",
+	"CREATE_SEAT_FAILED": "자리에 앉지 못했습니다. 참가 버튼으로 다시 시도해주세요",
 	"JOIN_REQUEST_NOT_FOUND": "참가 요청을 찾을 수 없습니다",
 	"NOT_SEATED": "착석 중이 아닙니다",
 	"HAND_IN_PROGRESS": "진행 중인 판이 끝난 뒤에 할 수 있습니다",
