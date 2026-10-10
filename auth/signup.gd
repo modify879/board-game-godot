@@ -18,6 +18,11 @@ func _ready() -> void:
 
 func _on_submit_pressed() -> void:
 	error_label.hide()
+	var invalid := InputRules.signup(username_edit.text, nickname_edit.text, password_edit.text, password_confirm_edit.text)
+	if invalid != "":
+		error_label.text = ErrorText.of(invalid)
+		error_label.show()
+		return
 	submit_button.disabled = true
 	back_button.disabled = true
 	var username := username_edit.text
