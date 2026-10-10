@@ -72,9 +72,9 @@ func _new_withdraw_key() -> void:
 func _load_tab(index: int) -> void:
 	error_label.hide()
 	match index:
-		0: _load_deposits(pagers[DEPOSIT].page)
-		1: _load_withdrawals(pagers[WITHDRAW].page)
-		2: _load_ledger(pagers[LEDGER].page)
+		DEPOSIT: _load_deposits(pagers[DEPOSIT].page)
+		WITHDRAW: _load_withdrawals(pagers[WITHDRAW].page)
+		LEDGER: _load_ledger(pagers[LEDGER].page)
 
 
 ## 요청 중에는 뒤로 가지 못하게 한다 — 화면이 해제된 노드에서 응답이 재개되지 않게
@@ -107,12 +107,7 @@ func _load_deposits(page: int) -> void:
 		var row := HBoxContainer.new()
 		row.add_child(Rows.label(Format.time(item.requestedAt)))
 		row.add_child(Rows.label("%s원" % Format.comma(int(item.requestedAmount)), true))
-		var status: String = Format.request_status(item.status)
-		if item.status == "APPROVED" and item.creditedAmount != null:
-			status += " (%s)" % Format.comma(int(item.creditedAmount))
-		elif item.status == "REJECTED" and item.rejectionReason != null:
-			status += " (%s)" % item.rejectionReason
-		row.add_child(Rows.label(status))
+		row.add_child(Rows.label(Format.request_status_line(item)))
 		if item.status == "PENDING":
 			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: await _load_deposits(pagers[DEPOSIT].page)))
 		deposit_rows.add_child(row)
@@ -130,10 +125,7 @@ func _load_withdrawals(page: int) -> void:
 		row.add_child(Rows.label(Format.time(item.requestedAt)))
 		row.add_child(Rows.label("%s원" % Format.comma(int(item.amount))))
 		row.add_child(Rows.label("%s %s" % [item.bankName, item.accountNumber], true))
-		var status: String = Format.request_status(item.status)
-		if item.status == "REJECTED" and item.rejectionReason != null:
-			status += " (%s)" % item.rejectionReason
-		row.add_child(Rows.label(status))
+		row.add_child(Rows.label(Format.request_status_line(item)))
 		if item.status == "PENDING":
 			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: await _load_withdrawals(pagers[WITHDRAW].page), true))
 		withdraw_rows.add_child(row)
