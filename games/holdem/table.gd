@@ -197,17 +197,20 @@ func _handle_join_queue(body: Dictionary) -> void:
 			_update_status_label()
 		"SEATED":
 			got_seated = true
+			dropped_retried = false # 다음 착석 시도마다 1회 기회
 			waiting = false
 			_update_status_label()
 			_update_buttons()
 		"DROPPED":
 			if body.errorCode == "TEMPORARILY_UNAVAILABLE" and not dropped_retried:
 				dropped_retried = true
+				waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
 				error_label.text = "서버가 잠시 바빠 다시 대기열에 등록합니다"
 				error_label.show()
+				_update_status_label()
+				_update_buttons()
 				await get_tree().create_timer(1.0).timeout
-				if not _is_seated():
-					waiting = false # _send_join 은 202 일 때만 waiting 을 세운다 — 재요청이 실패하면 대기 표시가 남지 않게 한다
+				if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
 					_send_join(last_post_blind)
 				return
 			waiting = false
@@ -272,14 +275,20 @@ func _create_table(new_name: String) -> void:
 	_update_status_label()
 	_update_buttons()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name})
+	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다 — 내 좌석으로 확인한다
+		var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+		if seat_r.status == 200:
+			_enter_created_table(int(seat_r.data.tableId))
+			return
 	if not r.ok:
-		waiting = false
-		_show_error(r.error)
-		title_label.text = "방 만들기 실패"
-		_update_status_label()
-		_update_buttons()
+		preload("res://games/holdem/table_list.gd").pending_error = r.error
+		get_tree().change_scene_to_file("res://games/holdem/table_list.tscn")
 		return
-	table_id = int(r.data.tableId)
+	_enter_created_table(int(r.data.tableId))
+
+
+func _enter_created_table(id: int) -> void:
+	table_id = id
 	title_label.text = "#%d" % table_id
 	Stomp.subscribe("/topic/tables/%d" % table_id)
 	last_post_blind = false
@@ -298,15 +307,15 @@ func _check_create_seat(id: int) -> void:
 	if table_id != id or join_event_seen or _is_seated() or not waiting:
 		return
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
-	if r.status == 204:
+	if not r.ok:
+		_show_error(r.error)
+	elif r.status == 200 and r.data is Dictionary and int(r.data.tableId) == id:
+		return # 공개 뷰가 곧 착석을 그린다
+	else: # 204 거나 다른 테이블에 앉아 있다 — 이 방에는 착석하지 못했다
 		waiting = false
 		_show_error("CREATE_SEAT_FAILED")
 		_update_status_label()
 		_update_buttons()
-	elif r.ok and r.data is Dictionary and int(r.data.tableId) == id:
-		return # 공개 뷰가 곧 착석을 그린다
-	elif not r.ok:
-		_show_error(r.error)
 
 
 func _on_stomp_closed() -> void:

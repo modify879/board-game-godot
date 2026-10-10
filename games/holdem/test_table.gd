@@ -71,6 +71,12 @@ func _ready() -> void:
 	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})
 	check(not table.waiting and table.got_seated, "SEATED clears waiting, sets got_seated")
 
+	var retried_before: bool = table.dropped_retried
+	table.dropped_retried = true
+	table._handle_join_queue({"tableId": 1.0, "type": "SEATED"})
+	check(not table.dropped_retried, "SEATED resets dropped_retried")
+	table.dropped_retried = retried_before
+
 	# 7. ACCESS_DENIED 후 테이블이 연 새 소켓은 재연결 대상이어야 한다(의도적 종료 플래그가 덮이면 안 됨)
 	Stomp._handle_packet("ERROR\nerrorCode:ACCESS_DENIED\n\n")
 	check(not Stomp._intentional_close, "ACCESS_DENIED 뒤 새 소켓은 재연결 대상")

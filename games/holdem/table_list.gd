@@ -15,6 +15,8 @@ const PAGE_SIZE := 20
 @onready var page_label: Label = %PageLabel
 @onready var next_button: Button = %NextButton
 
+static var pending_error := "" # 테이블 화면이 방 만들기에 실패하면 errorCode 를 넘긴다
+
 var current_page := 0
 var total_pages := 0
 
@@ -26,6 +28,10 @@ func _ready() -> void:
 	next_button.pressed.connect(func() -> void: _load(current_page + 1))
 	create_button.pressed.connect(_on_create)
 	name_edit.text_submitted.connect(func(_text: String) -> void: _on_create())
+	if pending_error != "":
+		error_label.text = ErrorText.of(pending_error)
+		error_label.show()
+		pending_error = ""
 	var seat_r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
 	if seat_r.status == 200:
 		enter(seat_r.data.tableId)
