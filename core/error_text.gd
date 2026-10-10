@@ -68,6 +68,7 @@ const TEXT := {
 	"GAME_TRANSFER_AMOUNT_INVALID": "옮길 칩 금액이 올바르지 않습니다",
 	"AMOUNT_NOT_POSITIVE": "금액은 0보다 커야 합니다",
 	"AMOUNT_NEGATIVE": "금액은 0 이상이어야 합니다",
+	"STOMP_ERROR": "실시간 연결에 문제가 생겼습니다. 다시 들어와 주세요",
 }
 
 
