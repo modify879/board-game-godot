@@ -207,7 +207,7 @@ func _finish(r: Dictionary, done: String) -> void:
 		if selected_id > 0:
 			var item = user_items.get(selected_id)
 			if item != null:
-				_select_user(item)
+				await _select_user(item)
 			else:
 				await _lookup(selected_id, true, true)
 	if r.ok:
@@ -313,7 +313,7 @@ func _select_user(item: Dictionary) -> void:
 	if item.locked:
 		info += " · 잠김"
 	user_info_label.text = info
-	_append_balance(id, info)
+	await _append_balance(id, info)
 
 
 ## 잔액을 읽어 info 끝에 붙인다. 그 사이 다른 회원이 선택됐으면 버린다
@@ -360,7 +360,7 @@ func _lookup(id: int, quiet := false, held := false) -> void:
 	if r.ok:
 		var info := "%s (%s)" % [r.data.nickname, r.data.username]
 		user_info_label.text = info
-		_append_balance(id, info)
+		await _append_balance(id, info)
 	elif quiet: # 작업 뒤 재조회 실패가 방금 띄운 결과를 덮지 않게
 		user_info_label.text = "회원 정보 확인 실패"
 	else:
