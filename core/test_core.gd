@@ -10,6 +10,10 @@ func _init() -> void:
 	var stomp := preload("res://core/stomp.gd")
 	var et := preload("res://core/error_text.gd")
 
+	var lab := preload("res://core/ui/rows.gd").label("x", true)
+	check(lab.text == "x" and lab.size_flags_horizontal == Control.SIZE_EXPAND_FILL, "Rows.label expand")
+	lab.free()
+
 	# build/parse round trip
 	var frame := stomp.build_frame("SEND", {"destination": "/app/hello", "content-type": "text/plain"}, "hi")
 	var parsed := stomp.parse_frame(frame)
