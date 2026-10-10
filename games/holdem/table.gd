@@ -4,9 +4,10 @@ extends Control
 static var table_id := 0
 static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
 static var create_name := "" # table_list 의 "만들기" 가 넘긴다. creating 이 true 면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
-static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름이 비어도 생성 모드다(이름 검증은 서버 몫)
+static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름 검사는 table_list 가 한다
 
 const Cards := preload("res://games/holdem/cards.gd")
+const Rules := preload("res://games/holdem/rules.gd")
 
 const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
@@ -685,6 +686,10 @@ func _open_sit_popup() -> void:
 		sit_popup_error.show()
 		return
 	var balance := int(r.data.balance)
+	if balance < Rules.BIG_BLIND:
+		sit_popup_error.text = ErrorText.of("BUY_IN_OUT_OF_RANGE")
+		sit_popup_error.show()
+		return
 	sit_popup_info.text = "착석하면 지갑 잔액 %s 전부가 칩으로 들어갑니다" % Format.comma(balance)
 	sit_popup_ok.disabled = false
 

@@ -1,6 +1,7 @@
 extends Control
 ## Holdem table list: browse pages, create a table.
 
+const Rules := preload("res://games/holdem/rules.gd")
 const PAGE_SIZE := 20
 
 @onready var back_button: Button = %BackButton
@@ -103,6 +104,11 @@ func _update_pager() -> void:
 
 
 func _on_create() -> void:
+	var invalid := Rules.table_name(name_edit.text)
+	if invalid != "":
+		error_label.text = ErrorText.of(invalid)
+		error_label.show()
+		return
 	pending_name = name_edit.text
 	var table_script = preload("res://games/holdem/table.gd")
 	table_script.table_id = 0
