@@ -12,6 +12,7 @@ const LEDGER_TYPE := {
 	"GAME_CASH_OUT": "게임 정산",
 }
 const CREDIT_TYPES := ["DEPOSIT", "WITHDRAWAL_REFUND", "ADMIN_ADJUSTMENT_CREDIT", "GAME_CASH_OUT"]
+const DEBIT_TYPES := ["WITHDRAWAL_HOLD", "ADMIN_ADJUSTMENT_DEBIT", "GAME_BUY_IN"]
 const DEPOSIT := 0
 const WITHDRAW := 1
 const LEDGER := 2
@@ -142,7 +143,7 @@ func _load_deposits(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: _load_deposits(pages[DEPOSIT])))
+			row.add_child(_cancel_button("/api/wallet/deposit-requests/%d" % int(item.id), func() -> void: await _load_deposits(pages[DEPOSIT])))
 		deposit_rows.add_child(row)
 	_update_pager(DEPOSIT)
 
@@ -163,7 +164,7 @@ func _load_withdrawals(page: int) -> void:
 			status += " (%s)" % item.rejectionReason
 		row.add_child(Rows.label(status))
 		if item.status == "PENDING":
-			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: _load_withdrawals(pages[WITHDRAW]), true))
+			row.add_child(_cancel_button("/api/wallet/withdrawal-requests/%d" % int(item.id), func() -> void: await _load_withdrawals(pages[WITHDRAW]), true))
 		withdraw_rows.add_child(row)
 	_update_pager(WITHDRAW)
 
@@ -181,14 +182,14 @@ func _on_cancel(button: Button, path: String, reload: Callable, refund: bool) ->
 	_set_busy(true)
 	button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, path)
-	_set_busy(false)
 	if not r.ok:
 		_show_error(r.error) # ALREADY_PROCESSED·NOT_FOUND 도 아래에서 목록을 다시 읽는다
 	else:
 		error_label.hide()
-	reload.call()
+	await reload.call()
 	if r.ok and refund:
-		_load_balance()
+		await _load_balance()
+	_set_busy(false)
 
 
 func _load_ledger(page: int) -> void:
@@ -203,7 +204,7 @@ func _load_ledger(page: int) -> void:
 		var row := HBoxContainer.new()
 		row.add_child(Rows.label(Format.time(item.occurredAt)))
 		row.add_child(Rows.label(LEDGER_TYPE.get(item.type, item.type), true))
-		var sign := "+" if item.type in CREDIT_TYPES else "-"
+		var sign := "+" if item.type in CREDIT_TYPES else ("-" if item.type in DEBIT_TYPES else "") # 모르는 종류는 부호 없이
 		row.add_child(Rows.label(sign + Format.comma(int(item.amount))))
 		row.add_child(Rows.label("잔액 %s" % Format.comma(int(item.balanceAfter))))
 		ledger_rows.add_child(row)
@@ -229,12 +230,12 @@ func _on_deposit() -> void:
 	_set_busy(true)
 	deposit_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount}, ["Idempotency-Key: " + deposit_key])
-	_set_busy(false)
 	deposit_button.disabled = false
 	if not r.ok:
-		if r.status >= 400 and r.status < 500 and r.error != "IDEMPOTENCY_KEY_CONFLICT": # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지 — CONFLICT 는 같은 키 요청이 아직 처리 중이라 키를 바꾸면 요청이 두 번 생긴다
+		if not Api.keeps_idempotency_key(r):
 			_new_deposit_key()
 		_show_error(r.error)
+		_set_busy(false)
 		return
 	error_label.hide()
 	deposit_edit.text = "" # 코드 대입은 text_changed 를 안 울린다
@@ -242,7 +243,8 @@ func _on_deposit() -> void:
 	var a: Dictionary = r.data.depositAccount
 	deposit_result.text = "아래 계좌로 %s 원을 입금해주세요\n%s %s (예금주 %s)\n관리자 확인 후 잔액에 들어옵니다" % [
 		Format.comma(amount), a.bankName, a.accountNumber, a.accountHolder]
-	_load_deposits(0) # 새 요청은 최신순 첫 페이지에 있다
+	await _load_deposits(0) # 새 요청은 최신순 첫 페이지에 있다
+	_set_busy(false)
 
 
 func _on_withdraw() -> void:
@@ -263,16 +265,17 @@ func _on_withdraw() -> void:
 		"accountNumber": account_number_edit.text,
 		"accountHolder": account_holder_edit.text,
 	}, ["Idempotency-Key: " + withdraw_key])
-	_set_busy(false)
 	withdraw_button.disabled = false
 	if not r.ok:
-		if r.status >= 400 and r.status < 500 and r.error != "IDEMPOTENCY_KEY_CONFLICT": # 확정 실패(4xx)면 새 키, 결과를 모르는 실패(0·5xx)는 재시도용으로 유지 — CONFLICT 는 같은 키 요청이 아직 처리 중이라 키를 바꾸면 요청이 두 번 생긴다
+		if not Api.keeps_idempotency_key(r):
 			_new_withdraw_key()
 		_show_error(r.error)
+		_set_busy(false)
 		return
 	error_label.hide()
 	for e in [withdraw_amount_edit, bank_name_edit, account_number_edit, account_holder_edit]:
 		e.text = ""
 	_new_withdraw_key()
-	_load_withdrawals(0) # 새 요청은 최신순 첫 페이지에 있다
-	_load_balance()
+	await _load_withdrawals(0) # 새 요청은 최신순 첫 페이지에 있다
+	await _load_balance()
+	_set_busy(false)

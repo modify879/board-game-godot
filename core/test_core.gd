@@ -100,6 +100,13 @@ func _init() -> void:
 	check(api.retries_unavailable({"error": "HTTP_503"}) == false, "게이트웨이 503 은 재시도 안 함")
 	check(api.retries_unavailable({"error": "INTERNAL_ERROR"}) == false, "INTERNAL_ERROR 는 재시도 안 함")
 
+	# keeps_idempotency_key
+	check(api.keeps_idempotency_key({"status": 0, "error": "NETWORK_ERROR"}) == true, "status 0 은 키 유지")
+	check(api.keeps_idempotency_key({"status": 503, "error": "HTTP_503"}) == true, "5xx 는 키 유지")
+	check(api.keeps_idempotency_key({"status": 409, "error": "IDEMPOTENCY_KEY_CONFLICT"}) == true, "IDEMPOTENCY_KEY_CONFLICT 는 키 유지")
+	check(api.keeps_idempotency_key({"status": 400, "error": "DEPOSIT_AMOUNT_INVALID"}) == false, "400 은 새 키")
+	check(api.keeps_idempotency_key({"status": 409, "error": "INSUFFICIENT_BALANCE"}) == false, "409 INSUFFICIENT_BALANCE 는 새 키")
+
 	# receive_interval_ms
 	check(stomp.receive_interval_ms("10000,0") == 10000, "heart-beat 10000,0")
 	check(stomp.receive_interval_ms("5000,0") == 10000, "heart-beat 5000,0 은 10000 으로 올림")
