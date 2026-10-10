@@ -223,8 +223,9 @@ func _on_deposit() -> void:
 		return
 	deposit_result.text = "" # 실패 시 지난 안내가 새 요청 것처럼 남지 않게
 	var amount = Format.parse_amount(deposit_edit.text)
-	if amount == null:
-		_show_error("DEPOSIT_AMOUNT_INVALID")
+	var invalid := "DEPOSIT_AMOUNT_INVALID" if amount == null else InputRules.deposit_amount(amount)
+	if invalid != "":
+		_show_error(invalid)
 		return
 	_set_busy(true)
 	deposit_button.disabled = true
@@ -249,8 +250,11 @@ func _on_withdraw() -> void:
 	if _busy:
 		return
 	var amount = Format.parse_amount(withdraw_amount_edit.text)
-	if amount == null:
-		_show_error("WITHDRAWAL_AMOUNT_INVALID")
+	var invalid := "WITHDRAWAL_AMOUNT_INVALID" if amount == null else InputRules.withdrawal_amount(amount)
+	if invalid == "":
+		invalid = InputRules.bank_account(bank_name_edit.text, account_number_edit.text, account_holder_edit.text)
+	if invalid != "":
+		_show_error(invalid)
 		return
 	_set_busy(true)
 	withdraw_button.disabled = true
