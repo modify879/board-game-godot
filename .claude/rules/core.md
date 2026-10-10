@@ -33,4 +33,4 @@ paths: ["core/**"]
 - refresh 실패는 4xx 만 세션 종료다. 네트워크 오류·5xx 는 세션을 두고 5초 뒤 재시도한다
 - 선제 갱신은 `accessTokenExpiresInMs` 를 `Time.get_ticks_msec()` 로 센다(`_refresh_due_ticks`). `create_timer` 는 가려진 탭에서 멈춘 만큼 늦게 울리지만, 틱 비교는 탭 복귀 첫 프레임에 바로 갱신한다
 - connect 직후 `_last_state` 는 CONNECTING 으로 둔다 — 즉시 거부되면 CLOSED→CLOSED 라 재연결이 멈춘다(실측)
-- 서버는 ERROR 프레임 직후 소켓을 닫는다(1002) — close 처리 전에 남은 패킷을 먼저 읽어야 ERROR 를 놓치지 않는다
+- 서버는 ERROR 프레임 직후 소켓을 닫는다(1002) — Web 은 close 처리 전에 남은 패킷을 먼저 읽어야 ERROR 를 놓치지 않는다. 데스크톱 엔진(WSLPeer)은 닫힐 때 받은 프레임을 버리므로 1002 종료를 ERROR 와 같게 처리한다(재연결하지 않는다)

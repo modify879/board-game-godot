@@ -51,7 +51,11 @@ func _process(_delta: float) -> void:
 			var code := ws.get_close_code()
 			closed.emit()
 			if not _intentional_close:
-				if code == 1008 or reason.contains("AUTHENTICATION_REQUIRED"):
+				if code == 1002:
+					# 서버는 ERROR 뒤에만 1002 로 닫는다 — 데스크톱 엔진은 닫힐 때 받은 프레임을 버려 ERROR 를 못 읽는다 — ERROR 와 같게 멈춘다(그대로 두면 같은 구독을 재생하며 2초마다 재연결한다)
+					_intentional_close = true # emit 보다 먼저 — ERROR 분기와 같은 이유
+					error.emit("STOMP_ERROR")
+				elif code == 1008 or reason.contains("AUTHENTICATION_REQUIRED"):
 					_reauth_reconnect()
 				else:
 					_schedule_reconnect()
