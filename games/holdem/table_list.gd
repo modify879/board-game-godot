@@ -6,6 +6,7 @@ const PAGE_SIZE := 20
 
 @onready var back_button: Button = %BackButton
 @onready var refresh_button: Button = %RefreshButton
+@onready var history_button: Button = %HistoryButton
 @onready var name_edit: LineEdit = %NameEdit
 @onready var buy_in_spin: SpinBox = %BuyInSpin
 @onready var buy_in_info: Label = %BuyInInfo
@@ -35,6 +36,7 @@ func _ready() -> void:
 	pager = Pager.new(pager_box, prev_button, page_label, next_button, _load)
 	create_button.disabled = true # /me/seat 확인이 끝나기 전에는 만들 수 없다
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
+	history_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://games/holdem/hand_history.tscn"))
 	refresh_button.pressed.connect(func() -> void:
 		await _load(pager.page)
 		await _check_seat()
