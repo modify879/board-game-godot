@@ -81,7 +81,7 @@ func _update_create_button() -> void:
 	create_button.disabled = not seat_ok or buy_in_blocked
 
 
-## 방 생성 바이인 범위·지갑. ponytail: 서버가 테이블 없는 GET /api/holdem/buy-in 을 추가하면(요청함, 미배포) 이 경로만 바꾸면 된다
+## 방 생성 바이인 범위·지갑을 GET /api/holdem/buy-in 으로 읽는다. 실패하면 기본 범위로 둔다
 func _load_buy_in() -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/buy-in")
 	if not r.ok: # 범위를 모르면 기본 범위로 두고 서버가 판단하게 한다
