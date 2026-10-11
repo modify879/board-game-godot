@@ -241,6 +241,15 @@ func _ready() -> void:
 	table._handle_public(_view(105, [_seat(1, 7), _seat(2, 8)], {"result": null_cat}))
 	check(not table.show_hand_button.visible and table._find_shown_hand(1) != null, "null category shown hand renders")
 	table._handle_public(_view(106, [_seat(1, 7)]))
+	# SHOW_NOT_ALLOWED 로 거부되면 그 판 동안 다른 뷰가 와도 숨기고, 새 판의 폴드 승리에서는 다시 보인다
+	table._handle_public(_view(107, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	table.show_denied_hand = table.hand_counter
+	table._handle_public(_view(108, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(not table.show_hand_button.visible, "show button stays hidden after denial in the same hand")
+	table._handle_public(_view(109, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	table._handle_public(_view(110, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(table.show_hand_button.visible, "show button returns for the next fold-won hand")
+	table._handle_public(_view(111, [_seat(1, 7)]))
 
 	# 14b. 칩 추가 버튼: 앉아 있고, 핸드 중이 아니고, 스택 < 최대일 때만 활성
 	var my_seat := _seat(1, 7)

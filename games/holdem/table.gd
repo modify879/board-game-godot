@@ -70,6 +70,7 @@ var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
 var last_buy_in := 0 # 재시도·재연결 뒤 다시 요청할 때 같은 바이인을 보낸다
+var show_denied_hand := -1 # SHOW_NOT_ALLOWED 를 받은 hand_counter — 그 판 동안은 버튼을 다시 띄우지 않는다
 var show_pending := false # 패 보여 주기 요청 진행 중
 var add_chips_gen := 0 # 칩 추가 입력을 열 때마다 올린다 — 늦게 온 buy-in 응답을 거른다
 var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이다
@@ -552,13 +553,11 @@ func _render_seat_panel(seat_no: int) -> void:
 	var revealed_hand: Variant = _find_revealed_hand(seat_no)
 	if shown_hand != null:
 		_add_card_row(vbox, shown_hand.holeCards)
-		var category_label := Label.new()
 		var category = shown_hand.get("category") # 프리플랍 종료 등 보드가 3장 미만이면 null
 		if category != null:
+			var category_label := Label.new()
 			category_label.text = Cards.category_text(category)
 			vbox.add_child(category_label)
-		else:
-			category_label.free()
 	elif revealed_hand != null:
 		_add_card_row(vbox, revealed_hand.holeCards)
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
@@ -832,7 +831,7 @@ func _on_cancel_request_pressed() -> void:
 func _can_show_hand() -> bool:
 	var result = public_view.get("result")
 	var seat_no := _my_seat_no()
-	return result != null and seat_no != -1 and not public_view.get("handInProgress", false) \
+	return result != null and seat_no != -1 and show_denied_hand != hand_counter and not public_view.get("handInProgress", false) \
 		and result.get("shownHands", []).is_empty() and _payout_for(seat_no) > 0
 
 
@@ -844,8 +843,7 @@ func _on_show_hand_pressed() -> void:
 	if not r.ok:
 		_show_error(r.error)
 		if r.error == "SHOW_NOT_ALLOWED":
-			show_hand_button.hide()
-			return # 곧 올 뷰가 조건을 다시 정한다
+			show_denied_hand = hand_counter
 	_update_buttons()
 
 
