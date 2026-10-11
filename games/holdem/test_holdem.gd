@@ -26,6 +26,25 @@ func _init() -> void:
 	check(rules.table_name("a".repeat(30)) == "", "방 이름 30자 통과")
 	check(rules.table_name(" a ") == "", "방 이름 trim 후 1자 통과")
 
+	# buy_in / chip_add — 서버 순서: 단위 → 범위 → 지갑
+	check(rules.buy_in(4000, 4000, 20000, 100000) == "", "바이인 하한 통과")
+	check(rules.buy_in(20000, 4000, 20000, 100000) == "", "바이인 상한 통과")
+	check(rules.buy_in(4050, 4000, 20000, 100000) == "CHIPS_NOT_UNIT", "바이인 100 단위 아님")
+	check(rules.buy_in(3900, 4000, 20000, 100000) == "BUY_IN_OUT_OF_RANGE", "바이인 하한 미만")
+	check(rules.buy_in(20100, 4000, 20000, 100000) == "BUY_IN_OUT_OF_RANGE", "바이인 상한 초과")
+	check(rules.buy_in(5000, 4000, 20000, 4900) == "INSUFFICIENT_BALANCE", "바이인이 지갑 초과")
+	check(rules.buy_in(3950, 4000, 20000, 100) == "CHIPS_NOT_UNIT", "단위가 범위·지갑보다 먼저")
+	check(rules.buy_in(3900, 4000, 20000, 100) == "BUY_IN_OUT_OF_RANGE", "범위가 지갑보다 먼저")
+	check(rules.buy_in(5000, 4000, 20000) == "", "지갑을 모르면 지갑 검사 생략")
+	check(rules.chip_add(5000, 15000, 20000, 9000) == "", "칩 추가 상한 정확히 통과")
+	check(rules.chip_add(5100, 15000, 20000, 9000) == "CHIP_ADD_OUT_OF_RANGE", "칩 추가 스택 상한 초과")
+	check(rules.chip_add(0, 1000, 20000, 9000) == "CHIP_ADD_OUT_OF_RANGE", "칩 추가 0 거부")
+	check(rules.chip_add(150, 1000, 20000, 9000) == "CHIPS_NOT_UNIT", "칩 추가 단위")
+	check(rules.chip_add(2000, 1000, 20000, 1900) == "INSUFFICIENT_BALANCE", "칩 추가가 지갑 초과")
+	check(rules.buy_in_blocked_text({"walletBalance": 3900.0, "minBuyIn": 4000.0, "obligationExpiresAt": null}) == ErrorText.of("INSUFFICIENT_BALANCE"), "의무 없이 지갑 부족")
+	check("이후에 앉을 수" in rules.buy_in_blocked_text({"walletBalance": 100.0, "minBuyIn": 4000.0, "obligationExpiresAt": "2026-01-01T10:00:00Z"}), "의무 시각 안내")
+	check(rules.buy_in_blocked_text({"walletBalance": 4000.0, "minBuyIn": 4000.0, "obligationExpiresAt": null}) == "", "지갑이 충분하면 안내 없음")
+
 	quit(1 if failures else 0)
 
 

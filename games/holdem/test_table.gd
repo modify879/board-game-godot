@@ -135,7 +135,7 @@ func _ready() -> void:
 		table.raise_spin.value = mm[1]
 		check(int(table.raise_slider.value) == mm[1], "raise max %d exact (got %d)" % [mm[1], int(table.raise_slider.value)])
 
-	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 60초 어림
+	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 30초 어림
 	var timer_lbl: Label = table.seat_timer_labels[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
 	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
@@ -151,7 +151,7 @@ func _ready() -> void:
 	table._handle_public(_view(19, seats, turn_extra))
 	table._handle_public(_view(20, seats, turn_extra.merged({"street": "TURN"}, true)))
 	table._update_turn_timer()
-	check(timer_lbl.visible and timer_lbl.text == "60초", "absent turnRemainingMs falls back to 60s: '%s'" % timer_lbl.text)
+	check(timer_lbl.visible and timer_lbl.text == "30초", "absent turnRemainingMs falls back to 30s: '%s'" % timer_lbl.text)
 
 	# 10. 방 생성 중(table_id 0): join-queue 이벤트는 버리지 않고 모아 둔다
 	script.table_id = 0
@@ -189,19 +189,98 @@ func _ready() -> void:
 	check(table.waiting, "ALREADY_SEATED while not seated sets waiting")
 	table.waiting = false
 
-	# 14. 늦은 지갑 응답은 팝업 세대가 바뀌거나 닫히면 버린다
+	# 14. 늦은 buy-in 응답은 팝업 세대가 바뀌거나 닫히면 버린다
+	var bi := {"ok": true, "data": {"minBuyIn": 4000.0, "maxBuyIn": 20000.0, "maxStack": 20000.0, "walletBalance": 100000.0, "obligationExpiresAt": null}}
 	table.sit_popup_gen = 5
 	table.sit_popup.show()
 	table.sit_popup_ok.disabled = true
-	table._apply_sit_wallet(4, {"ok": true, "data": {"balance": 100000.0}})
-	check(table.sit_popup_ok.disabled, "stale-generation wallet response ignored")
+	table._apply_sit_buy_in(4, bi)
+	check(table.sit_popup_ok.disabled, "stale-generation buy-in response ignored")
 	table.sit_popup.hide()
-	table._apply_sit_wallet(5, {"ok": true, "data": {"balance": 100000.0}})
-	check(table.sit_popup_ok.disabled, "wallet response ignored when popup hidden")
+	table._apply_sit_buy_in(5, bi)
+	check(table.sit_popup_ok.disabled, "buy-in response ignored when popup hidden")
 	table.sit_popup.show()
-	table._apply_sit_wallet(5, {"ok": true, "data": {"balance": 100000.0}})
-	check(not table.sit_popup_ok.disabled, "current wallet response applied")
+	table._apply_sit_buy_in(5, bi)
+	check(not table.sit_popup_ok.disabled and table.sit_popup_spin.visible, "current buy-in response applied")
+	check(int(table.sit_popup_spin.min_value) == 4000 and int(table.sit_popup_spin.max_value) == 20000 and int(table.sit_popup_spin.value) == 20000, "spin range 4000~20000, default max")
+	# 지갑이 상한보다 적으면 100 단위로 내림한 지갑이 상한·기본값
+	bi.data.walletBalance = 7350.0
+	table._apply_sit_buy_in(5, bi)
+	check(int(table.sit_popup_spin.max_value) == 7300 and int(table.sit_popup_spin.value) == 7300, "spin max capped to wallet floor: %d" % int(table.sit_popup_spin.max_value))
+	# 지갑 < 최소 + 의무: 확인 막힘, 잔액 부족 + 시각 안내
+	bi.data.walletBalance = 3000.0
+	bi.data.obligationExpiresAt = "2026-01-01T10:00:00Z"
+	table._apply_sit_buy_in(5, bi)
+	check(table.sit_popup_ok.disabled and not table.sit_popup_spin.visible, "wallet below min blocks OK")
+	check(ErrorText.of("INSUFFICIENT_BALANCE") in table.sit_popup_error.text and "이후에 앉을 수" in table.sit_popup_error.text, "blocked notice with obligation time: '%s'" % table.sit_popup_error.text)
+	bi.data.obligationExpiresAt = null
+	table._apply_sit_buy_in(5, bi)
+	check(table.sit_popup_error.text == ErrorText.of("INSUFFICIENT_BALANCE"), "blocked without obligation: plain text")
+	table._apply_sit_buy_in(5, {"ok": false, "error": "TABLE_NOT_FOUND"})
+	check(table.sit_popup_error.visible and table.sit_popup_ok.disabled, "buy-in GET failure shown")
 	table.sit_popup.hide()
+
+	# 14a. 패 보여 주기: 폴드 승자(결과 있음·shownHands 비음·내 지급액·핸드 없음)만. category null 도 그려진다
+	var fold_result := {"payouts": [{"seatNo": 1.0, "userId": 7.0, "amount": 500.0}], "shownHands": []}
+	table.show_pending = false
+	table._handle_public(_view(100, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(table.show_hand_button.visible and not table.show_hand_button.disabled, "show button visible for fold winner")
+	table.show_pending = true
+	table._update_buttons()
+	check(table.show_hand_button.disabled, "show button disabled in flight")
+	table.show_pending = false
+	table._handle_public(_view(101, [_seat(1, 7), _seat(2, 8)], {"result": fold_result, "handInProgress": true}))
+	check(not table.show_hand_button.visible, "show button hidden while hand in progress")
+	table._handle_public(_view(102, [_seat(1, 7), _seat(2, 8)], {"result": {"payouts": [{"seatNo": 2.0, "userId": 8.0, "amount": 500.0}], "shownHands": []}}))
+	check(not table.show_hand_button.visible, "show button hidden for non-winner")
+	var showdown := {"payouts": [{"seatNo": 1.0, "userId": 7.0, "amount": 500.0}],
+		"shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": "PAIR"}]}
+	table._handle_public(_view(103, [_seat(1, 7), _seat(2, 8)], {"result": showdown}))
+	check(not table.show_hand_button.visible, "show button hidden for showdown / already shown")
+	var null_cat := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": null}]}
+	table._handle_public(_view(105, [_seat(1, 7), _seat(2, 8)], {"result": null_cat}))
+	check(not table.show_hand_button.visible and table._find_shown_hand(1) != null, "null category shown hand renders")
+	table._handle_public(_view(106, [_seat(1, 7)]))
+	# SHOW_NOT_ALLOWED 로 거부되면 그 판 동안 다른 뷰가 와도 숨기고, 새 판의 폴드 승리에서는 다시 보인다
+	table._handle_public(_view(107, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	table.show_denied_hand = table.hand_counter
+	table._handle_public(_view(108, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(not table.show_hand_button.visible, "show button stays hidden after denial in the same hand")
+	table._handle_public(_view(109, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	table._handle_public(_view(110, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(table.show_hand_button.visible, "show button returns for the next fold-won hand")
+	table._handle_public(_view(111, [_seat(1, 7)]))
+
+	# 14b. 칩 추가 버튼: 앉아 있고, 핸드 중이 아니고, 스택 < 최대일 때만 활성
+	var my_seat := _seat(1, 7)
+	table.waiting = false
+	table.add_chips_pending = false
+	table._handle_public(_view(2000, [my_seat]))
+	check(table.add_chips_button.visible and not table.add_chips_button.disabled, "add chips enabled between hands")
+	table._handle_public(_view(2001, [my_seat], {"handInProgress": true}))
+	check(table.add_chips_button.disabled, "add chips disabled during hand")
+	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
+	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
+	my_seat.stack = 20000.0
+	table._handle_public(_view(2003, [my_seat]))
+	check(table.add_chips_button.disabled, "add chips disabled at max stack")
+	my_seat.stack = 1000.0
+	table._handle_public(_view(2004, [_seat(2, 8)]))
+	check(not table.add_chips_button.visible, "add chips hidden when not seated")
+	table._handle_public(_view(2005, [my_seat]))
+	table.add_chips_pending = true
+	table._update_buttons()
+	check(table.add_chips_button.disabled, "add chips disabled while request pending")
+	table.add_chips_pending = false
+	# 열기 응답: 추가 가능 최대 = min(maxStack - stack, 지갑) 내림
+	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50000.0}})
+	check(table.add_chips_box.visible and int(table.add_chips_spin.max_value) == 19000 and int(table.add_chips_spin.value) == 19000, "add chips max by stack: %d" % int(table.add_chips_spin.max_value))
+	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 2550.0}})
+	check(int(table.add_chips_spin.max_value) == 2500, "add chips max by wallet floor: %d" % int(table.add_chips_spin.max_value))
+	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50.0}})
+	check(not table.add_chips_box.visible and table.error_label.text == ErrorText.of("INSUFFICIENT_BALANCE"), "add chips: wallet below one unit -> notice")
+	table._handle_public(_view(2006, [_seat(1, 7)]))
+	table._update_buttons()
 
 	# 연결이 끊기면 개인 구독을 지우고, 재연결 뒤 앉은 공개 뷰로 다시 구독한다
 	table._handle_public(_view(1000, [_seat(1, 7)]))
