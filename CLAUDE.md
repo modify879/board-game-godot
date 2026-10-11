@@ -17,6 +17,8 @@ rm -f build/web/index.{wasm,pck,js}.gz && /mnt/c/Users/jsm/.godot/Godot.exe --he
 (cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose up -d)              # http://localhost:8000 (같은 origin 프록시)
 ```
 
+nginx(`deploy`) 컨테이너는 사용자가 계속 띄워 두고 쓴다. 검증이 끝나도 `docker compose down`·`docker rm`·`stop` 하지 않는다 — 내려가 있으면 위 명령으로 다시 띄운다
+
 서버 코드는 이 저장소에서 고치지 않는다. 띄워야 하면 서버 저장소에서 `./gradlew bootRun`.
 
 ## 구조
