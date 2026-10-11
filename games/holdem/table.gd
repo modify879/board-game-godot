@@ -12,7 +12,7 @@ const Rules := preload("res://games/holdem/rules.gd")
 const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
 const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
-const TURN_SECONDS := 60.0
+const TURN_SECONDS := 30.0 # 서버 턴 제한. infrastructure/timer/TurnTimer.kt:132
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
 @onready var back_button: Button = %BackButton
@@ -70,7 +70,7 @@ var pending_join_queue: Array = [] # 방 생성 응답 전에는 table_id 를 �
 var my_available_actions = null # SeatPrivateView.availableActions (Dictionary) or null
 var action_pending := false
 
-# 서버는 턴 마감 시각을 보내지 않는다 — toActSeatNo 가 바뀐 시점부터 60초로 어림한다.
+# 서버는 턴 마감 시각을 보내지 않는다 — toActSeatNo 가 바뀐 시점부터 30초로 어림한다.
 var hand_counter := 0
 var last_hand_in_progress := false
 var last_turn_key := ""
@@ -166,7 +166,7 @@ func _handle_public(body: Dictionary) -> void:
 			_send_join(last_post_blind, true)
 	_sync_private_subscription()
 	_update_turn_key()
-	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 60초 어림을 그대로 쓴다
+	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 30초 어림을 그대로 쓴다
 		var left_ms = body.turnRemainingMs
 		turn_deadline_ticks = -1 if left_ms == null else Time.get_ticks_msec() + int(left_ms)
 	if _to_act_seat_no() != _my_seat_no():

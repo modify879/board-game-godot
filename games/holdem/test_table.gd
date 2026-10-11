@@ -135,7 +135,7 @@ func _ready() -> void:
 		table.raise_spin.value = mm[1]
 		check(int(table.raise_slider.value) == mm[1], "raise max %d exact (got %d)" % [mm[1], int(table.raise_slider.value)])
 
-	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 60초 어림
+	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 30초 어림
 	var timer_lbl: Label = table.seat_timer_labels[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
 	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
@@ -151,7 +151,7 @@ func _ready() -> void:
 	table._handle_public(_view(19, seats, turn_extra))
 	table._handle_public(_view(20, seats, turn_extra.merged({"street": "TURN"}, true)))
 	table._update_turn_timer()
-	check(timer_lbl.visible and timer_lbl.text == "60초", "absent turnRemainingMs falls back to 60s: '%s'" % timer_lbl.text)
+	check(timer_lbl.visible and timer_lbl.text == "30초", "absent turnRemainingMs falls back to 30s: '%s'" % timer_lbl.text)
 
 	# 10. 방 생성 중(table_id 0): join-queue 이벤트는 버리지 않고 모아 둔다
 	script.table_id = 0

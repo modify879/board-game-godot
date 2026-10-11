@@ -17,6 +17,6 @@ paths: ["games/holdem/**"]
 - 연결이 끊기면 대기열에서 빠진다 — 재연결 후 앉아 있지 않으면 다시 요청한다
 - 개인 큐는 공개 뷰가 앉은 것으로 보일 때만 구독하고, 앉지 않은 것으로 보이면 해제한다(일어설 때 미리 끊지 않는다 — DELETE 가 실패하면 홀카드를 잃는다). 연결이 끊기면 지우고 재연결 뒤 공개 스냅샷으로 다시 구독한다. 서버는 미착석 SUBSCRIBE 를 조용히 무시하고 기억하지 않는다 — 다시 앉으면 새 SUBSCRIBE 가 필요하다
 - 취소 응답이 `JOIN_REQUEST_NOT_FOUND` 면 이미 앉았거나 이미 빠진 것이다 — 착석 여부는 공개 뷰로 판단한다
-- 액션 문자열은 대문자 `FOLD`·`CHECK`·`CALL`·`RAISE_TO`(+`raiseToAmount`). 턴 남은 시간은 공개 뷰의 `turnRemainingMs`(ms) — 받은 순간부터 `Time.get_ticks_msec()` 로 센다(OS 시계 아님). null 이면 타이머 없음(숨김), 키가 없으면(옛 서버) `toActSeatNo` 가 바뀐 시점부터 60초로 어림한다.
+- 액션 문자열은 대문자 `FOLD`·`CHECK`·`CALL`·`RAISE_TO`(+`raiseToAmount`). 턴 남은 시간은 공개 뷰의 `turnRemainingMs`(ms) — 받은 순간부터 `Time.get_ticks_msec()` 로 센다(OS 시계 아님). null 이면 타이머 없음(숨김), 키가 없으면(옛 서버) `toActSeatNo` 가 바뀐 시점부터 30초로 어림한다.
 - 다음 판 카운트다운은 `nextHandInMs`(남은 ms, null = 없음)를 받은 순간의 `Time.get_ticks_msec()` 기준으로 센다. OS 시계를 쓰지 않는다. 착석할 때마다 서버가 5초로 다시 건다 — 새 뷰마다 다시 맞춘다
 - 착석 최소 바이인 `Rules.BIG_BLIND`(200)는 서버 고정값이다 — 지갑 잔액이 이보다 적으면 착석 팝업이 `BUY_IN_OUT_OF_RANGE` 를 보이고 확인을 막는다. 서버 값이 바뀌면 함께 고친다
