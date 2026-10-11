@@ -8,6 +8,7 @@ const USERS := 2
 const PATHS := ["/api/admin/deposit-requests", "/api/admin/withdrawal-requests"]
 
 @onready var back_button: Button = %BackButton
+@onready var holdem_history_button: Button = %HoldemHistoryButton
 @onready var error_label: Label = %ErrorLabel
 @onready var result_label: Label = %ResultLabel
 @onready var tabs: TabContainer = %Tabs
@@ -45,6 +46,7 @@ var _busy := false
 
 func _ready() -> void:
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/lobby.tscn"))
+	holdem_history_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://games/holdem/admin_hand_history.tscn")) # 경로 문자열만 — 게임 스크립트를 참조하지 않는다
 	tabs.tab_changed.connect(_on_tab_changed)
 	for k in [DEPOSIT, WITHDRAW]:
 		statuses[k].item_selected.connect(func(_i: int) -> void: _load(k, 0))

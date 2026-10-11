@@ -33,6 +33,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "← 로비"
 
+[node name="HoldemHistoryButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "홀덤 핸드 기록"
+
 [node name="ErrorLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
