@@ -31,6 +31,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var add_chips_spin: SpinBox = %AddChipsSpin
 @onready var add_chips_ok: Button = %AddChipsOk
 @onready var add_chips_cancel: Button = %AddChipsCancel
+@onready var show_hand_button: Button = %ShowHandButton
 @onready var cancel_request_button: Button = %CancelRequestButton
 @onready var sit_popup: Control = %SitPopup
 @onready var sit_popup_info: Label = %SitPopupInfo
@@ -69,6 +70,7 @@ var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
 var last_buy_in := 0 # 재시도·재연결 뒤 다시 요청할 때 같은 바이인을 보낸다
+var show_pending := false # 패 보여 주기 요청 진행 중
 var add_chips_gen := 0 # 칩 추가 입력을 열 때마다 올린다 — 늦게 온 buy-in 응답을 거른다
 var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이다
 var add_chips_max_stack := 0 # 칩 추가 입력을 열 때 받은 buy-in 응답
@@ -99,6 +101,7 @@ func _ready() -> void:
 	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
+	show_hand_button.pressed.connect(_on_show_hand_pressed)
 	add_chips_button.pressed.connect(_on_add_chips_pressed)
 	add_chips_ok.pressed.connect(_on_add_chips_ok)
 	add_chips_cancel.pressed.connect(func() -> void: add_chips_box.hide())
@@ -550,8 +553,12 @@ func _render_seat_panel(seat_no: int) -> void:
 	if shown_hand != null:
 		_add_card_row(vbox, shown_hand.holeCards)
 		var category_label := Label.new()
-		category_label.text = Cards.category_text(shown_hand.category)
-		vbox.add_child(category_label)
+		var category = shown_hand.get("category") # 프리플랍 종료 등 보드가 3장 미만이면 null
+		if category != null:
+			category_label.text = Cards.category_text(category)
+			vbox.add_child(category_label)
+		else:
+			category_label.free()
 	elif revealed_hand != null:
 		_add_card_row(vbox, revealed_hand.holeCards)
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
@@ -619,6 +626,8 @@ func _update_buttons() -> void:
 	var my_seat: Variant = _find_seat_by_user(Api.user_id)
 	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
 	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
+	show_hand_button.visible = _can_show_hand()
+	show_hand_button.disabled = show_pending
 	add_chips_button.visible = seated
 	add_chips_button.disabled = not can_add or add_chips_pending
 	if not can_add:
@@ -817,6 +826,27 @@ func _on_cancel_request_pressed() -> void:
 		_render_seats()
 	else:
 		_show_error(r.error)
+
+
+## 폴드로 이긴 사람만, 다음 판 전에 한 번 보여 줄 수 있다. 폴드 종료 = 결과가 있고 shownHands 가 비었다(쇼다운이면 채워진다 — 내가 이미 보여 줬어도 채워져 조건이 꺼진다)
+func _can_show_hand() -> bool:
+	var result = public_view.get("result")
+	var seat_no := _my_seat_no()
+	return result != null and seat_no != -1 and not public_view.get("handInProgress", false) \
+		and result.get("shownHands", []).is_empty() and _payout_for(seat_no) > 0
+
+
+func _on_show_hand_pressed() -> void:
+	show_pending = true
+	_update_buttons()
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/hands/show" % table_id)
+	show_pending = false
+	if not r.ok:
+		_show_error(r.error)
+		if r.error == "SHOW_NOT_ALLOWED":
+			show_hand_button.hide()
+			return # 곧 올 뷰가 조건을 다시 정한다
+	_update_buttons()
 
 
 func _on_add_chips_pressed() -> void:

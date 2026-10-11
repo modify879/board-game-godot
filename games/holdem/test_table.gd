@@ -220,6 +220,28 @@ func _ready() -> void:
 	check(table.sit_popup_error.visible and table.sit_popup_ok.disabled, "buy-in GET failure shown")
 	table.sit_popup.hide()
 
+	# 14a. 패 보여 주기: 폴드 승자(결과 있음·shownHands 비음·내 지급액·핸드 없음)만. category null 도 그려진다
+	var fold_result := {"payouts": [{"seatNo": 1.0, "userId": 7.0, "amount": 500.0}], "shownHands": []}
+	table.show_pending = false
+	table._handle_public(_view(100, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
+	check(table.show_hand_button.visible and not table.show_hand_button.disabled, "show button visible for fold winner")
+	table.show_pending = true
+	table._update_buttons()
+	check(table.show_hand_button.disabled, "show button disabled in flight")
+	table.show_pending = false
+	table._handle_public(_view(101, [_seat(1, 7), _seat(2, 8)], {"result": fold_result, "handInProgress": true}))
+	check(not table.show_hand_button.visible, "show button hidden while hand in progress")
+	table._handle_public(_view(102, [_seat(1, 7), _seat(2, 8)], {"result": {"payouts": [{"seatNo": 2.0, "userId": 8.0, "amount": 500.0}], "shownHands": []}}))
+	check(not table.show_hand_button.visible, "show button hidden for non-winner")
+	var showdown := {"payouts": [{"seatNo": 1.0, "userId": 7.0, "amount": 500.0}],
+		"shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": "PAIR"}]}
+	table._handle_public(_view(103, [_seat(1, 7), _seat(2, 8)], {"result": showdown}))
+	check(not table.show_hand_button.visible, "show button hidden for showdown / already shown")
+	var null_cat := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": null}]}
+	table._handle_public(_view(105, [_seat(1, 7), _seat(2, 8)], {"result": null_cat}))
+	check(not table.show_hand_button.visible and table._find_shown_hand(1) != null, "null category shown hand renders")
+	table._handle_public(_view(106, [_seat(1, 7)]))
+
 	# 14b. 칩 추가 버튼: 앉아 있고, 핸드 중이 아니고, 스택 < 최대일 때만 활성
 	var my_seat := _seat(1, 7)
 	table.waiting = false
