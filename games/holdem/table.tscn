@@ -211,6 +211,36 @@ visible = false
 layout_mode = 2
 text = "일어서기"
 
+[node name="AddChipsButton" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "칩 추가"
+
+[node name="AddChipsBox" type="HBoxContainer" parent="VBoxContainer/BottomBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="AddChipsSpin" type="SpinBox" parent="VBoxContainer/BottomBar/HBoxContainer/AddChipsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 100.0
+max_value = 100.0
+step = 100.0
+value = 100.0
+suffix = "칩"
+
+[node name="AddChipsOk" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer/AddChipsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "추가"
+
+[node name="AddChipsCancel" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer/AddChipsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "취소"
+
 [node name="CancelRequestButton" type="Button" parent="VBoxContainer/BottomBar/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
@@ -259,6 +289,13 @@ unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
 text = ""
+
+[node name="SitPopupBuyIn" type="SpinBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+step = 100.0
+suffix = "칩"
 
 [node name="PostBlindCheck" type="CheckBox" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

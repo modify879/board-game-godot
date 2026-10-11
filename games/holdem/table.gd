@@ -4,6 +4,7 @@ extends Control
 static var table_id := 0
 static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
 static var create_name := "" # table_list 의 "만들기" 가 넘긴다. creating 이 true 면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
+static var create_buy_in := 0 # table_list 의 "만들기" 가 넘기는 바이인
 static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름 검사는 table_list 가 한다
 
 const Cards := preload("res://games/holdem/cards.gd")
@@ -25,9 +26,15 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
 @onready var stand_button: Button = %StandButton
+@onready var add_chips_button: Button = %AddChipsButton
+@onready var add_chips_box: HBoxContainer = %AddChipsBox
+@onready var add_chips_spin: SpinBox = %AddChipsSpin
+@onready var add_chips_ok: Button = %AddChipsOk
+@onready var add_chips_cancel: Button = %AddChipsCancel
 @onready var cancel_request_button: Button = %CancelRequestButton
 @onready var sit_popup: Control = %SitPopup
 @onready var sit_popup_info: Label = %SitPopupInfo
+@onready var sit_popup_spin: SpinBox = %SitPopupBuyIn
 @onready var sit_popup_post_blind: CheckBox = %PostBlindCheck
 @onready var sit_popup_error: Label = %SitPopupError
 @onready var sit_popup_ok: Button = %SitPopupOk
@@ -61,6 +68,14 @@ var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·S
 var queue_position := 0
 var got_seated := false # SEATED 가 202 응답보다 먼저 올 수 있다 — 공개 뷰가 오기 전이라도 대기 상태로 되돌리지 않는다
 var last_post_blind := false
+var last_buy_in := 0 # 재시도·재연결 뒤 다시 요청할 때 같은 바이인을 보낸다
+var add_chips_gen := 0 # 칩 추가 입력을 열 때마다 올린다 — 늦게 온 buy-in 응답을 거른다
+var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이다
+var add_chips_max_stack := 0 # 칩 추가 입력을 열 때 받은 buy-in 응답
+var add_chips_wallet := 0
+var sit_min := 0 # 착석 팝업이 받은 buy-in 응답 — 확인 때 Rules.buy_in 으로 다시 검사한다
+var sit_max := 0
+var sit_wallet := 0
 var retry_pending := false # DROPPED 재시도 대기 중 — 그 1초 동안 참가 버튼을 숨긴다
 var retry_notice_shown := false # error_label 에 DROPPED 재시도 안내가 떠 있다 — 착석·대기 뒤 이 안내만 지운다
 var dropped_retried := false # TEMPORARILY_UNAVAILABLE 로 대기열에서 빠지면 한 번만 자동으로 다시 요청한다
@@ -84,6 +99,9 @@ func _ready() -> void:
 	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
+	add_chips_button.pressed.connect(_on_add_chips_pressed)
+	add_chips_ok.pressed.connect(_on_add_chips_ok)
+	add_chips_cancel.pressed.connect(func() -> void: add_chips_box.hide())
 	sit_popup_ok.pressed.connect(_on_sit_popup_ok)
 	sit_popup_cancel.pressed.connect(_on_sit_popup_cancel)
 	fold_button.pressed.connect(_on_fold_pressed)
@@ -163,7 +181,7 @@ func _handle_public(body: Dictionary) -> void:
 	if rejoin_pending:
 		rejoin_pending = false
 		if not _is_seated():
-			_send_join(last_post_blind, true)
+			_send_join(last_post_blind, last_buy_in, true)
 	_sync_private_subscription()
 	_update_turn_key()
 	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 30초 어림을 그대로 쓴다
@@ -238,7 +256,7 @@ func _hide_retry_notice() -> void:
 func _retry_dropped_join() -> void:
 	retry_pending = false
 	if not _is_seated() and not waiting: # 그새 사용자가 직접 참가했으면 중복 요청하지 않는다
-		_send_join(last_post_blind)
+		_send_join(last_post_blind, last_buy_in)
 
 
 func _sync_private_subscription() -> void:
@@ -291,15 +309,16 @@ func _on_stomp_connected() -> void:
 		var new_name := create_name
 		create_name = "" # 재연결 때 두 번 만들지 않게
 		creating = false
-		_create_table(new_name)
+		_create_table(new_name, create_buy_in)
 
 
-func _create_table(new_name: String) -> void:
+func _create_table(new_name: String, buy_in: int) -> void:
+	last_buy_in = buy_in
 	waiting = true
 	_update_status_label()
 	_update_buttons()
 	var queue_before := pending_join_queue.size() # POST 전에 온 이벤트(구독 직후 스냅샷 등)는 이 방 것이 아니다
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name})
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables", {"name": new_name, "buyIn": buy_in})
 	if not r.ok and r.status == 0: # 응답이 유실됐어도 방은 만들어졌을 수 있다
 		# 서버는 생성 즉시 대기열에 넣고 join-queue 로 알린다 — POST 뒤에 버퍼에 쌓인 이벤트에 tableId 가 있다
 		if pending_join_queue.size() > queue_before:
@@ -597,6 +616,13 @@ func _update_buttons() -> void:
 	var seated := _is_seated()
 	stand_button.visible = seated
 	stand_button.disabled = public_view.get("handInProgress", false)
+	var my_seat: Variant = _find_seat_by_user(Api.user_id)
+	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
+	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
+	add_chips_button.visible = seated
+	add_chips_button.disabled = not can_add or add_chips_pending
+	if not can_add:
+		add_chips_box.hide() # 판이 시작되거나 일어서면 열려 있던 입력을 닫는다
 	join_button.visible = not seated and not waiting and not retry_pending
 	join_button.disabled = not stomp_connected or table_id == 0
 	cancel_request_button.visible = waiting
@@ -699,29 +725,42 @@ func _on_join_pressed() -> void:
 func _open_sit_popup() -> void:
 	sit_popup_info.text = ""
 	sit_popup_error.hide()
+	sit_popup_spin.hide()
 	sit_popup_post_blind.button_pressed = false
 	sit_popup_ok.disabled = true
 	sit_popup.show()
 	sit_popup_gen += 1
 	var gen := sit_popup_gen
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/wallet")
-	_apply_sit_wallet(gen, r)
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables/%d/buy-in" % table_id)
+	_apply_sit_buy_in(gen, r)
 
 
-## 지갑 응답을 팝업에 반영. 그사이 팝업이 닫히거나 다시 열렸으면 버린다
-func _apply_sit_wallet(gen: int, r: Dictionary) -> void:
+## buy-in 응답을 팝업에 반영. 그사이 팝업이 닫히거나 다시 열렸으면 버린다
+func _apply_sit_buy_in(gen: int, r: Dictionary) -> void:
 	if gen != sit_popup_gen or not sit_popup.visible:
 		return
+	sit_popup_spin.hide()
+	sit_popup_ok.disabled = true
 	if not r.ok:
 		sit_popup_error.text = ErrorText.of(r.error)
 		sit_popup_error.show()
 		return
-	var balance := int(r.data.balance)
-	if balance < Rules.BIG_BLIND:
-		sit_popup_error.text = ErrorText.of("BUY_IN_OUT_OF_RANGE")
+	sit_min = int(r.data.minBuyIn)
+	sit_max = int(r.data.maxBuyIn)
+	sit_wallet = int(r.data.walletBalance)
+	sit_popup_info.text = "바이인 %s ~ %s · 지갑 %s" % [Format.comma(sit_min), Format.comma(sit_max), Format.comma(sit_wallet)]
+	var blocked: String = Rules.buy_in_blocked_text(r.data)
+	if blocked != "":
+		sit_popup_error.text = blocked
 		sit_popup_error.show()
 		return
-	sit_popup_info.text = "착석하면 지갑 잔액 %s 전부가 칩으로 들어갑니다" % Format.comma(balance)
+	var top := mini(sit_max, sit_wallet / Rules.CHIP_UNIT * Rules.CHIP_UNIT)
+	sit_popup_spin.min_value = sit_min
+	sit_popup_spin.max_value = top
+	sit_popup_spin.step = Rules.CHIP_UNIT
+	sit_popup_spin.value = top
+	sit_popup_spin.show()
+	sit_popup_error.hide()
 	sit_popup_ok.disabled = false
 
 
@@ -730,17 +769,24 @@ func _on_sit_popup_cancel() -> void:
 
 
 func _on_sit_popup_ok() -> void:
+	var buy_in := int(sit_popup_spin.value)
+	var invalid := Rules.buy_in(buy_in, sit_min, sit_max, sit_wallet)
+	if invalid != "":
+		sit_popup_error.text = ErrorText.of(invalid)
+		sit_popup_error.show()
+		return
 	sit_popup_ok.disabled = true
 	var post_blind := sit_popup_post_blind.button_pressed
 	sit_popup.hide()
 	dropped_retried = false
-	_send_join(post_blind)
+	_send_join(post_blind, buy_in)
 
 
-func _send_join(post_blind: bool, rejoin := false) -> void:
+func _send_join(post_blind: bool, buy_in: int, rejoin := false) -> void:
 	got_seated = false
 	last_post_blind = post_blind
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"postBlindImmediately": post_blind})
+	last_buy_in = buy_in
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/tables/%d/seats" % table_id, {"buyIn": buy_in, "postBlindImmediately": post_blind})
 	if r.status == 202:
 		_hide_retry_notice() # 재시도 안내가 대기 중에 남지 않게
 		if not _is_seated() and not got_seated: # SEATED 나 공개 뷰가 202 보다 먼저 왔을 수 있다
@@ -771,6 +817,65 @@ func _on_cancel_request_pressed() -> void:
 		_render_seats()
 	else:
 		_show_error(r.error)
+
+
+func _on_add_chips_pressed() -> void:
+	add_chips_pending = true
+	add_chips_button.disabled = true
+	add_chips_gen += 1
+	var gen := add_chips_gen
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables/%d/buy-in" % table_id)
+	add_chips_pending = false
+	_apply_add_chips_open(gen, r)
+	_update_buttons()
+
+
+## buy-in 응답으로 추가할 수 있는 최대(min(상한 - 스택, 지갑) 을 100 단위 내림)를 정해 입력을 연다. 낡은 응답은 버린다
+func _apply_add_chips_open(gen: int, r: Dictionary) -> void:
+	if gen != add_chips_gen:
+		return
+	if not r.ok:
+		add_chips_box.hide()
+		_show_error(r.error)
+		return
+	var seat: Variant = _find_seat_by_user(Api.user_id)
+	if seat == null or public_view.get("handInProgress", false):
+		return
+	add_chips_max_stack = int(r.data.maxStack)
+	add_chips_wallet = int(r.data.walletBalance)
+	var top := mini(add_chips_max_stack - int(seat.stack), add_chips_wallet) / Rules.CHIP_UNIT * Rules.CHIP_UNIT
+	if top < Rules.CHIP_UNIT:
+		add_chips_box.hide()
+		_show_error("CHIP_ADD_OUT_OF_RANGE" if add_chips_max_stack - int(seat.stack) < Rules.CHIP_UNIT else "INSUFFICIENT_BALANCE")
+		return
+	error_label.hide()
+	add_chips_spin.min_value = Rules.CHIP_UNIT
+	add_chips_spin.max_value = top
+	add_chips_spin.step = Rules.CHIP_UNIT
+	add_chips_spin.value = top
+	add_chips_box.show()
+
+
+func _on_add_chips_ok() -> void:
+	var seat: Variant = _find_seat_by_user(Api.user_id)
+	if seat == null:
+		return
+	var amount := int(add_chips_spin.value)
+	var invalid := Rules.chip_add(amount, int(seat.stack), add_chips_max_stack, add_chips_wallet)
+	if invalid != "":
+		_show_error(invalid)
+		return
+	add_chips_pending = true
+	add_chips_ok.disabled = true
+	_update_buttons()
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/seat/chips", {"amount": amount})
+	add_chips_pending = false
+	add_chips_ok.disabled = false
+	if r.ok:
+		add_chips_box.hide() # 새 스택은 서버가 다시 방송하는 공개 뷰로 온다
+	else:
+		_show_error(r.error)
+	_update_buttons()
 
 
 func _on_stand_pressed() -> void:
