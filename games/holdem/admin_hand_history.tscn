@@ -3,4 +3,10 @@
 [ext_resource type="PackedScene" path="res://games/holdem/hand_history.tscn" id="1"]
 
 [node name="AdminHandHistory" instance=ExtResource("1")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 admin = true

@@ -224,6 +224,7 @@ layout_mode = 2
 
 [node name="AddChipsSpin" type="SpinBox" parent="VBoxContainer/BottomBar/HBoxContainer/AddChipsBox"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(170, 0)
 layout_mode = 2
 min_value = 100.0
 max_value = 100.0
