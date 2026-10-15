@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://games/holdem/hand_history.gd" id="1"]
 
 [node name="HandHistory" type="Control"]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -44,45 +45,59 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "새로고침"
 
-[node name="ErrorLabel" type="Label" parent="VBoxContainer"]
+[node name="ErrorMargin" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_right = 16
+
+[node name="ErrorLabel" type="Label" parent="VBoxContainer/ErrorMargin"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_right = 16
 autowrap_mode = 2
 text = ""
 
-[node name="Filter" type="HBoxContainer" parent="VBoxContainer"]
+[node name="FilterMargin" type="MarginContainer" parent="VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_right = 16
+
+[node name="Filter" type="HBoxContainer" parent="VBoxContainer/FilterMargin"]
+unique_name_in_owner = true
+layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="UserIdEdit" type="LineEdit" parent="VBoxContainer/Filter"]
+[node name="UserIdEdit" type="LineEdit" parent="VBoxContainer/FilterMargin/Filter"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "회원 ID"
 
-[node name="TableIdEdit" type="LineEdit" parent="VBoxContainer/Filter"]
+[node name="TableIdEdit" type="LineEdit" parent="VBoxContainer/FilterMargin/Filter"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "테이블 ID"
 
-[node name="SearchButton" type="Button" parent="VBoxContainer/Filter"]
+[node name="SearchButton" type="Button" parent="VBoxContainer/FilterMargin/Filter"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "검색"
 
-[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
-unique_name_in_owner = true
+[node name="ScrollMargin" type="MarginContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_right = 16
 
-[node name="Rows" type="VBoxContainer" parent="VBoxContainer/ScrollContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/ScrollMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Rows" type="VBoxContainer" parent="VBoxContainer/ScrollMargin/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
