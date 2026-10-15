@@ -26,6 +26,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
 @onready var stand_button: Button = %StandButton
+@onready var cancel_leave_button: Button = %CancelLeaveButton
 @onready var add_chips_button: Button = %AddChipsButton
 @onready var add_chips_box: HBoxContainer = %AddChipsBox
 @onready var add_chips_spin: SpinBox = %AddChipsSpin
@@ -101,6 +102,7 @@ func _ready() -> void:
 	back_button.pressed.connect(_on_back_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	stand_button.pressed.connect(_on_stand_pressed)
+	cancel_leave_button.pressed.connect(_on_cancel_leave_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
 	show_hand_button.pressed.connect(_on_show_hand_pressed)
 	add_chips_button.pressed.connect(_on_add_chips_pressed)
@@ -548,6 +550,11 @@ func _render_seat_panel(seat_no: int) -> void:
 		status_label_node.text = status_text
 		vbox.add_child(status_label_node)
 
+	if seat.get("leaveReserved", false):
+		var leave_label := Label.new()
+		leave_label.text = "나가기 예약"
+		vbox.add_child(leave_label)
+
 	var hand_in_progress: bool = public_view.get("handInProgress", false)
 	var shown_hand: Variant = _find_shown_hand(seat_no)
 	var revealed_hand: Variant = _find_revealed_hand(seat_no)
@@ -620,9 +627,12 @@ func _fetch_nickname(user_id: int) -> void:
 
 func _update_buttons() -> void:
 	var seated := _is_seated()
-	stand_button.visible = seated
-	stand_button.disabled = public_view.get("handInProgress", false)
 	var my_seat: Variant = _find_seat_by_user(Api.user_id)
+	# 핸드 중 일어서기는 나가기 예약(서버가 202) — 예약돼 있으면 취소 버튼으로 바꾼다
+	var leave_reserved: bool = seated and my_seat != null and my_seat.get("leaveReserved", false)
+	stand_button.visible = seated and not leave_reserved
+	stand_button.text = "핸드 후 나가기" if public_view.get("handInProgress", false) else "일어서기"
+	cancel_leave_button.visible = leave_reserved
 	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
 	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
 	show_hand_button.visible = _can_show_hand()
@@ -830,9 +840,13 @@ func _on_cancel_request_pressed() -> void:
 ## 폴드로 이긴 사람만, 다음 판 전에 한 번 보여 줄 수 있다. 폴드 종료 = 결과가 있고 shownHands 가 비었다(쇼다운이면 채워진다 — 내가 이미 보여 줬어도 채워져 조건이 꺼진다)
 func _can_show_hand() -> bool:
 	var result = public_view.get("result")
-	var seat_no := _my_seat_no()
-	return result != null and seat_no != -1 and show_denied_hand != hand_counter and not public_view.get("handInProgress", false) \
-		and result.get("shownHands", []).is_empty() and _payout_for(seat_no) > 0
+	if result == null or show_denied_hand == hand_counter or public_view.get("handInProgress", false) or not result.get("shownHands", []).is_empty():
+		return false
+	# 좌석이 아니라 userId 로 찾는다 — 나가기 예약이 정산에서 실행돼 자리가 비어도 다음 판 전까지 보여 줄 수 있다
+	for payout in result.get("payouts", []):
+		if int(payout.userId) == Api.user_id and int(payout.amount) > 0:
+			return true
+	return false
 
 
 func _on_show_hand_pressed() -> void:
@@ -910,6 +924,15 @@ func _on_stand_pressed() -> void:
 	stand_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat")
 	stand_button.disabled = false
+	# 202(나가기 예약)는 로컬 상태를 바꾸지 않는다 — 다시 방송되는 공개 뷰의 leaveReserved 가 화면을 바꾼다
+	if not r.ok:
+		_show_error(r.error)
+
+
+func _on_cancel_leave_pressed() -> void:
+	cancel_leave_button.disabled = true
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat/leave-reservation")
+	cancel_leave_button.disabled = false
 	if not r.ok:
 		_show_error(r.error)
 

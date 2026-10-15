@@ -229,6 +229,14 @@ func _ready() -> void:
 	table._update_buttons()
 	check(table.show_hand_button.disabled, "show button disabled in flight")
 	table.show_pending = false
+	# 예약 나가기로 자리가 빈 폴드 승자도 userId 로 보인다
+	table._handle_public(_view(100, [_seat(2, 8)], {"result": fold_result}))
+	check(table.show_hand_button.visible, "show button visible for fold winner no longer seated")
+	table._handle_public(_view(100, [_seat(2, 8)], {"result": fold_result, "handInProgress": true}))
+	check(not table.show_hand_button.visible, "show button hidden during hand when unseated")
+	var other_result := {"payouts": [{"seatNo": 2.0, "userId": 8.0, "amount": 500.0}], "shownHands": []}
+	table._handle_public(_view(100, [_seat(2, 8)], {"result": other_result}))
+	check(not table.show_hand_button.visible, "show button hidden for other user's payout")
 	table._handle_public(_view(101, [_seat(1, 7), _seat(2, 8)], {"result": fold_result, "handInProgress": true}))
 	check(not table.show_hand_button.visible, "show button hidden while hand in progress")
 	table._handle_public(_view(102, [_seat(1, 7), _seat(2, 8)], {"result": {"payouts": [{"seatNo": 2.0, "userId": 8.0, "amount": 500.0}], "shownHands": []}}))
@@ -272,6 +280,21 @@ func _ready() -> void:
 	table._update_buttons()
 	check(table.add_chips_button.disabled, "add chips disabled while request pending")
 	table.add_chips_pending = false
+
+	# 14c. 나가기 예약: 핸드 중에도 일어서기가 켜져 있고(예약 문구), 예약되면 취소 버튼으로 바뀐다
+	table._handle_public(_view(2010, [my_seat], {"handInProgress": true}))
+	check(table.stand_button.visible and not table.stand_button.disabled, "stand enabled during hand")
+	check(table.stand_button.text == "핸드 후 나가기" and not table.cancel_leave_button.visible, "stand reserves during hand, cancel hidden")
+	var reserved_seat := _seat(1, 7)
+	reserved_seat["leaveReserved"] = true
+	table._handle_public(_view(2011, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
+	check(not table.stand_button.visible and table.cancel_leave_button.visible, "reserved: stand hidden, cancel visible")
+	var other_reserved := _seat(2, 8)
+	other_reserved["leaveReserved"] = true
+	table._handle_public(_view(2012, [my_seat, other_reserved], {"handInProgress": true}))
+	check(table.stand_button.visible and not table.cancel_leave_button.visible, "other seat reserved leaves my buttons alone")
+	table._handle_public(_view(2013, [my_seat]))
+	check(table.stand_button.text == "일어서기", "stand text between hands")
 	# 열기 응답: 추가 가능 최대 = min(maxStack - stack, 지갑) 내림
 	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50000.0}})
 	check(table.add_chips_box.visible and int(table.add_chips_spin.max_value) == 19000 and int(table.add_chips_spin.value) == 19000, "add chips max by stack: %d" % int(table.add_chips_spin.max_value))
