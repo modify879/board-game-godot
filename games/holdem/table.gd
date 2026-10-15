@@ -397,9 +397,10 @@ func _find_seat(seat_no: int) -> Variant:
 
 
 func _seat_held_by(seat_no: int, user_id) -> bool:
-	# 결과는 다음 핸드 전까지 남는다 — 그 사이 같은 좌석에 다른 사람이 앉을 수 있다
+	# 결과는 다음 핸드 전까지 남는다 — 그 사이 같은 좌석에 다른 사람이 앉으면 물려받지 못하게 막는다.
+	# 좌석이 비었다면 결과 주인이 나간 것(정산 때 나가기 예약 등)이라 결과를 그대로 보인다
 	var seat: Variant = _find_seat(seat_no)
-	return seat != null and user_id != null and int(seat.userId) == int(user_id)
+	return user_id != null and (seat == null or int(seat.userId) == int(user_id))
 
 
 func _find_seat_by_user(user_id: int) -> Variant:
@@ -526,6 +527,13 @@ func _render_seat_panel(seat_no: int) -> void:
 		var empty_label := Label.new()
 		empty_label.text = "빈 자리"
 		vbox.add_child(empty_label)
+		var left_shown: Variant = _find_shown_hand(seat_no) # 정산 때 일어선 승자가 보여 준 패
+		if left_shown != null:
+			_add_card_row(vbox, left_shown.holeCards)
+			if left_shown.get("category") != null:
+				var left_category := Label.new()
+				left_category.text = Cards.category_text(left_shown.category)
+				vbox.add_child(left_category)
 		return
 
 	var nickname_label := Label.new()

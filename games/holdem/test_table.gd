@@ -315,6 +315,21 @@ func _ready() -> void:
 	table._handle_public(_view(1, [_seat(1, 7)]))
 	check(table.private_subscribed and Stomp._subs.has(table.private_sub_id), "재연결 뒤 앉은 뷰에서 다시 구독")
 
+	# 정산 때 일어선 폴드 승자(빈 자리)의 결과는 그대로 보이고, 새로 앉은 다른 사람은 물려받지 못한다
+	table.last_public_seq = -1
+	var left_result := {"payouts": [{"seatNo": 2.0, "userId": 99.0, "amount": 300.0}],
+		"shownHands": [{"seatNo": 2.0, "userId": 99.0, "holeCards": ["As", "Kd"], "category": null}]}
+	table._handle_public(_view(200, [_seat(1, 7)], {"result": left_result}))
+	check("2번 +300" in table.board_label.text, "빈 자리 승자 지급액 표시: '%s'" % table.board_label.text)
+	check(table._find_shown_hand(2) != null, "빈 자리 승자 패 찾음")
+	var card_rows := 0
+	for child in table.seat_content_boxes[1].get_children():
+		if child is HBoxContainer and not child.is_queued_for_deletion():
+			card_rows += 1
+	check(card_rows == 1, "빈 자리에 보여 준 패 카드 줄 그림")
+	table._handle_public(_view(201, [_seat(1, 7), _seat(2, 77)], {"result": left_result}))
+	check(table._find_shown_hand(2) == null and not ("2번" in table.board_label.text), "다른 사람이 앉으면 결과를 물려받지 않음")
+
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")
 	check(hh.player_text({"seatNo": 3.0, "userId": 7.0, "startingStack": 5000.0, "endingStack": 6200.0}, 3, 7, false) == "좌석 3 (D) 나  +1,200", "핸드 기록: 내 좌석·버튼·이익")
