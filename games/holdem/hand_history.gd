@@ -23,6 +23,7 @@ const PAGE_SIZE := 20
 var pager: Pager
 var user_filter := "" # 검색 때 잡아 둔 필터 — 페이지를 넘겨도 유지한다
 var table_filter := ""
+var nickname_cache := {} # userId(int) → 닉네임. 이 화면 동안만 산다
 
 
 func _ready() -> void:
@@ -68,19 +69,40 @@ func _load(page: int) -> void:
 			error_label.text = ErrorText.of(code)
 			error_label.show()):
 		return
+	var items := Api.page_items(r.data)
+	# 서버 기록에는 userId 만 있어 닉네임은 따로 묻는다. 실패하면 이번에는 이름 없이 보이고 다음 로드 때 다시 묻는다
+	var ids := {}
+	for hand in items:
+		for p in hand.players:
+			var uid := int(p.userId)
+			if not nickname_cache.has(uid):
+				ids[uid] = true
+	for uid in ids:
+		var nr: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/users/%d" % uid)
+		if nr.ok:
+			nickname_cache[uid] = nr.data.nickname
+	if pager.is_stale(gen):
+		return # 기다리는 사이 더 새 로드가 시작됐다
 	error_label.hide()
-	_build_rows(Api.page_items(r.data))
+	_build_rows(items)
 	pager.update()
 
 
-## 좌석 한 줄. 예: "좌석 3 (D) 나  +1,200". 순손익 = endingStack - startingStack
-static func player_text(p: Dictionary, button_seat: int, me: int, admin: bool) -> String:
+## 좌석 한 줄. 예: "좌석 3 (D) qauser1 (나)  +1,200". 순손익 = endingStack - startingStack
+## 닉네임을 모르면(nickname == "") "좌석 3 (D) 나  +1,200" / 관리자는 " 회원 #8"
+static func player_text(p: Dictionary, button_seat: int, me: int, admin: bool, nickname := "") -> String:
 	var seat := int(p.seatNo)
 	var uid := int(p.userId)
 	var s := "좌석 %d" % seat
 	if seat == button_seat:
 		s += " (D)"
-	if admin:
+	if nickname != "":
+		s += " " + nickname
+		if admin:
+			s += " (회원 #%d)" % uid
+		elif uid == me:
+			s += " (나)"
+	elif admin:
 		s += " 회원 #%d" % uid
 	elif uid == me:
 		s += " 나"
@@ -103,7 +125,7 @@ func _build_rows(items: Array) -> void:
 			box.add_child(_card_row(hand.board))
 		for p in hand.players:
 			var line := HBoxContainer.new()
-			line.add_child(Rows.label(player_text(p, int(hand.buttonSeatNo), Api.user_id if not admin else -1, admin), true))
+			line.add_child(Rows.label(player_text(p, int(hand.buttonSeatNo), Api.user_id if not admin else -1, admin, nickname_cache.get(int(p.userId), "")), true))
 			if p.holeCards != null:
 				line.add_child(_card_row(p.holeCards))
 			else:
