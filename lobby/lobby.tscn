@@ -25,49 +25,62 @@ theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 16
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/TopBar"]
+[node name="Bar" type="HFlowContainer" parent="VBoxContainer/TopBar"]
 layout_mode = 2
 
-[node name="NicknameLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="NicknameLabel" type="Label" parent="VBoxContainer/TopBar/Bar"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 clip_text = true
 text = ""
 
-[node name="BalanceLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
-unique_name_in_owner = true
+[node name="Right" type="HBoxContainer" parent="VBoxContainer/TopBar/Bar"]
 layout_mode = 2
 
-[node name="WalletButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="Pill" type="PanelContainer" parent="VBoxContainer/TopBar/Bar/Right"]
+layout_mode = 2
+theme_type_variation = &"PanelPill"
+
+[node name="BalanceLabel" type="Label" parent="VBoxContainer/TopBar/Bar/Right/Pill"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelAccent"
+
+[node name="WalletButton" type="Button" parent="VBoxContainer/TopBar/Bar/Right"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "지갑"
 
-[node name="AdminButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="AdminButton" type="Button" parent="VBoxContainer/TopBar/Bar/Right"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 text = "관리"
 
-[node name="LogoutButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="LogoutButton" type="Button" parent="VBoxContainer/TopBar/Bar/Right"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "로그아웃"
 
-[node name="Content" type="Control" parent="VBoxContainer"]
+[node name="Content" type="MarginContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_right = 16
 
-[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer/Content"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="GameList" type="VBoxContainer" parent="VBoxContainer/Content/CenterContainer"]
-unique_name_in_owner = true
+[node name="Section" type="VBoxContainer" parent="VBoxContainer/Content"]
 layout_mode = 2
 theme_override_constants/separation = 12
+
+[node name="Heading" type="Label" parent="VBoxContainer/Content/Section"]
+layout_mode = 2
+theme_type_variation = &"LabelTitle"
+text = "게임"
+
+[node name="GameList" type="HFlowContainer" parent="VBoxContainer/Content/Section"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
+alignment = 1

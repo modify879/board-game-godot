@@ -480,6 +480,33 @@ content_margin_top = 0
 content_margin_right = 0
 content_margin_bottom = 0
 
+[sub_resource type="StyleBoxFlat" id="pill"]
+bg_color = Color(0.1412, 0.1725, 0.2196, 1)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+content_margin_left = 16
+content_margin_top = 6
+content_margin_right = 16
+content_margin_bottom = 6
+
+[sub_resource type="StyleBoxFlat" id="card"]
+bg_color = Color(0.1059, 0.1294, 0.1686, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.1961, 0.2353, 0.2902, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+content_margin_left = 1
+content_margin_top = 1
+content_margin_right = 1
+content_margin_bottom = 1
+
 [resource]
 default_font = ExtResource("1_font")
 default_font_size = 20
@@ -596,3 +623,9 @@ PopupMenu/colors/font_color = Color(0.9098, 0.9255, 0.9490, 1)
 PopupMenu/colors/font_hover_color = Color(0.9098, 0.9255, 0.9490, 1)
 PopupMenu/colors/font_disabled_color = Color(0.4196, 0.4588, 0.5176, 1)
 PopupMenu/constants/v_separation = 8
+PanelPill/base_type = &"PanelContainer"
+PanelPill/styles/panel = SubResource("pill")
+PanelCard/base_type = &"PanelContainer"
+PanelCard/styles/panel = SubResource("card")
+LabelAccent/base_type = &"Label"
+LabelAccent/colors/font_color = Color(0.9020, 0.7255, 0.2902, 1)
