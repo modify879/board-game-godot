@@ -22,6 +22,7 @@ func _ready() -> void:
 	for game in GAMES:
 		var button := Button.new()
 		button.text = game.title
+		button.theme_type_variation = &"ButtonPrimary"
 		button.custom_minimum_size = Vector2(240, 56)
 		button.pressed.connect(func() -> void: get_tree().change_scene_to_file(game.scene))
 		game_list.add_child(button)

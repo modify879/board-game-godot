@@ -147,6 +147,7 @@ func _build_rows(items: Array) -> void:
 		row.add_child(watch_button)
 		var join_button := Button.new()
 		join_button.text = "참가"
+		join_button.theme_type_variation = &"ButtonPrimary"
 		join_button.pressed.connect(enter.bind(item.tableId, true))
 		row.add_child(join_button)
 		rows.add_child(row)

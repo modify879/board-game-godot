@@ -40,6 +40,7 @@ text = "홀덤 핸드 기록"
 
 [node name="ErrorLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
+theme_type_variation = &"LabelError"
 layout_mode = 2
 visible = false
 autowrap_mode = 2
@@ -268,6 +269,7 @@ layout_mode = 2
 placeholder_text = "조정 금액"
 
 [node name="AdjustHint" type="Label" parent="VBoxContainer/Tabs/회원"]
+theme_type_variation = &"LabelHint"
 layout_mode = 2
 text = "지급은 양수, 회수는 음수, 100 단위"
 

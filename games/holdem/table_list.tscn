@@ -80,6 +80,7 @@ suffix = "칩"
 
 [node name="CreateButton" type="Button" parent="VBoxContainer/CreateRow/HBoxContainer"]
 unique_name_in_owner = true
+theme_type_variation = &"ButtonPrimary"
 layout_mode = 2
 text = "방 만들기"
 
@@ -98,7 +99,7 @@ text = ""
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+theme_type_variation = &"LabelError"
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_right = 16
 autowrap_mode = 2

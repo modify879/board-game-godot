@@ -19,6 +19,10 @@ var _resume_tried := false # 자동 로그인은 앱 시작 때 한 번만. 로�
 var _refresh_due_ticks := -1 # 선제 갱신 시각(Time.get_ticks_msec 기준). -1 이면 예약 없음
 
 
+func _ready() -> void:
+	Screen.setup(get_window()) # 화면 크기에 맞춘 배율(core/ui/screen.gd)
+
+
 func origin() -> String:
 	if OS.has_feature("web"):
 		return str(JavaScriptBridge.eval("location.origin"))
