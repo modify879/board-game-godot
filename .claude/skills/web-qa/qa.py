@@ -45,12 +45,6 @@ async def stable(page, path=None, timeout=15):
         await page.screenshot(path=path)
 
 
-async def click(page, x, y, path=None):
-    await page.mouse.click(x, y)
-    await page.wait_for_timeout(200)
-    await stable(page, path)
-
-
 async def login(page, user, pw=PW):
     await page.goto(WEB)
     await page.wait_for_timeout(3000)  # wasm 로딩
@@ -84,10 +78,15 @@ def _req(path, token=None, body=None, cookie=None, method=None):
         return e
 
 
+def _login(user, pw=PW):
+    """(응답, refresh 쿠키). 실패해도 종료하지 않는다"""
+    r = _req("/api/auth/login", body={"username": user, "password": pw})
+    return r, (r.headers.get("Set-Cookie") or "").split(";")[0]
+
+
 def rest_login(user, pw=PW):
     """(accessToken, refresh 쿠키). 같은 계정의 브라우저 세션을 쫓아내므로 브라우저를 닫은 뒤에 쓴다"""
-    r = _req("/api/auth/login", body={"username": user, "password": pw})
-    ck = (r.headers.get("Set-Cookie") or "").split(";")[0]
+    r, ck = _login(user, pw)
     if r.status != 200: raise SystemExit(f"로그인 실패 {user}: HTTP {r.status}. check_accounts() 로 계정을 확인한다")
     return json.load(r)["accessToken"], ck
 
@@ -105,11 +104,11 @@ def check_accounts(users=("qauser1", "qauser2", "qaadmin")):
     """테스트 계정이 없거나 비밀번호가 다르면 즉시 종료. 성공한 계정은 바로 로그아웃"""
     bad = []
     for u in users:
-        r = _req("/api/auth/login", body={"username": u, "password": PW})
+        r, ck = _login(u)
         if r.status != 200:
             bad.append(u)
         else:
-            rest_logout(json.load(r)["accessToken"], (r.headers.get("Set-Cookie") or "").split(";")[0])
+            rest_logout(json.load(r)["accessToken"], ck)
     if bad:
         raise SystemExit(f"테스트 계정 로그인 실패: {', '.join(bad)} - 계정이 없거나 비밀번호가 다르다. "
                          "SKILL.md 의 '테스트 계정 재생성' 참고")
