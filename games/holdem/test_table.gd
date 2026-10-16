@@ -136,22 +136,22 @@ func _ready() -> void:
 		check(int(table.raise_slider.value) == mm[1], "raise max %d exact (got %d)" % [mm[1], int(table.raise_slider.value)])
 
 	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 30초 어림
-	var timer_lbl: Label = table.seat_timer_labels[0]
+	var seat1: Control = table.seat_nodes[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
 	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
 	table._update_turn_timer()
-	check(timer_lbl.visible and timer_lbl.text == "31초", "turn timer from turnRemainingMs: '%s'" % timer_lbl.text)
+	check(absf(seat1.timer_left - 31.0) < 0.5, "turn timer from turnRemainingMs: %.2f" % seat1.timer_left)
 	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0})))
 	table._update_turn_timer()
-	check(timer_lbl.visible and timer_lbl.text == "20초", "same-turn view re-syncs timer: '%s'" % timer_lbl.text)
+	check(absf(seat1.timer_left - 20.0) < 0.5, "same-turn view re-syncs timer: %.2f" % seat1.timer_left)
 	table._handle_public(_view(17, seats, turn_extra.merged({"turnRemainingMs": null})))
 	table._update_turn_timer()
-	check(not timer_lbl.visible, "null turnRemainingMs hides timer")
+	check(seat1.timer_left < 0.0, "null turnRemainingMs hides timer")
 	table._handle_public(_view(18, seats, turn_extra.merged({"toActSeatNo": 2.0}, true)))
 	table._handle_public(_view(19, seats, turn_extra))
 	table._handle_public(_view(20, seats, turn_extra.merged({"street": "TURN"}, true)))
 	table._update_turn_timer()
-	check(timer_lbl.visible and timer_lbl.text == "30초", "absent turnRemainingMs falls back to 30s: '%s'" % timer_lbl.text)
+	check(absf(seat1.timer_left - 30.0) < 0.5, "absent turnRemainingMs falls back to 30s: %.2f" % seat1.timer_left)
 
 	# 10. 방 생성 중(table_id 0): join-queue 이벤트는 버리지 않고 모아 둔다
 	script.table_id = 0
@@ -322,11 +322,7 @@ func _ready() -> void:
 	table._handle_public(_view(200, [_seat(1, 7)], {"result": left_result}))
 	check("2번 +300" in table.board_label.text, "빈 자리 승자 지급액 표시: '%s'" % table.board_label.text)
 	check(table._find_shown_hand(2) != null, "빈 자리 승자 패 찾음")
-	var card_rows := 0
-	for child in table.seat_content_boxes[1].get_children():
-		if child is HBoxContainer and not child.is_queued_for_deletion():
-			card_rows += 1
-	check(card_rows == 1, "빈 자리에 보여 준 패 카드 줄 그림")
+	check(table.seat_nodes[1].shown_codes.size() == 2, "빈 자리에 보여 준 패 카드 그림")
 	table._handle_public(_view(201, [_seat(1, 7), _seat(2, 77)], {"result": left_result}))
 	check(table._find_shown_hand(2) == null and not ("2번" in table.board_label.text), "다른 사람이 앉으면 결과를 물려받지 않음")
 

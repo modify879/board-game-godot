@@ -10,9 +10,15 @@ static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다
 const Cards := preload("res://games/holdem/cards.gd")
 const Rules := preload("res://games/holdem/rules.gd")
 
-const STATUS_TEXT := {"FOLDED": "폴드", "ALL_IN": "올인"}
 const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
-const TO_ACT_COLOR := Color(1.0, 0.85, 0.4)
+const SeatScene := preload("res://games/holdem/seat.tscn")
+const SeatScript := preload("res://games/holdem/seat.gd")
+const Marker := preload("res://games/holdem/marker.gd")
+const FELT_COLOR := Color("1B5E3A")
+const FELT_RIM_COLOR := Color("0F3D26")
+const FELT_RIM := 12
+const CARD_ASPECT := 190.0 / 140.0 # 카드 이미지 비율(세로/가로)
+const BET_LERP := 0.38 # 베팅 칩 위치: 좌석 → 펠트 중심 사이 비율
 const TURN_SECONDS := 30.0 # 서버 턴 제한. infrastructure/timer/TurnTimer.kt:132
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
@@ -21,7 +27,15 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var status_label: Label = %StatusLabel
 @onready var board_box: HBoxContainer = %Board
 @onready var board_label: Label = %BoardLabel
-@onready var seats_grid: GridContainer = %Seats
+@onready var felt_area: Control = %FeltArea
+@onready var felt: Panel = %Felt
+@onready var center_box: VBoxContainer = %Center
+@onready var pot_row: HBoxContainer = %PotRow
+@onready var pot_label: Label = %PotLabel
+@onready var bottom_region: MarginContainer = %BottomRegion
+@onready var half_pot_button: Button = %HalfPotButton
+@onready var pot_button: Button = %PotButton
+@onready var all_in_button: Button = %AllInButton
 @onready var my_cards_box: HBoxContainer = %MyCards
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
@@ -41,7 +55,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var sit_popup_error: Label = %SitPopupError
 @onready var sit_popup_ok: Button = %SitPopupOk
 @onready var sit_popup_cancel: Button = %SitPopupCancel
-@onready var action_bar: HBoxContainer = %ActionBar
+@onready var action_bar: VBoxContainer = %ActionBar
 @onready var fold_button: Button = %FoldButton
 @onready var check_call_button: Button = %CheckCallButton
 @onready var raise_box: HBoxContainer = %RaiseBox
@@ -49,9 +63,13 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var raise_spin: SpinBox = %RaiseSpin
 @onready var raise_button: Button = %RaiseButton
 
-var seat_panels: Array = [] # seat_panels[seatNo - 1] -> PanelContainer
-var seat_content_boxes: Array = [] # seat_content_boxes[seatNo - 1] -> VBoxContainer, rebuilt on each render
-var seat_timer_labels: Array = [] # seat_timer_labels[seatNo - 1] -> Label, ticked every frame (not rebuilt)
+var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
+var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> HBoxContainer(칩 아이콘 + 금액)
+var dealer_marker: Control
+var felt_style := StyleBoxFlat.new()
+var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드를 작게
+var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
+var street_base_key := ""
 var board_card_rects: Array = []
 var my_card_rects: Array = []
 var public_view: Dictionary = {}
@@ -117,7 +135,16 @@ func _ready() -> void:
 	raise_spin.value_changed.connect(_on_raise_spin_changed)
 	board_card_rects = board_box.get_children()
 	my_card_rects = my_cards_box.get_children()
-	_build_seat_panels()
+	half_pot_button.pressed.connect(_apply_preset.bind(0.5))
+	pot_button.pressed.connect(_apply_preset.bind(1.0))
+	all_in_button.pressed.connect(func() -> void: raise_slider.value = raise_slider.max_value)
+	felt.add_theme_stylebox_override("panel", felt_style)
+	felt_style.bg_color = FELT_COLOR
+	felt_style.border_color = FELT_RIM_COLOR
+	felt_style.set_border_width_all(FELT_RIM)
+	felt_area.resized.connect(_render_seats)
+	bottom_region.resized.connect(_fit_bottom_width)
+	_build_seats()
 	Stomp.message.connect(_on_stomp_message)
 	Stomp.error.connect(_on_stomp_error)
 	Stomp.connected.connect(_on_stomp_connected)
@@ -144,21 +171,88 @@ func _process(_delta: float) -> void:
 	_update_turn_timer()
 
 
-func _build_seat_panels() -> void:
+func _build_seats() -> void:
 	for seat_no in range(1, 10):
-		var panel := PanelContainer.new()
-		var outer := VBoxContainer.new()
-		panel.add_child(outer)
-		var content := VBoxContainer.new()
-		outer.add_child(content)
-		var timer_label := Label.new()
-		timer_label.hide()
-		outer.add_child(timer_label)
-		seats_grid.add_child(panel)
-		seat_panels.append(panel)
-		seat_content_boxes.append(content)
-		seat_timer_labels.append(timer_label)
+		var box := HBoxContainer.new()
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_theme_constant_override("separation", 4)
+		var chip := _marker(Marker.Kind.CHIP, Vector2(18, 18))
+		box.add_child(chip)
+		var amount := Label.new()
+		amount.add_theme_font_size_override("font_size", 15)
+		amount.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		amount.add_theme_constant_override("outline_size", 4)
+		box.add_child(amount)
+		box.hide()
+		felt_area.add_child(box)
+		bet_boxes.append(box)
+	dealer_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22))
+	dealer_marker.hide()
+	felt_area.add_child(dealer_marker)
+	for seat_no in range(1, 10):
+		var seat_node: Control = SeatScene.instantiate()
+		felt_area.add_child(seat_node)
+		seat_nodes.append(seat_node)
 	_render_seats()
+
+
+func _marker(kind: int, min_size: Vector2) -> Control:
+	var m := Control.new()
+	m.set_script(Marker)
+	m.kind = kind
+	m.custom_minimum_size = min_size
+	m.size = min_size
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	m.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return m
+
+
+func _fit_bottom_width() -> void: # 아래 영역 내용은 최대 640 너비로 가운데
+	var side := maxi(16, int((bottom_region.size.x - 640) / 2.0))
+	bottom_region.add_theme_constant_override("margin_left", side)
+	bottom_region.add_theme_constant_override("margin_right", side)
+
+
+## 펠트·좌석·보드·내 카드를 절대 좌표로 놓는다. 세로·가로 모두 같은 코드다.
+## 좌석은 펠트에 내접한 타원 위(v 번째 = 90° + v×40°, v=0 이 아래 가운데)에 놓는다
+func _layout() -> Dictionary:
+	var area := felt_area.size
+	compact = area.x < 700
+	var cap := SeatScript.capsule_size(compact)
+	var oc := SeatScript.other_card_size(compact)
+	var hc := SeatScript.hero_card_size(compact)
+	var m_x := cap.x / 2.0 + 6.0
+	var m_top := cap.y / 2.0 + oc.y + 4.0
+	var m_bottom := cap.y / 2.0 + 24.0
+	var rect := Rect2(m_x, m_top, maxf(area.x - 2.0 * m_x, 100.0), maxf(area.y - m_top - m_bottom, 100.0))
+	felt.position = rect.position
+	felt.size = rect.size
+	felt_style.set_corner_radius_all(int(minf(rect.size.x, rect.size.y) / 2.0))
+	var c := rect.get_center()
+	var hero_top := rect.end.y - cap.y / 2.0 - 2.0 - hc.y
+	# 가운데 묶음(팟·보드·결과 문구): 내 카드 위에 붙이되 펠트 안에 둔다
+	var avail_h := hero_top - 6.0 - (rect.position.y + FELT_RIM + 8.0)
+	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 58.0) / CARD_ASPECT), 36.0, 72.0)
+	var card_h := roundf(card_w * CARD_ASPECT)
+	var block_h := 28.0 + 4.0 + card_h + 4.0 + 22.0
+	var block_w := card_w * 5.0 + 24.0
+	var block_top := maxf(rect.position.y + FELT_RIM + 8.0, minf(c.y - block_h / 2.0, hero_top - (26.0 if compact else 6.0) - block_h)) # 세로(compact)는 내 베팅 칩 자리를 비워 둔다
+	for r: TextureRect in board_card_rects:
+		r.custom_minimum_size = Vector2(card_w, card_h)
+	board_box.custom_minimum_size = Vector2(block_w, card_h)
+	center_box.size = Vector2(maxf(block_w, 180.0), block_h)
+	center_box.position = Vector2(c.x - center_box.size.x / 2.0, block_top)
+	for r: TextureRect in my_card_rects:
+		r.custom_minimum_size = hc
+	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
+	my_cards_box.position = Vector2(c.x - my_cards_box.size.x / 2.0, hero_top)
+	return {"center": c, "rx": rect.size.x / 2.0, "ry": rect.size.y / 2.0, "cap": cap, "hc": hc, "hero_top": hero_top}
+
+
+func _seat_center(seat_no: int, hero: int, g: Dictionary) -> Vector2:
+	var v := posmod(seat_no - hero, 9)
+	var a := deg_to_rad(90.0 + v * 40.0)
+	return g.center + Vector2(cos(a) * g.rx, sin(a) * g.ry)
 
 
 # --- STOMP ---
@@ -190,6 +284,7 @@ func _handle_public(body: Dictionary) -> void:
 			_send_join(last_post_blind, last_buy_in, true)
 	_sync_private_subscription()
 	_update_turn_key()
+	_track_street_base()
 	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 30초 어림을 그대로 쓴다
 		var left_ms = body.turnRemainingMs
 		turn_deadline_ticks = -1 if left_ms == null else Time.get_ticks_msec() + int(left_ms)
@@ -198,6 +293,7 @@ func _handle_public(body: Dictionary) -> void:
 	_update_status_label()
 	_show_cards(board_card_rects, public_view.get("board", []))
 	_update_board_label()
+	_update_pot()
 	_render_seats()
 	_update_buttons()
 	_update_action_bar()
@@ -456,7 +552,7 @@ func _update_status_label() -> void:
 		status_label.text = "대기 순번 %d" % queue_position
 		return
 	if public_view.get("handInProgress", false):
-		status_label.text = "%s · 팟 %d" % [Cards.street_text(public_view.get("street", "")), int(public_view.get("pot", 0))]
+		status_label.text = Cards.street_text(public_view.get("street", ""))
 		return
 	if next_hand_due_ticks >= 0:
 		var remaining := int(ceil((next_hand_due_ticks - Time.get_ticks_msec()) / 1000.0))
@@ -475,6 +571,13 @@ func _show_cards(rects: Array, codes: Array) -> void:
 			rect.hide()
 
 
+func _update_pot() -> void:
+	var pot := int(public_view.get("pot", 0))
+	var show_pot: bool = public_view.get("handInProgress", false) and pot > 0
+	pot_row.modulate.a = 1.0 if show_pot else 0.0 # 숨겨도 자리는 유지 — 보드가 움직이지 않게
+	pot_label.text = "팟 %s" % Format.comma(pot)
+
+
 func _update_board_label() -> void:
 	var result = public_view.get("result")
 	var text := ""
@@ -489,67 +592,107 @@ func _update_board_label() -> void:
 
 
 func _render_seats() -> void:
+	if seat_nodes.size() < 9:
+		return
+	var g := _layout()
+	var hero := _my_seat_no()
+	if hero == -1:
+		hero = 1
+	var dealer_seat := -1
+	var button_no = public_view.get("buttonSeatNo")
+	if button_no != null and _find_seat(int(button_no)) != null:
+		dealer_seat = int(button_no)
+	dealer_marker.visible = dealer_seat != -1
 	for seat_no in range(1, 10):
-		_render_seat_panel(seat_no)
+		var sp := _seat_center(seat_no, hero, g)
+		var seat_node: Control = seat_nodes[seat_no - 1]
+		seat_node.set_compact(compact)
+		seat_node.position = sp - seat_node.size / 2.0
+		_render_seat(seat_no, seat_node)
+		var to_center: Vector2 = (g.center - sp).normalized()
+		var is_hero := seat_no == hero
+		if seat_no == dealer_seat:
+			var ext := 1.0 / sqrt(pow(to_center.x / (g.cap.x / 2.0), 2) + pow(to_center.y / (g.cap.y / 2.0), 2)) # 캡슐 가장자리까지 거리
+			var d: Vector2 = sp + to_center * (ext + 16.0)
+			if is_hero:
+				d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
+			dealer_marker.position = d - dealer_marker.size / 2.0
+		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
+		if bet_box.visible:
+			var b: Vector2 = sp.lerp(g.center, BET_LERP)
+			if is_hero: # 내 카드를 가리지 않게: 가로는 카드 왼쪽, 세로는 카드 바로 위
+				b = Vector2(g.center.x, g.hero_top - 12.0) if compact else Vector2(b.x - g.hc.x - 56.0, b.y)
+			bet_box.reset_size()
+			bet_box.position = b - bet_box.get_combined_minimum_size() / 2.0
 
 
-func _render_seat_panel(seat_no: int) -> void:
-	var panel: PanelContainer = seat_panels[seat_no - 1]
-	var vbox: VBoxContainer = seat_content_boxes[seat_no - 1]
-	Rows.clear(vbox)
-	panel.self_modulate = TO_ACT_COLOR if _to_act_seat_no() == seat_no else Color(1, 1, 1, 1)
-
-	vbox.add_child(Rows.label("%d번" % seat_no))
-
+func _render_seat(seat_no: int, seat_node: Control) -> void:
+	var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
+	bet_box.hide()
 	var seat: Variant = _find_seat(seat_no)
 	if seat == null:
-		vbox.add_child(Rows.label("빈 자리"))
 		var left_shown: Variant = _find_shown_hand(seat_no) # 정산 때 일어선 승자가 보여 준 패
 		if left_shown != null:
-			vbox.add_child(Cards.card_row(left_shown.holeCards, Vector2(42, 57)))
-			if left_shown.get("category") != null:
-				vbox.add_child(Rows.label(Cards.category_text(left_shown.category)))
+			var left_category = left_shown.get("category")
+			seat_node.show_empty(seat_no, left_shown.holeCards, "" if left_category == null else Cards.category_text(left_category))
+		else:
+			seat_node.show_empty(seat_no)
 		return
 
-	var suffix := ""
-	if public_view.get("buttonSeatNo", -1) == seat_no:
-		suffix += " D"
 	var is_me := int(seat.userId) == Api.user_id
-	if is_me:
-		suffix += " (나)"
-	vbox.add_child(Rows.label(_nickname_for(seat.userId) + suffix))
-
-	vbox.add_child(Rows.label("%d칩" % int(seat.stack)))
-
-	var status_text: String = STATUS_TEXT.get(seat.status, "")
-	if status_text == "":
-		status_text = PRESENCE_TEXT.get(seat.presence, "")
-	if status_text != "":
-		vbox.add_child(Rows.label(status_text))
-
-	if seat.get("leaveReserved", false):
-		vbox.add_child(Rows.label("나가기 예약"))
-
 	var hand_in_progress: bool = public_view.get("handInProgress", false)
+	var cards: Array = []
+	var category := ""
 	var shown_hand: Variant = _find_shown_hand(seat_no)
 	var revealed_hand: Variant = _find_revealed_hand(seat_no)
 	if shown_hand != null:
-		vbox.add_child(Cards.card_row(shown_hand.holeCards, Vector2(42, 57)))
-		var category = shown_hand.get("category") # 프리플랍 종료 등 보드가 3장 미만이면 null
-		if category != null:
-			vbox.add_child(Rows.label(Cards.category_text(category)))
+		cards = shown_hand.holeCards
+		if shown_hand.get("category") != null: # 프리플랍 종료 등 보드가 3장 미만이면 null
+			category = Cards.category_text(shown_hand.category)
 	elif revealed_hand != null:
-		vbox.add_child(Cards.card_row(revealed_hand.holeCards, Vector2(42, 57)))
+		cards = revealed_hand.holeCards
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
-		vbox.add_child(Cards.card_row(["back", "back"], Vector2(42, 57)))
+		cards = ["back", "back"]
+	seat_node.show_player({
+		"nickname": _nickname_for(seat.userId),
+		"stack": int(seat.stack),
+		"is_me": is_me,
+		"to_act": _to_act_seat_no() == seat_no,
+		"folded": seat.status == "FOLDED",
+		"all_in": seat.status == "ALL_IN",
+		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
+		"leave_reserved": seat.get("leaveReserved", false),
+		"cards": [] if is_me else cards, # 내 카드는 아래 MyCards 가 크게 그린다
+		"category": category,
+		"payout": _payout_for(seat_no),
+	})
+	var street_bet := _street_bet(seat)
+	if hand_in_progress and street_bet > 0:
+		(bet_box.get_child(1) as Label).text = Format.comma(street_bet)
+		bet_box.show()
 
-	var contributed := int(seat.totalContributed)
-	if hand_in_progress and contributed > 0:
-		vbox.add_child(Rows.label("총 베팅 %d" % contributed))
 
-	var payout := _payout_for(seat_no)
-	if payout > 0:
-		vbox.add_child(Rows.label("+%d" % payout))
+## 이 스트리트에 이 좌석이 건 금액. 공개 뷰엔 totalContributed(핸드 누적)만 있어 스트리트 시작 값과의 차로 구한다
+func _street_bet(seat: Dictionary) -> int:
+	return maxi(int(seat.totalContributed) - int(street_base.get(int(seat.seatNo), 0)), 0)
+
+
+func _track_street_base() -> void:
+	var key := "%d:%s" % [hand_counter, str(public_view.get("street", ""))]
+	if key == street_base_key:
+		return
+	street_base_key = key
+	street_base = {}
+	if public_view.get("street", "") != "PREFLOP": # 프리플랍은 블라인드부터 베팅이라 0 에서 센다
+		for seat in public_view.get("seats", []):
+			street_base[int(seat.seatNo)] = int(seat.totalContributed)
+
+
+func _current_max_bet() -> int:
+	var best := 0
+	for seat in public_view.get("seats", []):
+		best = maxi(best, _street_bet(seat))
+	return best
 
 
 func _update_turn_key() -> void:
@@ -568,13 +711,10 @@ func _update_turn_timer() -> void:
 	var to_act := _to_act_seat_no()
 	var hip: bool = public_view.get("handInProgress", false)
 	for seat_no in range(1, 10):
-		var lbl: Label = seat_timer_labels[seat_no - 1]
+		var left := -1.0
 		if hip and seat_no == to_act and turn_deadline_ticks >= 0:
-			var remaining := int(ceil((turn_deadline_ticks - Time.get_ticks_msec()) / 1000.0))
-			lbl.text = "%d초" % max(remaining, 0)
-			lbl.show()
-		else:
-			lbl.hide()
+			left = maxf((turn_deadline_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
+		seat_nodes[seat_no - 1].set_timer(left)
 
 
 func _nickname_for(user_id: int) -> String:
@@ -651,6 +791,14 @@ func _update_action_bar() -> void:
 	_set_action_bar_disabled(action_pending)
 
 
+## ½ 팟·팟: 현재 최고 베팅(좌석별 스트리트 베팅의 최대) + 비율 × (팟 + 콜 금액). 계산은 Rules.preset_raise_to
+func _apply_preset(fraction: float) -> void:
+	if my_available_actions == null:
+		return
+	raise_slider.value = Rules.preset_raise_to(fraction, _current_max_bet(), int(public_view.get("pot", 0)),
+		int(my_available_actions.get("callAmount", 0)), int(raise_slider.min_value), int(raise_slider.max_value))
+
+
 func _update_raise_button_label() -> void:
 	var v := int(raise_slider.value)
 	var is_bet: bool = my_available_actions != null and my_available_actions.get("canCheck", false) and public_view.get("street", "") != "PREFLOP"
@@ -662,6 +810,9 @@ func _set_action_bar_disabled(disabled: bool) -> void:
 	check_call_button.disabled = disabled
 	raise_button.disabled = disabled
 	raise_slider.editable = not disabled
+	half_pot_button.disabled = disabled
+	pot_button.disabled = disabled
+	all_in_button.disabled = disabled
 	raise_spin.editable = not disabled
 
 
