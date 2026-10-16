@@ -58,9 +58,10 @@ func _ready() -> void:
 	# 5. result matches userId
 	var result := {"payouts": [{"seatNo": 2.0, "userId": 8.0, "amount": 500.0}],
 		"shownHands": [{"seatNo": 2.0, "userId": 8.0, "holeCards": ["As", "Kd"], "category": "PAIR"}]}
+	table.nickname_cache[8] = "qauser8" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(9, [_seat(1, 7), _seat(2, 8)], {"result": result}))
 	check(table._payout_for(2) == 500, "payout for seat 2 held by same user")
-	check("2번" in table.board_label.text, "board_label mentions 2번: '%s'" % table.board_label.text)
+	check(table.board_label.text == "승리: qauser8 +500", "board_label shows winner nickname: '%s'" % table.board_label.text)
 	table._handle_public(_view(10, [_seat(1, 7), _seat(2, 9)], {"result": result}))
 	check(table._payout_for(2) == 0, "payout ignored when seat taken by another user")
 	check(table.board_label.text == "", "board_label empty when winner left: '%s'" % table.board_label.text)
@@ -319,12 +320,34 @@ func _ready() -> void:
 	table.last_public_seq = -1
 	var left_result := {"payouts": [{"seatNo": 2.0, "userId": 99.0, "amount": 300.0}],
 		"shownHands": [{"seatNo": 2.0, "userId": 99.0, "holeCards": ["As", "Kd"], "category": null}]}
+	table.nickname_cache[99] = "winner99" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(200, [_seat(1, 7)], {"result": left_result}))
-	check("2번 +300" in table.board_label.text, "빈 자리 승자 지급액 표시: '%s'" % table.board_label.text)
+	check(table.board_label.text == "승리: winner99 +300", "빈 자리 승자 닉네임·지급액 표시: '%s'" % table.board_label.text)
 	check(table._find_shown_hand(2) != null, "빈 자리 승자 패 찾음")
 	check(table.seat_nodes[1].shown_codes.size() == 2, "빈 자리에 보여 준 패 카드 그림")
 	table._handle_public(_view(201, [_seat(1, 7), _seat(2, 77)], {"result": left_result}))
-	check(table._find_shown_hand(2) == null and not ("2번" in table.board_label.text), "다른 사람이 앉으면 결과를 물려받지 않음")
+	check(table._find_shown_hand(2) == null and not ("winner99" in table.board_label.text), "다른 사람이 앉으면 결과를 물려받지 않음")
+
+	# 연출: 첫 뷰(재연결 뒤 포함)는 연출 없이 그리고, 새 판·플랍은 고스트를 만들되 상태는 즉시 반영한다. 다음 뷰가 오면 실제 노드는 최종값
+	for c in table.motion.get_children():
+		c.free()
+	table.motion.kill_real()
+	var duo := [_seat(1, 7), _seat(2, 8)]
+	table.have_view = false
+	table._handle_public(_view(300, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	check(table.motion.get_child_count() == 0 and table.have_view, "첫 뷰는 연출(고스트) 없음")
+	table._handle_public(_view(301, duo))
+	table._handle_public(_view(302, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	check(table.motion.get_child_count() > 0, "새 판은 딜 고스트를 만든다")
+	check(table.seat_nodes[1].shown_codes == ["back", "back"] and int(table.public_view.seq) == 302, "연출 중에도 상태는 즉시 반영")
+	check(table.seat_nodes[1].card_rects[0].modulate.a == 0.0, "고스트가 닿기 전 실제 카드는 숨김")
+	table._handle_public(_view(303, duo, {"handInProgress": true, "toActSeatNo": 2.0, "street": "FLOP", "board": ["As", "Kd", "2c"]}))
+	check(table.board_card_rects[0].scale.x < 0.01 and int(table.public_view.seq) == 303, "플랍 카드는 뒤집기 시작 상태, 상태는 즉시 반영")
+	table._handle_public(_view(304, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "FLOP", "board": ["As", "Kd", "2c"]}))
+	var settled := true
+	for r: Control in table.board_card_rects + table.my_card_rects + [table.seat_nodes[1].card_rects[0], table.seat_nodes[1].card_rects[1]]:
+		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
+	check(settled, "새 뷰가 오면 보드·카드 노드는 scale 1 / alpha 1")
 
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")
