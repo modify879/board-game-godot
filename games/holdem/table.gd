@@ -150,7 +150,9 @@ func _ready() -> void:
 	felt_style.bg_color = FELT_COLOR
 	felt_style.border_color = FELT_RIM_COLOR
 	felt_style.set_border_width_all(FELT_RIM)
-	felt_area.resized.connect(_render_seats)
+	felt_area.resized.connect(func() -> void:
+		motion.kill_real()
+		_render_seats())
 	bottom_region.resized.connect(_fit_bottom_width)
 	_build_seats()
 	Stomp.message.connect(_on_stomp_message)
@@ -249,6 +251,11 @@ func _layout() -> Dictionary:
 	var block_h := 28.0 + 4.0 + card_h
 	var block_w := card_w * 5.0 + 24.0
 	var block_top := maxf(rect.position.y + FELT_RIM + 8.0, minf(c.y - block_h / 2.0, hero_top - clear - block_h)) # 세로(compact)는 내 베팅 칩 자리를 비워 둔다
+	# 보드가 좌우 끝 좌석(캡슐)보다 넓으면 그 좌석 위로 올린다 — 좁은 세로 화면의 9인 테이블
+	var side_top := c.y + sin(deg_to_rad(170.0)) * rect.size.y / 2.0 - cap.y / 2.0
+	var side_in := cos(deg_to_rad(10.0)) * rect.size.x / 2.0 - cap.x / 2.0
+	if block_w / 2.0 > side_in - 4.0:
+		block_top = maxf(rect.position.y + FELT_RIM + 8.0, minf(block_top, side_top - 6.0 - block_h))
 	for r: TextureRect in board_card_rects:
 		r.custom_minimum_size = Vector2(card_w, card_h)
 	board_box.custom_minimum_size = Vector2(block_w, card_h)
@@ -265,7 +272,12 @@ func _layout() -> Dictionary:
 
 func _seat_center(seat_no: int, hero: int, g: Dictionary) -> Vector2:
 	var v := posmod(seat_no - hero, 9)
-	var a := deg_to_rad(90.0 + v * 40.0)
+	var deg := 90.0 + v * 40.0
+	if compact and (v == 1 or v == 8): # 세로: 내 카드 양옆 좌석이 내 카드와 닿지 않게 위쪽 바깥으로 6° 옮긴다
+		deg += 6.0 if v == 1 else -6.0
+	elif not compact and (v == 2 or v == 7): # 가로: 왼·오른쪽 끝 좌석을 10° 아래로 — 위 좌석의 작은 카드가 닿지 않게
+		deg += -10.0 if v == 2 else 10.0
+	var a := deg_to_rad(deg)
 	return g.center + Vector2(cos(a) * g.rx, sin(a) * g.ry)
 
 
@@ -287,7 +299,6 @@ func _handle_public(body: Dictionary) -> void:
 	if int(body.seq) < last_public_seq:
 		return
 	last_public_seq = int(body.seq)
-	motion.kill_real() # 도는 연출은 끊고 최종값으로 — 상태는 아래에서 바로 반영한다
 	var prev := _motion_snapshot()
 	public_view = body
 	var in_ms = body.get("nextHandInMs")
@@ -300,6 +311,8 @@ func _handle_public(body: Dictionary) -> void:
 			_send_join(last_post_blind, last_buy_in, true)
 	_sync_private_subscription()
 	_update_turn_key()
+	if not have_view or hand_counter != prev.hand: # 같은 판의 뷰는 도는 실제 노드 연출을 끝까지 둔다(고스트와 겹치지 않게)
+		motion.kill_real()
 	_track_street_base()
 	if body.has("turnRemainingMs"): # 없으면(옛 서버) _update_turn_key 의 30초 어림을 그대로 쓴다
 		var left_ms = body.turnRemainingMs
@@ -771,14 +784,33 @@ func _render_seats() -> void:
 			var d: Vector2 = sp + to_center * (ext + 16.0)
 			if is_hero:
 				d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
+			else: # 마커가 이 좌석의 작은 카드를 가리면 캡슐 아래 안쪽 모서리로 옮긴다
+				var mr := Rect2(d - dealer_marker.size / 2.0, dealer_marker.size)
+				for cr: Control in seat_node.card_rects:
+					if cr.visible and Rect2(seat_node.position + cr.position, cr.size).grow(2.0).intersects(mr):
+						d = sp + Vector2(signf(to_center.x) * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0)
+						break
 			dealer_marker.position = d - dealer_marker.size / 2.0
 		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
 		if bet_box.visible:
+			bet_box.reset_size()
+			var bm := bet_box.get_combined_minimum_size()
 			var b: Vector2 = sp.lerp(g.center, BET_LERP)
+			var rel := posmod(seat_no - hero, 9)
+			if not compact and (rel == 2 or rel == 7): # 아래 옆 좌석의 작은 카드 위로 칩이 걸치지 않게 조금 올린다
+				b.y -= 20.0
+			# 좌석 캡슐(+칩 박스)과 겹치지 않게 최소한 캡슐 가장자리 밖으로 밀어낸다. 딜러 마커가 같은 쪽이면 그만큼 더
+			var clear_d := 1.0 / sqrt(pow(to_center.x / ((g.cap.x + bm.x) / 2.0), 2) + pow(to_center.y / ((g.cap.y + bm.y) / 2.0), 2)) + 8.0
+			if sp.distance_to(b) < clear_d:
+				b = sp + to_center * clear_d
+			if seat_no == dealer_seat and not is_hero: # 딜러 마커와 겹치면 마커 바깥으로 민다
+				var msz := dealer_marker.size
+				var dpos: Vector2 = dealer_marker.position + msz / 2.0
+				if Rect2(b - bm / 2.0, bm).grow(4.0).intersects(Rect2(dpos - msz / 2.0, msz)):
+					b = dpos + to_center * (absf(to_center.x) * (bm.x + msz.x) / 2.0 + absf(to_center.y) * (bm.y + msz.y) / 2.0 + 4.0)
 			if is_hero: # 내 카드를 가리지 않게: 가로는 카드 왼쪽, 세로는 카드 바로 위
 				b = Vector2(g.center.x, g.hero_top - 12.0) if compact else Vector2(b.x - g.hc.x - 56.0, b.y)
-			bet_box.reset_size()
-			bet_box.position = b - bet_box.get_combined_minimum_size() / 2.0
+			bet_box.position = b - bm / 2.0
 
 
 func _render_seat(seat_no: int, seat_node: Control) -> void:
