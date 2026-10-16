@@ -88,6 +88,7 @@ def rest_login(user, pw=PW):
     """(accessToken, refresh 쿠키). 같은 계정의 브라우저 세션을 쫓아내므로 브라우저를 닫은 뒤에 쓴다"""
     r = _req("/api/auth/login", body={"username": user, "password": pw})
     ck = (r.headers.get("Set-Cookie") or "").split(";")[0]
+    if r.status != 200: raise SystemExit(f"로그인 실패 {user}: HTTP {r.status}. check_accounts() 로 계정을 확인한다")
     return json.load(r)["accessToken"], ck
 
 
@@ -98,3 +99,17 @@ def rest_get(token, path):
 
 def rest_logout(token, cookie=""):
     _req("/api/auth/logout", token, {}, cookie)
+
+
+def check_accounts(users=("qauser1", "qauser2", "qaadmin")):
+    """테스트 계정이 없거나 비밀번호가 다르면 즉시 종료. 성공한 계정은 바로 로그아웃"""
+    bad = []
+    for u in users:
+        r = _req("/api/auth/login", body={"username": u, "password": PW})
+        if r.status != 200:
+            bad.append(u)
+        else:
+            rest_logout(json.load(r)["accessToken"], (r.headers.get("Set-Cookie") or "").split(";")[0])
+    if bad:
+        raise SystemExit(f"테스트 계정 로그인 실패: {', '.join(bad)} - 계정이 없거나 비밀번호가 다르다. "
+                         "SKILL.md 의 '테스트 계정 재생성' 참고")

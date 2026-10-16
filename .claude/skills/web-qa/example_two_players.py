@@ -8,6 +8,7 @@ from qa import *
 async def main(out):
     os.makedirs(out, exist_ok=True)
     users = ["qauser1", "qauser2"]
+    check_accounts(users)
     async with async_playwright() as p:
         bs = [await launch(p) for _ in users]  # 별도 프로세스 = 쿠키 분리
         pgs = [await new_page(b) for b in bs]

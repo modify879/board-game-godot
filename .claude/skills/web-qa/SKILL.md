@@ -23,6 +23,8 @@ uv venv <dir>/v && uv pip install -p <dir>/v/bin/python playwright
 <dir>/v/bin/python -B .claude/skills/web-qa/example_two_players.py <출력 디렉터리>   # 동작 확인
 ```
 
+시나리오 시작 때 `qa.check_accounts()` 를 먼저 부른다(계정이 없으면 바로 종료).
+
 `-B`: `__pycache__` 가 스킬 폴더에 남지 않게 한다.
 
 ## 동작 방식
@@ -48,7 +50,16 @@ WSL 의 헤드리스 Chromium 이 localhost:8000 에 직접 붙는다. Godot 캔
 
 ## 계정
 
-qauser1(uid 29), qauser2(uid 30), qaadmin. 비밀번호는 모두 `qapass1234`. qaadmin 지갑은 0 일 수 있다. 지갑 충전은 사용자 승인 없이 하지 않는다.
+qauser1·qauser2·qaadmin (재생성하면 uid 가 바뀐다). 비밀번호는 모두 `qapass1234`. qaadmin 지갑은 0 일 수 있다. 지갑 충전은 사용자 승인 없이 하지 않는다.
+
+## 테스트 계정 재생성
+
+서버 DB 를 초기화하면(`docker compose down -v`) 계정이 사라진다. `check_accounts` 가 실패하면 다음으로 만든다.
+
+- 가입: `POST /api/users` `{username, password, passwordConfirm, nickname}`. qauser1·qauser2·qaadmin 모두 비밀번호 `qapass1234`, 닉네임은 username 과 같게
+- 첫 관리자: 역할 API(`POST /api/admin/users/{id}/role {"role":"ADMIN"}`)도 관리자가 필요하므로 `users.role` 을 'ADMIN' 으로 DB 에서 직접 바꿔야 한다. 이 저장소는 서버 DB 를 건드리지 않으니 서버 세션/사용자에게 요청
+- 칩: 관리자가 `POST /api/admin/wallets/{userId}/adjustments {amount, reason}` (`Idempotency-Key` 헤더 필수). 서버 데이터가 바뀌므로 사용자 승인 후에만
+- uid 는 재생성하면 바뀐다. 하드코딩하지 말고 로그인 JWT 의 `sub` 나 API 로 읽는다
 
 ## 한계
 
