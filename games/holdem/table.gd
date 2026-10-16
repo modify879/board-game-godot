@@ -14,6 +14,7 @@ const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 
 const SeatScene := preload("res://games/holdem/seat.tscn")
 const SeatScript := preload("res://games/holdem/seat.gd")
 const Marker := preload("res://games/holdem/marker.gd")
+const Motion := preload("res://games/holdem/motion.gd") # 연출 오버레이 + 연출 시간 상수
 const FELT_COLOR := Color("1B5E3A")
 const FELT_RIM_COLOR := Color("0F3D26")
 const FELT_RIM := 12
@@ -73,6 +74,13 @@ var street_base_key := ""
 var board_card_rects: Array = []
 var my_card_rects: Array = []
 var public_view: Dictionary = {}
+var motion: Control # FeltArea 위 연출 오버레이(motion.gd)
+var geo := {} # 마지막 _layout() 결과
+var have_view := false # 첫 뷰·재연결 뒤 첫 뷰는 연출 없이 그린다
+var my_codes: Array = [] # 지금 MyCards 에 그린 홀카드
+var my_codes_ticks := -100000 # my_codes 가 바뀐 시각 — 개인 뷰가 공개 뷰보다 먼저 올 때 딜 연출을 맞춘다
+var deal_plan := {} # seatNo -> [첫 장, 둘째 장] 딜 지연(초). 내 좌석은 홀카드가 올 때 쓴다
+var deal_plan_ticks := -100000
 var last_public_seq := -1
 var last_private_seq := -1
 var next_hand_due_ticks := -1 # nextHandInMs 를 받은 순간 기준의 시작 시각(get_ticks_msec). -1 이면 카운트다운 없음
@@ -193,6 +201,8 @@ func _build_seats() -> void:
 		var seat_node: Control = SeatScene.instantiate()
 		felt_area.add_child(seat_node)
 		seat_nodes.append(seat_node)
+	motion = Motion.new()
+	felt_area.add_child(motion) # 마지막 자식 = 맨 위
 	_render_seats()
 
 
@@ -231,17 +241,21 @@ func _layout() -> Dictionary:
 	var c := rect.get_center()
 	var hero_top := rect.end.y - cap.y / 2.0 - 2.0 - hc.y
 	# 가운데 묶음(팟·보드·결과 문구): 내 카드 위에 붙이되 펠트 안에 둔다
-	var avail_h := hero_top - 6.0 - (rect.position.y + FELT_RIM + 8.0)
-	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 58.0) / CARD_ASPECT), 36.0, 72.0)
+	# 결과 문구(BoardLabel)는 블록 밖 — 핸드가 끝나면 비는 팟 줄 자리에 겹쳐 그려 보드가 더 커질 수 있다
+	var clear := 26.0 if compact else 16.0 # 내 카드와의 간격
+	var avail_h := hero_top - clear - (rect.position.y + FELT_RIM + 8.0)
+	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 36.0) / CARD_ASPECT), 36.0, 72.0)
 	var card_h := roundf(card_w * CARD_ASPECT)
-	var block_h := 28.0 + 4.0 + card_h + 4.0 + 22.0
+	var block_h := 28.0 + 4.0 + card_h
 	var block_w := card_w * 5.0 + 24.0
-	var block_top := maxf(rect.position.y + FELT_RIM + 8.0, minf(c.y - block_h / 2.0, hero_top - (26.0 if compact else 6.0) - block_h)) # 세로(compact)는 내 베팅 칩 자리를 비워 둔다
+	var block_top := maxf(rect.position.y + FELT_RIM + 8.0, minf(c.y - block_h / 2.0, hero_top - clear - block_h)) # 세로(compact)는 내 베팅 칩 자리를 비워 둔다
 	for r: TextureRect in board_card_rects:
 		r.custom_minimum_size = Vector2(card_w, card_h)
 	board_box.custom_minimum_size = Vector2(block_w, card_h)
 	center_box.size = Vector2(maxf(block_w, 180.0), block_h)
 	center_box.position = Vector2(c.x - center_box.size.x / 2.0, block_top)
+	board_label.size = Vector2(center_box.size.x, 28.0)
+	board_label.position = center_box.position
 	for r: TextureRect in my_card_rects:
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
@@ -273,6 +287,8 @@ func _handle_public(body: Dictionary) -> void:
 	if int(body.seq) < last_public_seq:
 		return
 	last_public_seq = int(body.seq)
+	motion.kill_real() # 도는 연출은 끊고 최종값으로 — 상태는 아래에서 바로 반영한다
+	var prev := _motion_snapshot()
 	public_view = body
 	var in_ms = body.get("nextHandInMs")
 	next_hand_due_ticks = -1 if in_ms == null else Time.get_ticks_msec() + int(in_ms)
@@ -297,6 +313,9 @@ func _handle_public(body: Dictionary) -> void:
 	_render_seats()
 	_update_buttons()
 	_update_action_bar()
+	if have_view and hand_counter - prev.hand <= 1:
+		_play_motion(prev)
+	have_view = true
 
 
 func _handle_private(body: Dictionary) -> void:
@@ -306,6 +325,10 @@ func _handle_private(body: Dictionary) -> void:
 	var hole_cards: Array = body.get("holeCards", [])
 	_show_cards(my_card_rects, hole_cards)
 	my_cards_box.visible = not hole_cards.is_empty()
+	if hole_cards != my_codes:
+		my_codes = hole_cards
+		my_codes_ticks = Time.get_ticks_msec()
+		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
 	_update_action_bar()
 
@@ -401,6 +424,7 @@ func _on_stomp_error(code: String) -> void:
 
 func _on_stomp_connected() -> void:
 	stomp_connected = true
+	have_view = false
 	last_public_seq = -1
 	last_private_seq = -1
 	_update_buttons()
@@ -477,6 +501,133 @@ func _on_stomp_closed() -> void:
 		error_label.show()
 		retry_notice_shown = true # 착석·재등록 뒤 지운다
 	_update_buttons()
+
+
+# --- motion (보이는 것만. 상태·네트워크·버튼은 건드리지 않는다) ---
+
+## 새 뷰를 반영하기 전의 화면 상태 — 연출이 앞뒤를 비교한다
+func _motion_snapshot() -> Dictionary:
+	var snap := {"hand": hand_counter, "street": str(public_view.get("street", "")), "board": public_view.get("board", []).size(),
+		"hip": public_view.get("handInProgress", false), "result": public_view.get("result"),
+		"bets": {}, "status": {}, "boxes": [], "backs": {}}
+	for seat in public_view.get("seats", []):
+		snap.status[int(seat.seatNo)] = seat.status
+		if snap.hip:
+			snap.bets[int(seat.seatNo)] = _street_bet(seat)
+	for i in 9:
+		var box: Control = bet_boxes[i]
+		if box.visible:
+			snap.boxes.append({"center": box.position + box.size / 2.0, "text": (box.get_child(1) as Label).text})
+		var sn: Control = seat_nodes[i]
+		if sn.shown_codes == ["back", "back"]:
+			snap.backs[i + 1] = [_seat_card_rect(i + 1, 0), _seat_card_rect(i + 1, 1)]
+	return snap
+
+
+func _seat_card_rect(seat_no: int, i: int) -> Rect2:
+	var sn: Control = seat_nodes[seat_no - 1]
+	var r: Control = sn.card_rects[i]
+	return Rect2(sn.position + r.position, r.size)
+
+
+func _pot_center() -> Vector2:
+	return center_box.position + Vector2(center_box.size.x / 2.0, 14.0)
+
+
+func _chip_ghost(text: String) -> Control:
+	var g: HBoxContainer = bet_boxes[0].duplicate()
+	(g.get_child(1) as Label).text = text
+	g.show()
+	g.size = g.get_combined_minimum_size()
+	return g
+
+
+func _play_motion(prev: Dictionary) -> void:
+	var hip: bool = public_view.get("handInProgress", false)
+	var street := str(public_view.get("street", ""))
+	var result = public_view.get("result")
+	var same_hand: bool = prev.hand == hand_counter
+	var seats: Array = public_view.get("seats", [])
+	var pot := _pot_center()
+	# 팟으로 쓸어 담기: 스트리트가 바뀌거나 결과가 오면 직전에 보이던 베팅 박스가 팟으로 간다
+	if not prev.boxes.is_empty() and ((same_hand and street != prev.street) or (prev.result == null and result != null)):
+		for b in prev.boxes:
+			motion.fly(_chip_ghost(b.text), b.center, pot, Motion.BET_TO_POT, 0.0, true)
+	# 베팅 팝: 같은 스트리트에서 금액이 늘었다
+	if same_hand and hip and prev.hip and street == prev.street:
+		for seat in seats:
+			var n := int(seat.seatNo)
+			if _street_bet(seat) > prev.bets.get(n, 0) and bet_boxes[n - 1].visible:
+				motion.pop(bet_boxes[n - 1])
+	# 보드: 새로 깔린 카드는 뒤집으며 나온다
+	if same_hand:
+		var board: Array = public_view.get("board", [])
+		for i in range(prev.board, mini(board.size(), board_card_rects.size())):
+			motion.appear(board_card_rects[i], (i - prev.board) * Motion.FLIP_STAGGER, true)
+	# 폴드: 뒷면이던 작은 카드가 중심 쪽으로 조금 날아가며 사라진다
+	if same_hand:
+		for seat in seats:
+			var n := int(seat.seatNo)
+			if seat.status == "FOLDED" and prev.status.get(n) != "FOLDED" and prev.backs.has(n):
+				for r: Rect2 in prev.backs[n]:
+					var c := r.get_center()
+					motion.fly(motion.card_ghost("back", r.size), c, c.lerp(geo.center, 0.3), Motion.FOLD_FLY, 0.0, true, Tween.EASE_IN)
+	# 승자에게 팟을 밀어 준다(베팅 쓸어 담기가 끝난 뒤)
+	if prev.result == null and result != null:
+		for payout in result.get("payouts", []):
+			var n := int(payout.seatNo)
+			if int(payout.amount) <= 0 or not _seat_held_by(n, payout.get("userId")):
+				continue
+			var sn: Control = seat_nodes[n - 1]
+			var land: float = Motion.BET_TO_POT + Motion.PUSH_FLY
+			motion.fly(_chip_ghost("+" + Format.comma(int(payout.amount))), pot, sn.position + sn.size / 2.0, Motion.PUSH_FLY, Motion.BET_TO_POT, true, Tween.EASE_IN_OUT, Tween.TRANS_QUAD)
+			if _find_seat(n) != null:
+				motion.pulse(sn, land)
+				motion.appear(sn.payout_label, land, false, Motion.PAYOUT_FADE)
+	# 딜: 새 판이면 딜러 다음 좌석부터 시계 방향으로 두 바퀴
+	if hip and hand_counter > prev.hand:
+		_plan_deal()
+		for n in deal_plan:
+			if n == _my_seat_no():
+				continue
+			var sn: Control = seat_nodes[n - 1]
+			for i in 2:
+				if sn.card_rects[i].visible:
+					var r := _seat_card_rect(n, i)
+					motion.fly(motion.card_ghost("back", r.size), geo.center, r.get_center(), Motion.DEAL_FLY, deal_plan[n][i])
+					motion.appear(sn.card_rects[i], deal_plan[n][i] + Motion.DEAL_FLY)
+		if Time.get_ticks_msec() - my_codes_ticks < 1500: # 개인 뷰가 먼저 왔다
+			_deal_my_cards()
+
+
+func _plan_deal() -> void:
+	deal_plan = {}
+	deal_plan_ticks = Time.get_ticks_msec()
+	var dealer := int(public_view.get("buttonSeatNo", 0))
+	var order: Array = []
+	for seat in public_view.get("seats", []):
+		if seat.status == "ACTIVE" or seat.status == "ALL_IN":
+			order.append(int(seat.seatNo))
+	order.sort_custom(func(a: int, b: int) -> bool: return posmod(a - dealer - 1, 9) < posmod(b - dealer - 1, 9))
+	for k in order.size():
+		deal_plan[order[k]] = [k * Motion.DEAL_STAGGER, (order.size() + k) * Motion.DEAL_STAGGER]
+
+
+## 내 홀카드: 가운데에서 뒷면이 날아오고, 닿으면 뒤집힌다. 딜 계획이 있고(공개 뷰) 카드가 막 바뀌었을 때(개인 뷰) 한 번만
+func _deal_my_cards() -> void:
+	var seat_no := _my_seat_no()
+	if not have_view or not my_cards_box.visible or not deal_plan.has(seat_no) or Time.get_ticks_msec() - deal_plan_ticks > 1500:
+		return
+	var plan: Array = deal_plan[seat_no]
+	deal_plan.erase(seat_no)
+	var hc: Vector2 = geo.hc
+	for i in my_card_rects.size():
+		var r: Control = my_card_rects[i]
+		if not r.visible:
+			continue
+		var c: Vector2 = my_cards_box.position + Vector2(i * (hc.x + 8.0) + hc.x / 2.0, hc.y / 2.0)
+		motion.fly(motion.card_ghost("back", hc), geo.center, c, Motion.DEAL_FLY, plan[i])
+		motion.appear(r, plan[i] + Motion.DEAL_FLY, true)
 
 
 # --- rendering ---
@@ -584,8 +735,11 @@ func _update_board_label() -> void:
 	if result != null:
 		var wins := []
 		for payout in result.get("payouts", []):
-			if payout.amount > 0 and _seat_held_by(int(payout.seatNo), payout.get("userId")):
-				wins.append("%d번 +%d" % [int(payout.seatNo), int(payout.amount)])
+			var uid = payout.get("userId")
+			if uid == null and _find_seat(int(payout.seatNo)) != null:
+				uid = _find_seat(int(payout.seatNo)).userId
+			if payout.amount > 0 and uid != null and _seat_held_by(int(payout.seatNo), uid):
+				wins.append("%s +%s" % [_nickname_for(int(uid)), Format.comma(int(payout.amount))])
 		if not wins.is_empty():
 			text = "승리: " + ", ".join(wins)
 	board_label.text = text
@@ -595,6 +749,7 @@ func _render_seats() -> void:
 	if seat_nodes.size() < 9:
 		return
 	var g := _layout()
+	geo = g
 	var hero := _my_seat_no()
 	if hero == -1:
 		hero = 1
@@ -732,6 +887,7 @@ func _fetch_nickname(user_id: int) -> void:
 		nickname_fetching.erase(user_id) # 실패하면 이 화면에서는 다시 묻지 않는다 — 메시지마다 좌석 수만큼 재요청하지 않게
 		nickname_cache[user_id] = r.data.nickname
 		_render_seats()
+		_update_board_label()
 
 
 func _update_buttons() -> void:
