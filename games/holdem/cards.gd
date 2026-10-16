@@ -18,6 +18,7 @@ const STREET_TEXT := {
 	"FLOP": "플랍",
 	"TURN": "턴",
 	"RIVER": "리버",
+	"SHOWDOWN": "쇼다운",
 }
 
 

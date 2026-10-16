@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=32 format=3]
+[gd_resource type="Theme" load_steps=36 format=3]
 
 [ext_resource type="FontFile" path="res://core/ui/fonts/Pretendard-Regular.woff2" id="1_font"]
 
@@ -199,6 +199,70 @@ content_margin_right = 16
 content_margin_bottom = 11
 
 [sub_resource type="StyleBoxFlat" id="dg_f"]
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.9098, 0.9255, 0.9490, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 16
+content_margin_top = 11
+content_margin_right = 16
+content_margin_bottom = 11
+
+[sub_resource type="StyleBoxFlat" id="sc_n"]
+bg_color = Color(0.1804, 0.6196, 0.3569, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.1804, 0.6196, 0.3569, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 16
+content_margin_top = 11
+content_margin_right = 16
+content_margin_bottom = 11
+
+[sub_resource type="StyleBoxFlat" id="sc_h"]
+bg_color = Color(0.2275, 0.7020, 0.4157, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2275, 0.7020, 0.4157, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 16
+content_margin_top = 11
+content_margin_right = 16
+content_margin_bottom = 11
+
+[sub_resource type="StyleBoxFlat" id="sc_p"]
+bg_color = Color(0.1451, 0.5059, 0.2863, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.1451, 0.5059, 0.2863, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 16
+content_margin_top = 11
+content_margin_right = 16
+content_margin_bottom = 11
+
+[sub_resource type="StyleBoxFlat" id="sc_f"]
 draw_center = false
 border_width_left = 2
 border_width_top = 2
@@ -450,6 +514,16 @@ ButtonDanger/colors/font_hover_color = Color(1.0000, 1.0000, 1.0000, 1)
 ButtonDanger/colors/font_pressed_color = Color(1.0000, 1.0000, 1.0000, 1)
 ButtonDanger/colors/font_hover_pressed_color = Color(1.0000, 1.0000, 1.0000, 1)
 ButtonDanger/colors/font_focus_color = Color(1.0000, 1.0000, 1.0000, 1)
+ButtonSuccess/base_type = &"Button"
+ButtonSuccess/styles/normal = SubResource("sc_n")
+ButtonSuccess/styles/hover = SubResource("sc_h")
+ButtonSuccess/styles/pressed = SubResource("sc_p")
+ButtonSuccess/styles/focus = SubResource("sc_f")
+ButtonSuccess/colors/font_color = Color(1.0000, 1.0000, 1.0000, 1)
+ButtonSuccess/colors/font_hover_color = Color(1.0000, 1.0000, 1.0000, 1)
+ButtonSuccess/colors/font_pressed_color = Color(1.0000, 1.0000, 1.0000, 1)
+ButtonSuccess/colors/font_hover_pressed_color = Color(1.0000, 1.0000, 1.0000, 1)
+ButtonSuccess/colors/font_focus_color = Color(1.0000, 1.0000, 1.0000, 1)
 OptionButton/styles/normal = SubResource("b_n")
 OptionButton/styles/hover = SubResource("b_h")
 OptionButton/styles/pressed = SubResource("b_p")
