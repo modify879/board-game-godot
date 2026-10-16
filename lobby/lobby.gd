@@ -18,7 +18,7 @@ func _ready() -> void:
 	wallet_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://lobby/wallet.tscn"))
 	admin_button.visible = Api.is_admin()
 	admin_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://admin/admin.tscn"))
-	_load_balance()
+	Balance.load_into(balance_label)
 	for game in GAMES:
 		var button := Button.new()
 		button.text = game.title
@@ -30,10 +30,6 @@ func _ready() -> void:
 		nickname_label.text = "%s님" % r.data.nickname
 	else:
 		nickname_label.text = ErrorText.of(r.error)
-
-
-func _load_balance() -> void:
-	await Balance.load_into(balance_label)
 
 
 func _on_logout_pressed() -> void:
