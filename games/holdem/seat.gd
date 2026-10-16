@@ -152,11 +152,8 @@ func show_player(info: Dictionary) -> void:
 	payout_label.text = "+%s" % Format.comma(info.payout)
 	payout_label.visible = info.payout > 0
 	payout_label.reset_size()
-	# 내 자리는 위가 내 카드라 옆(오른쪽 바깥)에, 남의 자리는 오른쪽 위 모서리에
-	if is_me:
-		payout_label.position = Vector2(size.x + 8, size.y / 2.0 - payout_label.size.y / 2.0)
-	else:
-		payout_label.position = Vector2(size.x - payout_label.size.x + 6, -payout_label.size.y - 4)
+	# 위는 작은 카드·내 카드가 차지하므로 캡슐 아래 가운데(배지 줄 바로 밑)에 둔다
+	payout_label.position = Vector2((size.x - payout_label.size.x) / 2.0, size.y + (12.0 if _badge_count > 0 else 4.0))
 	queue_redraw()
 
 

@@ -344,10 +344,21 @@ func _ready() -> void:
 	table._handle_public(_view(303, duo, {"handInProgress": true, "toActSeatNo": 2.0, "street": "FLOP", "board": ["As", "Kd", "2c"]}))
 	check(table.board_card_rects[0].scale.x < 0.01 and int(table.public_view.seq) == 303, "플랍 카드는 뒤집기 시작 상태, 상태는 즉시 반영")
 	table._handle_public(_view(304, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "FLOP", "board": ["As", "Kd", "2c"]}))
+	check(table.board_card_rects[0].scale.x < 0.01, "같은 판의 뷰는 도는 appear 연출을 끊지 않는다")
+	table.motion.kill_real()
 	var settled := true
 	for r: Control in table.board_card_rects + table.my_card_rects + [table.seat_nodes[1].card_rects[0], table.seat_nodes[1].card_rects[1]]:
 		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
-	check(settled, "새 뷰가 오면 보드·카드 노드는 scale 1 / alpha 1")
+	check(settled, "연출을 끝내면 보드·카드 노드는 scale 1 / alpha 1")
+	table._handle_public(_view(305, duo))
+	table._handle_public(_view(306, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	check(table.seat_nodes[1].card_rects[0].modulate.a == 0.0, "새 판 딜 중 카드는 숨김")
+	table.have_view = false
+	table._handle_public(_view(307, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	settled = true
+	for r: Control in table.board_card_rects + table.my_card_rects + [table.seat_nodes[1].card_rects[0], table.seat_nodes[1].card_rects[1]]:
+		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
+	check(settled, "첫 뷰(재연결)는 도는 연출을 끊고 노드를 scale 1 / alpha 1 로 맞춘다")
 
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")
