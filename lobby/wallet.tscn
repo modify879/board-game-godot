@@ -42,6 +42,7 @@ text = ""
 
 [node name="ErrorLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
+theme_type_variation = &"LabelError"
 layout_mode = 2
 visible = false
 autowrap_mode = 2
@@ -62,11 +63,13 @@ layout_mode = 2
 placeholder_text = "충전 금액"
 
 [node name="DepositHint" type="Label" parent="VBoxContainer/Tabs/충전"]
+theme_type_variation = &"LabelHint"
 layout_mode = 2
 text = "1,000 이상, 100 단위"
 
 [node name="DepositButton" type="Button" parent="VBoxContainer/Tabs/충전"]
 unique_name_in_owner = true
+theme_type_variation = &"ButtonPrimary"
 layout_mode = 2
 text = "충전 요청"
 
@@ -133,12 +136,14 @@ layout_mode = 2
 placeholder_text = "예금주"
 
 [node name="WithdrawHint" type="Label" parent="VBoxContainer/Tabs/환전"]
+theme_type_variation = &"LabelHint"
 layout_mode = 2
 autowrap_mode = 2
 text = "1,000 이상, 100 단위. 신청하면 잔액에서 바로 빠지고, 취소하면 돌아옵니다. 게임 중인 칩은 자리에서 일어나야 지갑으로 돌아옵니다"
 
 [node name="WithdrawButton" type="Button" parent="VBoxContainer/Tabs/환전"]
 unique_name_in_owner = true
+theme_type_variation = &"ButtonPrimary"
 layout_mode = 2
 text = "환전 요청"
 

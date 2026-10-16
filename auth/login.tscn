@@ -34,6 +34,7 @@ layout_mode = 2
 theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+theme_type_variation = &"LabelTitle"
 layout_mode = 2
 text = "보드게임"
 
@@ -62,12 +63,13 @@ secret = true
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+theme_type_variation = &"LabelError"
 autowrap_mode = 2
 text = ""
 
 [node name="LoginButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
 unique_name_in_owner = true
+theme_type_variation = &"ButtonPrimary"
 layout_mode = 2
 text = "로그인"
 

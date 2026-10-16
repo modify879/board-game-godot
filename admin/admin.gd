@@ -102,9 +102,10 @@ func _edit(placeholder: String) -> LineEdit:
 	return e
 
 
-func _button(text: String, handler: Callable) -> Button:
+func _button(text: String, handler: Callable, variation := &"") -> Button:
 	var b := Button.new()
 	b.text = text
+	b.theme_type_variation = variation
 	b.pressed.connect(handler)
 	return b
 
@@ -130,7 +131,7 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	var id := int(item.id)
 	var amount := int(item.requestedAmount) if kind == DEPOSIT else int(item.amount)
 	var box := VBoxContainer.new()
-	var info := HBoxContainer.new()
+	var info := HFlowContainer.new() # 좁은 화면에서 줄바꿈
 	info.add_child(Rows.label("#%d" % id))
 	info.add_child(Rows.label("회원 %d" % int(item.userId)))
 	info.add_child(Rows.label(Format.time(item.requestedAt)))
@@ -146,12 +147,12 @@ func _request_row(kind: int, item: Dictionary) -> VBoxContainer:
 	if kind == DEPOSIT:
 		credited = _edit("승인액 (%s)" % Format.comma(amount))
 		approve.add_child(credited)
-	approve.add_child(_button("승인", _on_approve.bind(kind, id, credited)))
+	approve.add_child(_button("승인", _on_approve.bind(kind, id, credited), &"ButtonPrimary"))
 	box.add_child(approve)
 	var reject := HBoxContainer.new()
 	var reason := _edit("거절 사유")
 	reject.add_child(reason)
-	reject.add_child(_button("거절", _on_reject.bind(kind, id, reason)))
+	reject.add_child(_button("거절", _on_reject.bind(kind, id, reason), &"ButtonDanger"))
 	box.add_child(reject)
 	return box
 

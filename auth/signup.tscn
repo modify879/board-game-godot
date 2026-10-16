@@ -34,6 +34,7 @@ layout_mode = 2
 theme_override_constants/separation = 12
 
 [node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+theme_type_variation = &"LabelTitle"
 layout_mode = 2
 text = "회원가입"
 
@@ -49,8 +50,7 @@ placeholder_text = "아이디"
 
 [node name="UsernameHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"LabelHint"
 text = "영문 소문자로 시작, 소문자·숫자·_ 4~20자"
 
 [node name="NicknameEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
@@ -60,8 +60,7 @@ placeholder_text = "닉네임"
 
 [node name="NicknameHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"LabelHint"
 text = "2~12자"
 
 [node name="PasswordEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
@@ -72,8 +71,7 @@ secret = true
 
 [node name="PasswordHint" type="Label" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"LabelHint"
 text = "8자 이상"
 
 [node name="PasswordConfirmEdit" type="LineEdit" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
@@ -86,12 +84,13 @@ secret = true
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.2, 0.2, 1)
+theme_type_variation = &"LabelError"
 autowrap_mode = 2
 text = ""
 
 [node name="SubmitButton" type="Button" parent="CenterContainer/PanelContainer/MarginContainer/VBoxContainer/Form"]
 unique_name_in_owner = true
+theme_type_variation = &"ButtonPrimary"
 layout_mode = 2
 text = "가입하기"
 

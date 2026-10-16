@@ -39,4 +39,5 @@ theme/custom="res://core/ui/theme.tres"
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.0706, 0.0863, 0.1098, 1)
 textures/vram_compression/import_etc2_astc=true
