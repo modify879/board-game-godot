@@ -298,6 +298,9 @@ func _ready() -> void:
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 4500.0}, 3, 7, false) == "좌석 2  -500", "핸드 기록: 타인·손실")
 	check(hh.player_text({"seatNo": 1.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5000.0}, 3, 7, false) == "좌석 1  0", "핸드 기록: 0")
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5100.0}, 3, -1, true) == "좌석 2 회원 #8  +100", "핸드 기록: 관리자 회원 번호")
+	check(hh.player_text({"seatNo": 3.0, "userId": 7.0, "startingStack": 5000.0, "endingStack": 6200.0}, 3, 7, false, "qauser1") == "좌석 3 (D) qauser1 (나)  +1,200", "핸드 기록: 내 좌석·버튼·닉네임")
+	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 4500.0}, 3, 7, false, "qauser2") == "좌석 2 qauser2  -500", "핸드 기록: 타인·닉네임·손실")
+	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5100.0}, 3, -1, true, "qauser2") == "좌석 2 qauser2 (회원 #8)  +100", "핸드 기록: 관리자 닉네임")
 
 	get_tree().quit(1 if failures else 0)
 
