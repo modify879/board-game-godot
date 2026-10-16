@@ -31,3 +31,16 @@ static func category_text(category: String) -> String:
 
 static func street_text(street) -> String:
 	return STREET_TEXT.get(street, str(street))
+
+
+static func card_row(codes: Array, size: Vector2) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	for code in codes:
+		var rect := TextureRect.new()
+		rect.custom_minimum_size = size
+		rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		rect.texture = load(texture_path(code))
+		row.add_child(rect)
+	return row

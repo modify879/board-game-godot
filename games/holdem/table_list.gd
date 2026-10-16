@@ -104,10 +104,14 @@ func _load_buy_in() -> void:
 	_update_create_button()
 
 
+func _show_error(code: String) -> void:
+	error_label.text = ErrorText.of(code)
+	error_label.show()
+
+
 func _show_seat_error() -> void:
 	if seat_error != "":
-		error_label.text = ErrorText.of(seat_error)
-		error_label.show()
+		_show_error(seat_error)
 
 
 func enter(id: int, join := false) -> void:
@@ -123,9 +127,7 @@ func _load(page: int) -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables?page=%d&size=%d" % [page, PAGE_SIZE])
 	if not pager.is_stale(gen):
 		refresh_button.disabled = false # 낡은 응답이 뒤 요청의 잠금을 풀지 않게
-	if not await pager.accept(gen, page, r, func(code: String) -> void:
-			error_label.text = ErrorText.of(code)
-			error_label.show()):
+	if not await pager.accept(gen, page, r, _show_error):
 		return
 	error_label.hide()
 	_build_rows(Api.page_items(r.data))
@@ -138,9 +140,7 @@ func _build_rows(items: Array) -> void:
 	for item in items:
 		var row := HBoxContainer.new()
 		row.add_child(Rows.label(item.name, true))
-		var seats_label := Label.new()
-		seats_label.text = "%d/%d명" % [item.occupiedSeats, item.maxSeats]
-		row.add_child(seats_label)
+		row.add_child(Rows.label("%d/%d명" % [item.occupiedSeats, item.maxSeats]))
 		var watch_button := Button.new()
 		watch_button.text = "관전"
 		watch_button.pressed.connect(enter.bind(item.tableId, false))
@@ -157,14 +157,12 @@ func _on_create() -> void:
 		return
 	var invalid := Rules.table_name(name_edit.text)
 	if invalid != "":
-		error_label.text = ErrorText.of(invalid)
-		error_label.show()
+		_show_error(invalid)
 		return
 	var buy_in := int(buy_in_spin.value)
 	invalid = Rules.buy_in(buy_in, buy_in_min, buy_in_max, buy_in_wallet)
 	if invalid != "":
-		error_label.text = ErrorText.of(invalid)
-		error_label.show()
+		_show_error(invalid)
 		return
 	pending_name = name_edit.text
 	pending_buy_in = buy_in
