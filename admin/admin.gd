@@ -295,14 +295,10 @@ func _append_balance(id: int, info: String) -> void:
 ## 회원 ID 입력을 숫자로. int() 는 빈 칸·"a1" 을 조용히 0·1 로 바꾸므로 막는다. 실패하면 -1
 func _target_id() -> int:
 	var t := user_id_edit.text.strip_edges()
-	if not t.is_valid_int():
+	if not t.is_valid_int() or int(t) <= 0:
 		_show_error("USER_ID_INVALID")
 		return -1
-	var id := int(t)
-	if id <= 0:
-		_show_error("USER_ID_INVALID")
-		return -1
-	return id
+	return int(t)
 
 
 func _on_lookup() -> void:

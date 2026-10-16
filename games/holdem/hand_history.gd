@@ -44,12 +44,16 @@ func _on_search() -> void:
 	# 서버: holdem/presentation/rest/HoldemHandHistoryController.kt AdminHoldemHandHistoryController `@RequestParam userId: Long?`
 	# 숫자가 아니면 400 REQUEST_INVALID. 0·음수는 서버가 받으므로 막지 않는다
 	if (u != "" and not u.is_valid_int()) or (t != "" and not t.is_valid_int()):
-		error_label.text = ErrorText.of("REQUEST_INVALID")
-		error_label.show()
+		_show_error("REQUEST_INVALID")
 		return
 	user_filter = "" if u == "" else str(int(u))
 	table_filter = "" if t == "" else str(int(t))
 	_load(0)
+
+
+func _show_error(code: String) -> void:
+	error_label.text = ErrorText.of(code)
+	error_label.show()
 
 
 func _load(page: int) -> void:
@@ -65,9 +69,7 @@ func _load(page: int) -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, path)
 	if not pager.is_stale(gen):
 		refresh_button.disabled = false # 낡은 응답이 뒤 요청의 잠금을 풀지 않게
-	if not await pager.accept(gen, page, r, func(code: String) -> void:
-			error_label.text = ErrorText.of(code)
-			error_label.show()):
+	if not await pager.accept(gen, page, r, _show_error):
 		return
 	var items := Api.page_items(r.data)
 	# 서버 기록에는 userId 만 있어 닉네임은 따로 묻는다. 실패하면 이번에는 이름 없이 보이고 다음 로드 때 다시 묻는다
@@ -122,26 +124,14 @@ func _build_rows(items: Array) -> void:
 		if hand.board.is_empty():
 			box.add_child(Rows.label("보드 없음"))
 		else:
-			box.add_child(_card_row(hand.board))
+			box.add_child(Cards.card_row(hand.board, Vector2(30, 41)))
 		for p in hand.players:
 			var line := HBoxContainer.new()
 			line.add_child(Rows.label(player_text(p, int(hand.buttonSeatNo), Api.user_id if not admin else -1, admin, nickname_cache.get(int(p.userId), "")), true))
 			if p.holeCards != null:
-				line.add_child(_card_row(p.holeCards))
+				line.add_child(Cards.card_row(p.holeCards, Vector2(30, 41)))
 			else:
 				line.add_child(Rows.label("비공개"))
 			box.add_child(line)
 		rows.add_child(panel)
 
-
-func _card_row(codes: Array) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	for code in codes:
-		var rect := TextureRect.new()
-		rect.custom_minimum_size = Vector2(30, 41)
-		rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		rect.texture = load(Cards.texture_path(code))
-		row.add_child(rect)
-	return row
