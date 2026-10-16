@@ -72,7 +72,9 @@ func _do_request(method: int, path: String, body, extra_headers: Array = []) -> 
 		push_warning("HTTP %s %s failed: result=%d" % [method, path, res_result])
 		return {"ok": false, "status": 0, "data": null, "error": "NETWORK_ERROR"}
 	if is_auth_path and not is_web:
-		_update_dev_cookie(res_headers)
+		var cookie = cookie_value(res_headers, "refresh_token")
+		if cookie != null:
+			_save_dev_cookie(cookie)
 	var text := res_body.get_string_from_utf8()
 	var data = JSON.parse_string(text) if text != "" else null
 	var ok := status >= 200 and status < 300
@@ -80,13 +82,6 @@ func _do_request(method: int, path: String, body, extra_headers: Array = []) -> 
 	if not ok:
 		error = data.errorCode if (data is Dictionary and data.has("errorCode")) else "HTTP_%d" % status
 	return {"ok": ok, "status": status, "data": data, "error": error}
-
-
-func _update_dev_cookie(headers: PackedStringArray) -> void:
-	var value = cookie_value(headers, "refresh_token")
-	if value == null:
-		return
-	_save_dev_cookie(value)
 
 
 func _save_dev_cookie(value: String) -> void:

@@ -44,7 +44,7 @@ func _process(_delta: float) -> void:
 		return # 핸들러가 connect_ws() 로 소켓을 바꿨다 — 옛 피어의 CLOSED 를 새 피어 것으로 오인하지 않는다
 	if state != _last_state:
 		if state == WebSocketPeer.STATE_OPEN:
-			_send_connect()
+			_send_connect(ws)
 		elif state == WebSocketPeer.STATE_CLOSED:
 			_connected = false
 			var reason := ws.get_close_reason()
@@ -100,7 +100,7 @@ func subscribe(destination: String) -> String:
 	var id := "sub-%d" % _sub_counter
 	_subs[id] = destination
 	if _connected:
-		_send_subscribe(id, destination)
+		_send(build_frame("SUBSCRIBE", {"id": id, "destination": destination}, ""))
 	return id
 
 
@@ -141,12 +141,8 @@ func _connect_headers() -> Dictionary:
 	return headers
 
 
-func _send_connect() -> void:
-	_send(build_frame("CONNECT", _connect_headers(), ""))
-
-
-func _send_subscribe(id: String, destination: String) -> void:
-	_send(build_frame("SUBSCRIBE", {"id": id, "destination": destination}, ""))
+func _send_connect(peer: WebSocketPeer) -> void:
+	_send_on(peer, build_frame("CONNECT", _connect_headers(), ""))
 
 
 func _send(frame: String) -> void:
@@ -251,7 +247,7 @@ func _process_rotate() -> void:
 		state = _rotate_ws.get_ready_state()
 	if state != _rotate_last_state:
 		if state == WebSocketPeer.STATE_OPEN:
-			_send_on(_rotate_ws, build_frame("CONNECT", _connect_headers(), ""))
+			_send_connect(_rotate_ws)
 		elif state == WebSocketPeer.STATE_CLOSED:
 			# 새 소켓 연결 실패 — 옛 소켓을 그대로 두고 평소 재연결 경로에 맡긴다
 			_rotate_ws = null
