@@ -217,9 +217,19 @@ func _ready() -> void:
 	bi.data.obligationExpiresAt = null
 	table._apply_sit_buy_in(5, bi)
 	check(table.sit_popup_error.text == ErrorText.of("INSUFFICIENT_BALANCE"), "blocked without obligation: plain text")
-	table._apply_sit_buy_in(5, {"ok": false, "error": "TABLE_NOT_FOUND"})
+	table._apply_sit_buy_in(5, {"ok": false, "error": "TEMPORARILY_UNAVAILABLE"})
 	check(table.sit_popup_error.visible and table.sit_popup_ok.disabled, "buy-in GET failure shown")
 	table.sit_popup.hide()
+	# 입장 선택 패널이 바이인을 넘기면 착석 팝업 없이 바로 참가 요청(last_* 로 재시도에 같은 값을 쓴다)
+	script.auto_join = true
+	script.auto_join_buy_in = 5000
+	script.auto_join_post_blind = true
+	table.waiting = false
+	table.public_view = _view(30, [_seat(2, 8)])
+	table._on_stomp_connected()
+	check(not table.sit_popup.visible and table.last_buy_in == 5000 and table.last_post_blind and script.auto_join_buy_in == 0, "auto_join with buy-in sends join without SitPopup")
+	script.auto_join = false
+	table.waiting = false
 
 	# 14a. 패 보여 주기: 폴드 승자(결과 있음·shownHands 비음·내 지급액·핸드 없음)만. category null 도 그려진다
 	var fold_result := {"payouts": [{"seatNo": 1.0, "userId": 7.0, "amount": 500.0}], "shownHands": []}

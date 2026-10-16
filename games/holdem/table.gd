@@ -2,7 +2,9 @@ extends Control
 ## Holdem table: seats, betting round status, private hole cards.
 
 static var table_id := 0
-static var auto_join := false # table_list 의 "참가" 가 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
+static var auto_join := false # table_list 의 입장 선택 패널이 "게임 참가" 에서 true 로, "관전"/me-seat 자동입장이 false 로 넘긴다
+static var auto_join_buy_in := 0 # 0 보다 크면 착석 팝업 없이 이 바이인으로 바로 참가한다(입장 선택 패널이 이미 검사했다)
+static var auto_join_post_blind := false
 static var create_name := "" # table_list 의 "만들기" 가 넘긴다. creating 이 true 면 STOMP 연결 뒤 방을 만든다 — 서버가 만든 사람을 바로 대기열에 넣는다
 static var create_buy_in := 0 # table_list 의 "만들기" 가 넘기는 바이인
 static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다 — 이름 검사는 table_list 가 한다
@@ -443,7 +445,13 @@ func _on_stomp_connected() -> void:
 	_update_buttons()
 	if auto_join and not waiting and not _is_seated():
 		auto_join = false
-		_open_sit_popup()
+		var join_buy_in := auto_join_buy_in
+		auto_join_buy_in = 0 # 재연결 때 다시 보내지 않는다 — 그 뒤는 last_buy_in 이 맡는다
+		if join_buy_in > 0:
+			dropped_retried = false
+			_send_join(auto_join_post_blind, join_buy_in)
+		else:
+			_open_sit_popup()
 	if creating:
 		var new_name := create_name
 		create_name = "" # 재연결 때 두 번 만들지 않게
@@ -1060,6 +1068,9 @@ func _apply_sit_buy_in(gen: int, r: Dictionary) -> void:
 	sit_popup_spin.hide()
 	sit_popup_ok.disabled = true
 	if not r.ok:
+		if r.error == "TABLE_NOT_FOUND": # 닫힌 방 — 닫힘 알림과 똑같이 목록으로
+			_leave_closed_table()
+			return
 		sit_popup_error.text = ErrorText.of(r.error)
 		sit_popup_error.show()
 		return
