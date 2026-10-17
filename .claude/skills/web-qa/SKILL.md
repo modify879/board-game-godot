@@ -7,6 +7,14 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 헤드리스 Chromium(Playwright)으로 `http://localhost:8000` 의 Web 빌드를 조작·캡처한다. 헬퍼는 `qa.py`, 실행 예는 `example_two_players.py`.
 
+## 테스트 단계
+
+- 1단계(매 변경): 헤드리스 자체 점검 — `test_core`·`test_holdem`·`test_table`·`test_layout`(CLAUDE.md 명령어). 배치 겹침은 `test_layout` 으로 확인하고 스크린샷으로 대신하지 않는다
+- 2단계(바뀐 화면만): 라이브는 바뀐 시나리오만, 한 크기로(레이아웃을 바꿨으면 폰·데스크톱 둘 다)
+- 3단계(출시 전만): 전체 통합 시나리오
+- 운영: 라이브 테스트 중 서버를 재기동하지 않는다. 같은 계정을 REST 로 따로 로그인하지 않는다(브라우저의 refresh 세션이 무효화된다 — 확인됨). 착석 여부는 봇의 공개 뷰로 확인한다. 계정은 에이전트끼리 나눠 쓴다
+- QA 전용 서버(:8081, 짧은 대기)는 준비되면 여기에 명령을 적는다
+
 ## 사전 조건
 
 - nginx `http://localhost:8000`. 내려가 있으면 CLAUDE.md 의 `docker compose up -d` 명령으로 띄운다. **내리지 않는다**(`deploy-web-1`)

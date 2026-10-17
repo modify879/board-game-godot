@@ -19,6 +19,8 @@ var compact := false
 var empty := true
 var is_me := false
 var to_act := false
+var badge_side := 0 # 배지 줄이 캡슐보다 넓으면 넘치는 쪽: 1 = 오른쪽, -1 = 왼쪽, 0 = 양쪽(table.gd 가 화면 가운데 반대쪽으로 정한다)
+var badge_bounds := Vector2(-INF, INF) # 배지 줄이 있어야 할 로컬 x 범위(펠트 영역 안)
 var timer_left := -1.0 # 남은 초. 음수면 숨김
 var shown_codes: Array = [] # 좌석 위에 그린 카드(테스트가 본다)
 var _avatar_color: Color = AVATAR_COLORS[0]
@@ -199,6 +201,9 @@ func _place_badges() -> void:
 	for l: Label in shown:
 		total += l.size.x
 	var x := (size.x - total) / 2.0
+	if total > size.x and badge_side != 0:
+		x = 0.0 if badge_side > 0 else size.x - total
+	x = clampf(x, badge_bounds.x, maxf(badge_bounds.x, badge_bounds.y - total))
 	for l: Label in shown:
 		l.position = Vector2(x, size.y - 6)
 		x += l.size.x + 4.0
