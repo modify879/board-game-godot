@@ -45,6 +45,8 @@ func _ready() -> void:
 	table.my_available_actions = {"canCheck": true, "callAmount": 0.0, "minRaiseTo": null}
 	table._update_action_bar()
 	check(table.action_bar.visible, "action bar visible on my turn")
+	var qs: Dictionary = table.qa_state()
+	check(qs.to_act_seat == 1 and qs.hand_in_progress and qs.board.size() == 3 and qs.seats.size() == 2 and qs.available_actions == ["CHECK", "FOLD"], "qa_state 기본 필드")
 	table._handle_public(_view(7, [_seat(1, 7, "ALL_IN"), _seat(2, 8, "ALL_IN")],
 		{"handInProgress": true, "board": ["As", "Kd", "2c"]}))
 	check(not table.action_bar.visible, "action bar hidden when nobody to act")

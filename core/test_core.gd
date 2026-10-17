@@ -243,6 +243,73 @@ func _init() -> void:
 	plabel.free()
 	pnext.free()
 
+	# QaBridge: 고유 이름 키·상태·press
+	var qroot := Control.new()
+	qroot.name = "Root"
+	root.add_child(qroot)
+	await process_frame # is_visible_in_tree 는 트리가 돌기 시작한 뒤에만 참
+	var qadd := func(parent: Node, n: Node, nm: String, unique := true) -> Node:
+		n.name = nm
+		parent.add_child(n)
+		n.owner = qroot
+		n.unique_name_in_owner = unique
+		return n
+	var qgo := qadd.call(qroot, Button.new(), "GoButton") as Button
+	qgo.text = "Go"
+	var qnope := qadd.call(qroot, Button.new(), "NopeButton") as Button
+	qnope.disabled = true
+	var qchk := qadd.call(qroot, CheckBox.new(), "Chk") as CheckBox
+	var qspin := qadd.call(qroot, SpinBox.new(), "Spin") as SpinBox
+	qspin.max_value = 100
+	var qedit := qadd.call(qroot, LineEdit.new(), "Edit") as LineEdit
+	var qbox := qadd.call(qroot, VBoxContainer.new(), "Rows") as Control
+	var qcard0 := qadd.call(qbox, Button.new(), "c0", false) as Button
+	qcard0.text = "방1"
+	var qcard1 := qadd.call(qbox, Button.new(), "c1", false) as Button
+	qcard1.text = "방2"
+	var qsub := Control.new()
+	qsub.scene_file_path = "res://fake/seat.tscn" # 파일에서 인스턴스된 씬처럼 보이게
+	qadd.call(qroot, qsub, "Seat3", false)
+	var qname := Label.new()
+	qname.text = "kim"
+	qname.name = "NameLabel"
+	qsub.add_child(qname)
+	qname.owner = qsub
+	qname.unique_name_in_owner = true
+	var qhidden := qadd.call(qroot, Button.new(), "HiddenButton") as Button
+	qhidden.visible = false
+	var qpressed := []
+	qgo.pressed.connect(func() -> void: qpressed.append(1))
+	var qsnap := QaBridge.snapshot(qroot)
+	var qn: Dictionary = qsnap.nodes
+	check(qn.has("GoButton") and qn.has("NopeButton") and qn.has("Chk") and qn.has("Spin") and qn.has("Edit") and qn.has("Rows"), "QaBridge 고유 이름 키")
+	check(qn.has("Rows/0") and qn.has("Rows/1") and qn["Rows/1"].text == "방2", "QaBridge 이름 없는 버튼은 컨테이너/순번")
+	check(qn.has("Seat3/NameLabel") and qn["Seat3/NameLabel"].text == "kim", "QaBridge 인스턴스 씬 안 키")
+	check(qn.GoButton.type == "Button" and qn.GoButton.text == "Go" and qn.GoButton.rect.size() == 4, "QaBridge 필드 type/text/rect")
+	check(qn.NopeButton.disabled and not qn.GoButton.disabled, "QaBridge disabled")
+	check(qn.Spin.max == 100.0 and qn.Spin.has("value") and qn.Spin.has("min"), "QaBridge Range 필드")
+	check(qn.HiddenButton.visible == false, "QaBridge 숨김 표시")
+	check(QaBridge.press(qroot, "GoButton").ok and qpressed.size() == 1, "QaBridge press 성공")
+	check(not QaBridge.press(qroot, "NopeButton").ok, "QaBridge press disabled 실패")
+	check(not QaBridge.press(qroot, "HiddenButton").ok, "QaBridge press 숨김 실패")
+	check(not QaBridge.press(qroot, "Nothing").ok, "QaBridge press 없음 실패")
+	check(not QaBridge.press(qroot, "Edit").ok, "QaBridge press 버튼 아님")
+	check(QaBridge.press(qroot, "Chk").ok and qchk.button_pressed, "QaBridge 체크박스 토글 켬")
+	QaBridge.press(qroot, "Chk")
+	check(not qchk.button_pressed, "QaBridge 체크박스 토글 끔")
+	var qcard_hits := []
+	qcard1.pressed.connect(func() -> void: qcard_hits.append(1))
+	check(QaBridge.press(qroot, "Rows/1").ok and qcard_hits.size() == 1, "QaBridge 이름 없는 버튼 press")
+	var qtexts := []
+	qedit.text_changed.connect(func(t: String) -> void: qtexts.append(t))
+	check(QaBridge.set_text(qroot, "Edit", "abc").ok and qedit.text == "abc" and qtexts == ["abc"], "QaBridge set_text")
+	var qvals := []
+	qspin.value_changed.connect(func(v: float) -> void: qvals.append(v))
+	check(QaBridge.set_value(qroot, "Spin", 40).ok and qspin.value == 40.0 and qvals == [40.0], "QaBridge set_value")
+	check(not QaBridge.set_text(qroot, "Spin", "x").ok and not QaBridge.set_value(qroot, "Edit", 1).ok, "QaBridge 타입 불일치 실패")
+	check(QaBridge.snapshot(qroot).extra == {}, "QaBridge qa_state 없으면 extra 비어 있음")
+	qroot.free()
+
 	quit(1 if failures else 0)
 
 

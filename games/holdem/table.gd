@@ -677,6 +677,42 @@ func _deal_my_cards() -> void:
 		motion.appear(r, plan[i] + Motion.DEAL_FLY, true)
 
 
+## QA 브리지(core/qa_bridge.gd)가 state().extra 로 읽는다. 표시 없이 현재 상태만 돌려준다
+func qa_state() -> Dictionary:
+	var seats := []
+	for seat in public_view.get("seats", []):
+		seats.append({"seat_no": int(seat.seatNo), "nickname": nickname_cache.get(seat.userId, ""), "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.get("leaveReserved", false)})
+	var winners := []
+	var result = public_view.get("result")
+	if result != null:
+		for payout in result.get("payouts", []):
+			winners.append({"seat_no": int(payout.seatNo), "amount": int(payout.amount)})
+	var actions := []
+	if my_available_actions != null:
+		var a: Dictionary = my_available_actions
+		actions.append("CHECK" if a.get("canCheck", false) else "CALL")
+		actions.append("FOLD")
+		if a.get("minRaiseTo") != null:
+			actions.append("RAISE_TO")
+	var countdown := -1.0
+	if next_hand_due_ticks >= 0:
+		countdown = maxf((next_hand_due_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
+	return {
+		"table_id": table_id,
+		"my_seat_no": _my_seat_no(),
+		"hand_in_progress": public_view.get("handInProgress", false),
+		"street": public_view.get("street", ""),
+		"my_hole_cards": my_codes,
+		"to_act_seat": _to_act_seat_no(),
+		"available_actions": actions,
+		"seats": seats,
+		"board": public_view.get("board", []),
+		"winners": winners,
+		"next_hand_seconds": countdown,
+		"leave_room_after_stand": leave_room_after_stand,
+	}
+
+
 # --- rendering ---
 
 func _is_seated() -> bool:
