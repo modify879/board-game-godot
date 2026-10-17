@@ -289,11 +289,17 @@ visible = false
 layout_mode = 2
 text = "일어서기"
 
+[node name="LeaveRoomButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "방 나가기"
+
 [node name="CancelLeaveButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "나가기 취소"
+text = "나가기 예약됨 · 취소"
 
 [node name="AddChipsButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
 unique_name_in_owner = true

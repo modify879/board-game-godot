@@ -127,7 +127,7 @@ func show_empty(seat_no: int, cards: Array = [], category := "") -> void:
 	queue_redraw()
 
 
-## info: nickname, stack, is_me, to_act, folded, all_in, presence_text, leave_reserved, cards, category, payout
+## info: nickname, stack, is_me, to_act, folded, all_in, presence_text, leave_reserved, leave_text(optional), cards, category, payout
 func show_player(info: Dictionary) -> void:
 	empty = false
 	is_me = info.is_me
@@ -145,6 +145,7 @@ func show_player(info: Dictionary) -> void:
 	badge_all_in.visible = info.all_in
 	badge_presence.text = info.presence_text
 	badge_presence.visible = disconnected
+	badge_leave.text = info.get("leave_text", "일어서기 예약") # 서버는 예약 종류를 구분하지 않는다 — 내 좌석만 로컬 의도(관전/나가기)를 안다
 	badge_leave.visible = info.leave_reserved
 	_place_badges()
 	_set_cards(info.cards) # 내 카드는 table.gd 가 크게 따로 그린다 — 여기엔 빈 배열이 온다
