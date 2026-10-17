@@ -2,7 +2,7 @@ services:
   web:
     image: nginx:1.29-alpine
     ports:
-      - "8000:80"
+      - "${WEB_PORT:-8000}:80"
     environment:
       SERVER_UPSTREAM: ${SERVER_UPSTREAM:?SERVER_UPSTREAM=<host:port> 가 필요하다}
     volumes:
