@@ -78,6 +78,8 @@ var board_card_rects: Array = []
 var my_card_rects: Array = []
 var public_view: Dictionary = {}
 var motion: Control # FeltArea 위 연출 오버레이(motion.gd)
+var label_w := 0.0 # 결과 문구 폭(_layout 이 정한다)
+var label_bottom := 0.0 # 결과 문구 아래 끝 y — 팟 줄 아래쪽
 var geo := {} # 마지막 _layout() 결과
 var have_view := false # 첫 뷰·재연결 뒤 첫 뷰는 연출 없이 그린다
 var my_codes: Array = [] # 지금 MyCards 에 그린 홀카드
@@ -266,13 +268,23 @@ func _layout() -> Dictionary:
 	board_box.custom_minimum_size = Vector2(block_w, card_h)
 	center_box.size = Vector2(maxf(block_w, 180.0), block_h)
 	center_box.position = Vector2(c.x - center_box.size.x / 2.0, block_top)
-	board_label.size = Vector2(center_box.size.x, 28.0)
-	board_label.position = center_box.position
 	for r: TextureRect in my_card_rects:
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
 	my_cards_box.position = Vector2(c.x - my_cards_box.size.x / 2.0, hero_top)
-	return {"center": c, "rx": rect.size.x / 2.0, "ry": rect.size.y / 2.0, "cap": cap, "hc": hc, "hero_top": hero_top}
+	var g := {"center": c, "rx": rect.size.x / 2.0, "ry": rect.size.y / 2.0, "cap": cap, "hc": hc, "hero_top": hero_top}
+	# 결과 문구는 팟 줄 자리 아래쪽 끝에 맞추고 위로 줄바꿈한다. 그 높이가 위쪽 두 좌석(내가 1번이면 5·6번)에 닿으면 둘 사이 폭으로 줄인다
+	label_w = center_box.size.x
+	label_bottom = block_top + 28.0
+	var s4 := _seat_center(5, 1, g)
+	var s5 := _seat_center(6, 1, g)
+	var reach_top := s4.y - cap.y / 2.0 - oc.y - 4.0
+	var reach_bottom := s4.y + cap.y / 2.0 + 40.0
+	var inner := s5.x - s4.x - cap.x - 12.0
+	if inner >= 120.0 and label_bottom > reach_top and label_bottom - 60.0 < reach_bottom:
+		label_w = minf(label_w, inner)
+	_place_board_label()
+	return g
 
 
 func _seat_center(seat_no: int, hero: int, g: Dictionary) -> Vector2:
@@ -778,6 +790,16 @@ func _update_board_label() -> void:
 		if not wins.is_empty():
 			text = "승리: " + ", ".join(wins)
 	board_label.text = text
+	_place_board_label()
+
+
+func _place_board_label() -> void:
+	board_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	board_label.add_theme_font_size_override("font_size", 20 if label_w >= 360.0 else 16)
+	board_label.custom_minimum_size = Vector2(label_w, 0)
+	board_label.reset_size()
+	board_label.size.x = label_w
+	board_label.position = Vector2(center_box.position.x + (center_box.size.x - label_w) / 2.0, label_bottom - board_label.size.y)
 
 
 func _render_seats() -> void:
@@ -793,24 +815,33 @@ func _render_seats() -> void:
 	if button_no != null and _find_seat(int(button_no)) != null:
 		dealer_seat = int(button_no)
 	dealer_marker.visible = dealer_seat != -1
+	var area := felt_area.size
 	for seat_no in range(1, 10):
 		var sp := _seat_center(seat_no, hero, g)
 		var seat_node: Control = seat_nodes[seat_no - 1]
 		seat_node.set_compact(compact)
 		seat_node.position = sp - seat_node.size / 2.0
+		seat_node.badge_side = 0 if absf(sp.x - g.center.x) < 20.0 else int(signf(sp.x - g.center.x))
+		seat_node.badge_bounds = Vector2(4.0 - seat_node.position.x, area.x - 4.0 - seat_node.position.x)
 		_render_seat(seat_no, seat_node)
+	for seat_no in range(1, 10): # 딜러·베팅은 모든 좌석이 놓인 뒤 — 좌석 사이 충돌을 본다
+		var sp := _seat_center(seat_no, hero, g)
+		var seat_node: Control = seat_nodes[seat_no - 1]
 		var to_center: Vector2 = (g.center - sp).normalized()
 		var is_hero := seat_no == hero
 		if seat_no == dealer_seat:
-			var ext := 1.0 / sqrt(pow(to_center.x / (g.cap.x / 2.0), 2) + pow(to_center.y / (g.cap.y / 2.0), 2)) # 캡슐 가장자리까지 거리
-			var d: Vector2 = sp + to_center * (ext + 16.0)
+			var msz := dealer_marker.size
+			var d := _push_clear(sp, sp, msz, to_center, 4.0, g.cap)
 			if is_hero:
 				d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
-			else: # 마커가 이 좌석의 작은 카드를 가리면 캡슐 아래 안쪽 모서리로 옮긴다
-				var mr := Rect2(d - dealer_marker.size / 2.0, dealer_marker.size)
-				for cr: Control in seat_node.card_rects:
-					if cr.visible and Rect2(seat_node.position + cr.position, cr.size).grow(2.0).intersects(mr):
-						d = sp + Vector2(signf(to_center.x) * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0)
+			else: # 마커가 이 좌석의 작은 카드·배지를 가리거나 화면 밖이면 캡슐 옆·아래 모서리로 옮긴다
+				var sx := 1.0 if to_center.x >= 0.0 else -1.0
+				var cands: Array = [d, sp + Vector2(sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
+					sp + Vector2(-sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
+					sp + Vector2(sx * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0)]
+				for cd: Vector2 in cands:
+					if _dealer_spot_ok(Rect2(cd - msz / 2.0, msz), seat_node, hero, g):
+						d = cd
 						break
 			dealer_marker.position = d - dealer_marker.size / 2.0
 		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
@@ -821,10 +852,7 @@ func _render_seats() -> void:
 			var rel := posmod(seat_no - hero, 9)
 			if not compact and (rel == 2 or rel == 7): # 아래 옆 좌석의 작은 카드 위로 칩이 걸치지 않게 조금 올린다
 				b.y -= 20.0
-			# 좌석 캡슐(+칩 박스)과 겹치지 않게 최소한 캡슐 가장자리 밖으로 밀어낸다. 딜러 마커가 같은 쪽이면 그만큼 더
-			var clear_d := 1.0 / sqrt(pow(to_center.x / ((g.cap.x + bm.x) / 2.0), 2) + pow(to_center.y / ((g.cap.y + bm.y) / 2.0), 2)) + 8.0
-			if sp.distance_to(b) < clear_d:
-				b = sp + to_center * clear_d
+			b = _push_clear(sp, b, bm, to_center, 6.0, g.cap) # 알약 캡슐 가장자리 밖으로(사각이 아니라 알약 기준)
 			if seat_no == dealer_seat and not is_hero: # 딜러 마커와 겹치면 마커 바깥으로 민다
 				var msz := dealer_marker.size
 				var dpos: Vector2 = dealer_marker.position + msz / 2.0
@@ -833,6 +861,91 @@ func _render_seats() -> void:
 			if is_hero: # 내 카드를 가리지 않게: 가로는 카드 왼쪽, 세로는 카드 바로 위
 				b = Vector2(g.center.x, g.hero_top - 12.0) if compact else Vector2(b.x - g.hc.x - 56.0, b.y)
 			bet_box.position = b - bm / 2.0
+	_place_payouts(hero, g)
+
+
+## r 이 sp 에 있는 알약 캡슐에서 margin 보다 가까우면 true. 캡슐은 양 끝이 반원이라 사각 모서리가 비어 있다
+func _near_capsule(sp: Vector2, cap: Vector2, r: Rect2, margin: float) -> bool:
+	var half := cap.x / 2.0 - cap.y / 2.0
+	var dx := maxf(maxf(r.position.x - (sp.x + half), (sp.x - half) - r.end.x), 0.0)
+	var dy := maxf(maxf(r.position.y - sp.y, sp.y - r.end.y), 0.0)
+	return Vector2(dx, dy).length() < cap.y / 2.0 + margin
+
+
+## 중심 p 의 sz 크기 사각이 sp 캡슐에서 margin 이상 떨어질 때까지 dir 로 민다
+func _push_clear(sp: Vector2, p: Vector2, sz: Vector2, dir: Vector2, margin: float, cap: Vector2) -> Vector2:
+	for i in 200:
+		if not _near_capsule(sp, cap, Rect2(p - sz / 2.0, sz), margin):
+			break
+		p += dir
+	return p
+
+
+func _seat_rect(n: Control, c: Control) -> Rect2:
+	return Rect2(n.position + c.position, c.size)
+
+
+## 보드 묶음(팟·보드)·결과 문구·내 큰 카드 자리. 내 카드는 개인 뷰보다 공개 뷰가 먼저 와도 앉아 있으면 자리를 잡아 둔다
+func _center_blockers() -> Array:
+	var out: Array = [Rect2(center_box.position, center_box.size)]
+	if board_label.text != "":
+		out.append(Rect2(board_label.position, board_label.size))
+	if _my_seat_no() != -1:
+		out.append(Rect2(my_cards_box.position, my_cards_box.size))
+	return out
+
+
+## 이 좌석의 카드·배지와 겹치지 않고, 펠트 영역 안이고, 다른 좌석 캡슐과 닿지 않으면 딜러 마커 자리로 쓴다
+func _dealer_spot_ok(r: Rect2, seat_node: Control, hero: int, g: Dictionary) -> bool:
+	if not Rect2(Vector2.ZERO, felt_area.size).encloses(r):
+		return false
+	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave]:
+		if cr.visible and _seat_rect(seat_node, cr).grow(2.0).intersects(r):
+			return false
+	for b: Rect2 in _center_blockers():
+		if b.grow(2.0).intersects(r):
+			return false
+	for no in range(1, 10):
+		var other: Control = seat_nodes[no - 1]
+		if other != seat_node and not other.empty and _near_capsule(other.position + other.size / 2.0, g.cap, r, 2.0):
+			return false
+	return true
+
+
+## 지급액은 캡슐 아래(기본) → 바깥쪽 옆 → 안쪽 옆 순으로, 펠트 영역 안이고 다른 요소(좌석·카드·배지·베팅·딜러·보드·내 카드·결과 문구)와 안 겹치는 첫 자리에 둔다
+func _place_payouts(hero: int, g: Dictionary) -> void:
+	var blockers: Array = []
+	for seat_no in range(1, 10):
+		var n: Control = seat_nodes[seat_no - 1]
+		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.hand_pill]:
+			if c.visible:
+				blockers.append(_seat_rect(n, c))
+		if bet_boxes[seat_no - 1].visible:
+			blockers.append(Rect2(bet_boxes[seat_no - 1].position, bet_boxes[seat_no - 1].size))
+	if dealer_marker.visible:
+		blockers.append(Rect2(dealer_marker.position, dealer_marker.size))
+	blockers.append_array(_center_blockers())
+	for seat_no in range(1, 10):
+		var n: Control = seat_nodes[seat_no - 1]
+		if n.empty or not n.payout_label.visible:
+			continue
+		var pl: Label = n.payout_label
+		var sx := 1.0 if n.position.x + n.size.x / 2.0 >= g.center.x else -1.0
+		var spots: Array = [pl.position, Vector2(n.size.x + 6.0 if sx > 0.0 else -6.0 - pl.size.x, (n.size.y - pl.size.y) / 2.0),
+			Vector2(-6.0 - pl.size.x if sx > 0.0 else n.size.x + 6.0, (n.size.y - pl.size.y) / 2.0),
+			Vector2(n.size.x + 34.0 if sx > 0.0 else -34.0 - pl.size.x, (n.size.y - pl.size.y) / 2.0)] # 마지막: 바깥 옆, 딜러 마커 한 칸 더 바깥
+		for sp: Vector2 in spots:
+			var r := Rect2(n.position + sp, pl.size)
+			var ok := Rect2(Vector2.ZERO, felt_area.size).encloses(r)
+			for b: Rect2 in blockers:
+				ok = ok and not b.grow(2.0).intersects(r)
+			for no in range(1, 10):
+				var o: Control = seat_nodes[no - 1]
+				ok = ok and (o.empty or not _near_capsule(o.position + o.size / 2.0, g.cap, r, 2.0))
+			if ok:
+				pl.position = sp
+				break
+		blockers.append(Rect2(n.position + pl.position, pl.size))
 
 
 func _render_seat(seat_no: int, seat_node: Control) -> void:
