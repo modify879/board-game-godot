@@ -31,8 +31,18 @@ static func badge(occupied: int, max_seats: int) -> PanelContainer:
 	return pill
 
 
+## 게임 중 알약. handInProgress 가 true 일 때만 호출자가 붙인다(키가 없는 옛 서버는 아무것도 안 보인다)
+static func in_progress_pill() -> PanelContainer:
+	var pill := badge(1, 9) # 알약 틀만 빌린다
+	var l: Label = pill.get_child(0)
+	l.text = "● 게임 중"
+	l.theme_type_variation = &""
+	l.add_theme_color_override("font_color", Color("4FB477"))
+	return pill
+
+
 ## 카드 한 장 = 평평한 Button(호버·눌림·포커스 피드백) + 이름·배지·인원. 눌림은 호출자가 연결한다
-static func card_button(room_name: String, occupied: int, max_seats: int) -> Button:
+static func card_button(room_name: String, occupied: int, max_seats: int, in_progress := false) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size.y = 64
 	card.focus_mode = Control.FOCUS_ALL
@@ -53,6 +63,8 @@ static func card_button(room_name: String, occupied: int, max_seats: int) -> But
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(name_label)
 	row.add_child(badge(occupied, max_seats))
+	if in_progress:
+		row.add_child(in_progress_pill())
 	row.add_child(count_label(occupied, max_seats))
 	for c in row.get_children():
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE

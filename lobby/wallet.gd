@@ -57,6 +57,9 @@ func _ready() -> void:
 	deposit_edit.text_changed.connect(func(_t: String) -> void: _new_deposit_key())
 	for e in [withdraw_amount_edit, bank_name_edit, account_number_edit, account_holder_edit]:
 		e.text_changed.connect(func(_t: String) -> void: _new_withdraw_key())
+	for box: HBoxContainer in [%DepositPager, %WithdrawPager, %Pager]: # 마지막 줄이 스크롤 경계에서 잘려도 페이저 뒤로 숨은 것처럼 보이지 않게 선을 긋는다
+		var line := box.get_parent().get_child(box.get_index() - 1)
+		box.visibility_changed.connect(func() -> void: line.visible = box.visible)
 	_load_balance()
 	_load_tab(tabs.current_tab)
 

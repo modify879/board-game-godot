@@ -48,14 +48,21 @@ func card_ghost(code: String, card_size: Vector2) -> TextureRect:
 
 
 ## 고스트를 from → to(중심 좌표)로 날린다. delay 동안은 숨겨 둔다. 끝나면 queue_free
-func fly(g: Control, from: Vector2, to: Vector2, dur: float, delay := 0.0, fade := false, ease_type := Tween.EASE_OUT, trans := Tween.TRANS_CUBIC) -> void:
+func fly(g: Control, from: Vector2, to: Vector2, dur: float, delay := 0.0, fade := false, ease_type := Tween.EASE_OUT, trans := Tween.TRANS_CUBIC, avoid := Rect2()) -> void:
 	add_child(g)
 	g.position = from - g.size / 2.0
 	var t := g.create_tween().set_parallel(true)
 	if delay > 0.0:
 		g.hide()
 		t.tween_callback(g.show).set_delay(delay)
-	t.tween_property(g, "position", to - g.size / 2.0, dur).set_delay(delay).set_trans(trans).set_ease(ease_type)
+	if avoid.has_area(): # avoid 영역과 겹치는 동안 고스트를 숨긴다(보드 카드 위를 지나지 않게)
+		var a := from - g.size / 2.0
+		var b := to - g.size / 2.0
+		t.tween_method(func(k: float) -> void:
+			g.position = a.lerp(b, k)
+			g.visible = not avoid.intersects(Rect2(g.position, g.size)), 0.0, 1.0, dur).set_delay(delay).set_trans(trans).set_ease(ease_type)
+	else:
+		t.tween_property(g, "position", to - g.size / 2.0, dur).set_delay(delay).set_trans(trans).set_ease(ease_type)
 	if fade:
 		t.tween_property(g, "modulate:a", 0.0, FADE_TAIL).set_delay(delay + dur - FADE_TAIL)
 	t.chain().tween_callback(g.queue_free)

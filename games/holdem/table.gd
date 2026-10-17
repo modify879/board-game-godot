@@ -280,6 +280,8 @@ func _seat_center(seat_no: int, hero: int, g: Dictionary) -> Vector2:
 	var deg := 90.0 + v * 40.0
 	if compact and (v == 1 or v == 8): # 세로: 내 카드 양옆 좌석이 내 카드와 닿지 않게 위쪽 바깥으로 6° 옮긴다
 		deg += 6.0 if v == 1 else -6.0
+	elif compact and (v == 4 or v == 5): # 세로: 위 두 좌석 캡슐 간격이 8px 로 좁아 3° 씩 벌린다(≈24px)
+		deg += -3.0 if v == 4 else 3.0
 	elif not compact and (v == 2 or v == 7): # 가로: 왼·오른쪽 끝 좌석을 10° 아래로 — 위 좌석의 작은 카드가 닿지 않게
 		deg += -10.0 if v == 2 else 10.0
 	var a := deg_to_rad(deg)
@@ -612,7 +614,8 @@ func _play_motion(prev: Dictionary) -> void:
 				continue
 			var sn: Control = seat_nodes[n - 1]
 			var land: float = Motion.BET_TO_POT + Motion.PUSH_FLY
-			motion.fly(_chip_ghost("+" + Format.comma(int(payout.amount))), pot, sn.position + sn.size / 2.0, Motion.PUSH_FLY, Motion.BET_TO_POT, true, Tween.EASE_IN_OUT, Tween.TRANS_QUAD)
+			var board_rect := Rect2(board_box.global_position - motion.global_position, board_box.size) # 지나가는 동안은 보드 위에서 숨긴다
+			motion.fly(_chip_ghost("+" + Format.comma(int(payout.amount))), pot, sn.position + sn.size / 2.0, Motion.PUSH_FLY, Motion.BET_TO_POT, true, Tween.EASE_IN_OUT, Tween.TRANS_QUAD, board_rect)
 			if _find_seat(n) != null:
 				motion.pulse(sn, land)
 				motion.appear(sn.payout_label, land, false, Motion.PAYOUT_FADE)

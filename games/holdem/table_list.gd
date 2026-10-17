@@ -173,6 +173,8 @@ func _open_entry(item: Dictionary) -> void:
 	Rows.clear(entry_sub)
 	entry_sub.add_child(RoomWidgets.count_label(occupied, max_seats))
 	entry_sub.add_child(RoomWidgets.badge(occupied, max_seats))
+	if item.get("handInProgress", false):
+		entry_sub.add_child(RoomWidgets.in_progress_pill())
 	entry_info.text = ""
 	entry_error.hide()
 	entry_spin.hide()
@@ -290,7 +292,7 @@ func _build_rows(items: Array) -> void:
 	Rows.clear(rows)
 	empty_box.visible = items.is_empty()
 	for item in items:
-		var card := RoomWidgets.card_button(item.name, int(item.occupiedSeats), int(item.maxSeats))
+		var card := RoomWidgets.card_button(item.name, int(item.occupiedSeats), int(item.maxSeats), item.get("handInProgress", false))
 		card.pressed.connect(_open_entry.bind(item))
 		rows.add_child(card)
 
