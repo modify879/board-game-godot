@@ -43,6 +43,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
 @onready var stand_button: Button = %StandButton
+@onready var leave_room_button: Button = %LeaveRoomButton
 @onready var cancel_leave_button: Button = %CancelLeaveButton
 @onready var add_chips_button: Button = %AddChipsButton
 @onready var add_chips_box: HBoxContainer = %AddChipsBox
@@ -93,6 +94,7 @@ var nickname_fetching := {} # userId -> true while request in flight
 
 var stomp_connected := false
 var waiting := false
+var leave_room_after_stand := false # 핸드 후 방 나가기 의도. 개인 뷰의 leaveReservation(새 서버)이 있으면 그것을 따라 재접속해도 복원되고, 없으면(옛 서버·핸드 비참가자) 이 메모리 값이 전부다 — 재접속하면 사라져 관전자로 남는다. 일어선 뒤엔 개인 뷰가 안 오므로 마지막 값으로 목록행을 정한다
 var sit_popup_gen := 0 # 착석 팝업을 열 때마다 올린다 — 늦게 온 지갑 응답을 거른다
 var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·SEATED·DROPPED)를 하나라도 받았다 — 방 생성 뒤 착석 확인을 건너뛴다
 var queue_position := 0
@@ -130,6 +132,7 @@ func _ready() -> void:
 	back_button.pressed.connect(_leave_closed_table)
 	join_button.pressed.connect(_open_sit_popup)
 	stand_button.pressed.connect(_on_stand_pressed)
+	leave_room_button.pressed.connect(_on_stand_pressed.bind(true))
 	cancel_leave_button.pressed.connect(_on_cancel_leave_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
 	show_hand_button.pressed.connect(_on_show_hand_pressed)
@@ -303,6 +306,10 @@ func _handle_public(body: Dictionary) -> void:
 	last_public_seq = int(body.seq)
 	var prev := _motion_snapshot()
 	public_view = body
+	if _should_leave_room(): # 개인 큐는 미리 끊지 않는다 — 공개 뷰가 미착석을 확인한 지금 씬을 바꿔 정리한다
+		leave_room_after_stand = false
+		_leave_closed_table()
+		return
 	var in_ms = body.get("nextHandInMs")
 	next_hand_due_ticks = -1 if in_ms == null else Time.get_ticks_msec() + int(in_ms)
 	if _is_seated():
@@ -345,6 +352,10 @@ func _handle_private(body: Dictionary) -> void:
 		my_codes_ticks = Time.get_ticks_msec()
 		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
+	if body.has("leaveReservation"): # 새 서버: null | "SPECTATE" | "LEAVE". 핸드 참가자에게만 온다 — 없으면 메모리 의도를 그대로 둔다
+		leave_room_after_stand = body.leaveReservation == "LEAVE"
+		_update_buttons()
+		_render_seats()
 	_update_action_bar()
 
 
@@ -857,6 +868,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"all_in": seat.status == "ALL_IN",
 		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
 		"leave_reserved": seat.get("leaveReserved", false),
+		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
 		"cards": [] if is_me else cards, # 내 카드는 아래 MyCards 가 크게 그린다
 		"category": category,
 		"payout": _payout_for(seat_no),
@@ -935,9 +947,13 @@ func _update_buttons() -> void:
 	var my_seat: Variant = _find_seat_by_user(Api.user_id)
 	# 핸드 중 일어서기는 나가기 예약(서버가 202) — 예약돼 있으면 취소 버튼으로 바꾼다
 	var leave_reserved: bool = seated and my_seat != null and my_seat.get("leaveReserved", false)
+	var in_hand: bool = public_view.get("handInProgress", false)
 	stand_button.visible = seated and not leave_reserved
-	stand_button.text = "핸드 후 나가기" if public_view.get("handInProgress", false) else "일어서기"
+	stand_button.text = "핸드 후 관전" if in_hand else "일어서기"
+	leave_room_button.visible = seated and not leave_reserved
+	leave_room_button.text = "핸드 후 방 나가기" if in_hand else "방 나가기"
 	cancel_leave_button.visible = leave_reserved
+	cancel_leave_button.text = "나가기 예약됨 · 취소" if leave_room_after_stand else "관전 예약됨 · 취소"
 	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
 	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
 	show_hand_button.visible = _can_show_hand()
@@ -1227,18 +1243,44 @@ func _on_add_chips_ok() -> void:
 	_update_buttons()
 
 
-func _on_stand_pressed() -> void:
+func _on_stand_pressed(leave_room := false) -> void:
 	stand_button.disabled = true
-	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat")
+	leave_room_button.disabled = true
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat?after=" + ("LEAVE" if leave_room else "SPECTATE")) # 옛 서버는 쿼리를 무시한다
 	stand_button.disabled = false
-	# 202(나가기 예약)는 로컬 상태를 바꾸지 않는다 — 다시 방송되는 공개 뷰의 leaveReserved 가 화면을 바꾼다
+	leave_room_button.disabled = false
+	_apply_stand_result(r, leave_room)
+
+
+## 202(나가기 예약)는 로컬 상태를 바꾸지 않는다 — 다시 방송되는 공개 뷰의 leaveReserved 가 화면을 바꾼다.
+## 방 나가기 의도(leave_room_after_stand)는 202 때 로컬에 두고, 개인 뷰의 leaveReservation 이 오면 그 값을 따른다(변수 주석 참고)
+func _apply_stand_result(r: Dictionary, leave_room: bool) -> void:
 	if not r.ok:
 		_show_error(r.error)
+	elif r.status == 202: # 예약 종류만 바뀔 수도 있다(이미 예약된 뒤 다시 보냄)
+		leave_room_after_stand = leave_room
+		_update_buttons()
+		_render_seats()
+	elif leave_room: # 204 — 바로 일어섰다. 개인 큐는 공개 뷰가 미착석으로 보이면 해제되는 대로 둔다(씬 전환이 정리한다)
+		_leave_closed_table()
+
+
+## 공개 뷰에서 내가 앉아 있지 않은데 방 나가기 의도가 있으면 목록으로 돌아간다
+func _should_leave_room() -> bool:
+	return leave_room_after_stand and not _is_seated()
 
 
 func _on_cancel_leave_pressed() -> void:
 	cancel_leave_button.disabled = true
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat/leave-reservation")
 	cancel_leave_button.disabled = false
-	if not r.ok:
+	_apply_cancel_result(r)
+
+
+func _apply_cancel_result(r: Dictionary) -> void:
+	if r.ok:
+		leave_room_after_stand = false
+		_update_buttons()
+		_render_seats()
+	else:
 		_show_error(r.error)

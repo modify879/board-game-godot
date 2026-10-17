@@ -295,7 +295,7 @@ func _ready() -> void:
 	# 14c. 나가기 예약: 핸드 중에도 일어서기가 켜져 있고(예약 문구), 예약되면 취소 버튼으로 바뀐다
 	table._handle_public(_view(2010, [my_seat], {"handInProgress": true}))
 	check(table.stand_button.visible and not table.stand_button.disabled, "stand enabled during hand")
-	check(table.stand_button.text == "핸드 후 나가기" and not table.cancel_leave_button.visible, "stand reserves during hand, cancel hidden")
+	check(table.stand_button.text == "핸드 후 관전" and table.leave_room_button.visible and table.leave_room_button.text == "핸드 후 방 나가기" and not table.cancel_leave_button.visible, "two buttons during hand, cancel hidden")
 	var reserved_seat := _seat(1, 7)
 	reserved_seat["leaveReserved"] = true
 	table._handle_public(_view(2011, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
@@ -305,7 +305,43 @@ func _ready() -> void:
 	table._handle_public(_view(2012, [my_seat, other_reserved], {"handInProgress": true}))
 	check(table.stand_button.visible and not table.cancel_leave_button.visible, "other seat reserved leaves my buttons alone")
 	table._handle_public(_view(2013, [my_seat]))
-	check(table.stand_button.text == "일어서기", "stand text between hands")
+	check(table.stand_button.text == "일어서기" and table.leave_room_button.text == "방 나가기" and table.leave_room_button.visible, "stand/leave texts between hands")
+	# 14d. 방 나가기 의도: 202 → 예약 뷰에서 취소 문구·내 배지가 의도를 따르고, 취소하면 의도가 꺼진다
+	table._handle_public(_view(2014, [my_seat], {"handInProgress": true}))
+	table._apply_stand_result({"ok": true, "status": 202}, true)
+	check(table.leave_room_after_stand, "202 with leave_room sets intent")
+	table._handle_public(_view(2015, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
+	check(table.cancel_leave_button.text == "나가기 예약됨 · 취소" and not table.leave_room_button.visible, "cancel text for leave-room intent")
+	check(table.seat_nodes[0].badge_leave.visible and table.seat_nodes[0].badge_leave.text == "나가기 예약", "my badge: 나가기 예약")
+	table.leave_room_after_stand = false
+	table._handle_public(_view(2016, [reserved_seat, other_reserved], {"handInProgress": true}))
+	check(table.cancel_leave_button.text == "관전 예약됨 · 취소" and table.seat_nodes[0].badge_leave.text == "관전 예약", "spectate intent texts")
+	check(table.seat_nodes[1].badge_leave.visible and table.seat_nodes[1].badge_leave.text == "일어서기 예약", "other badge neutral")
+	table.leave_room_after_stand = true
+	table.public_view = _view(2017, [reserved_seat])
+	check(not table._should_leave_room(), "still seated: stay")
+	table.public_view = _view(2018, [_seat(2, 8)])
+	check(table._should_leave_room(), "unseated with intent: return to list")
+	table.leave_room_after_stand = false
+	check(not table._should_leave_room(), "unseated without intent: stay as spectator")
+	table.leave_room_after_stand = true
+	table._apply_cancel_result({"ok": true, "status": 204})
+	check(not table.leave_room_after_stand, "cancel success clears intent")
+	# 14e. 새 서버 개인 뷰 leaveReservation: 메모리 없이도 복원, null 은 해제, 키가 없으면 메모리 유지
+	table.leave_room_after_stand = false
+	table._handle_private({"seq": 900000.0, "holeCards": [], "leaveReservation": "LEAVE"})
+	check(table.leave_room_after_stand, "private leaveReservation LEAVE restores intent")
+	table._handle_private({"seq": 900001.0, "holeCards": []})
+	check(table.leave_room_after_stand, "private view without key keeps memory")
+	table._handle_private({"seq": 900002.0, "holeCards": [], "leaveReservation": "SPECTATE"})
+	check(not table.leave_room_after_stand, "private SPECTATE -> not leaving")
+	table.leave_room_after_stand = true
+	table._handle_private({"seq": 900003.0, "holeCards": [], "leaveReservation": null})
+	check(not table.leave_room_after_stand, "private null clears intent")
+	table._apply_stand_result({"ok": true, "status": 202}, false)
+	check(not table.leave_room_after_stand, "202 SPECTATE resend switches kind")
+	table.last_private_seq = -1
+	table._handle_public(_view(2019, [my_seat]))
 	# 열기 응답: 추가 가능 최대 = min(maxStack - stack, 지갑) 내림
 	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50000.0}})
 	check(table.add_chips_box.visible and int(table.add_chips_spin.max_value) == 19000 and int(table.add_chips_spin.value) == 19000, "add chips max by stack: %d" % int(table.add_chips_spin.max_value))

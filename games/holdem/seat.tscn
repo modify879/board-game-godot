@@ -57,7 +57,7 @@ mouse_filter = 2
 [node name="BadgeLeave" type="Label" parent="."]
 unique_name_in_owner = true
 mouse_filter = 2
-text = "나가기 예약"
+text = "일어서기 예약"
 
 [node name="HandPill" type="Label" parent="."]
 unique_name_in_owner = true
