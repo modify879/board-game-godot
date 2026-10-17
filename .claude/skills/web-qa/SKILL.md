@@ -55,6 +55,22 @@ uv venv <dir>/v && uv pip install -p <dir>/v/bin/python playwright
 - 일어난 뒤 재착석하면 재착석 의무로 바이인이 올라갈 수 있다. 핸드 중 일어서기는 즉시 퇴장이 아니라 나가기 예약이다
 - 실제 GPU 없음(SwiftShader), IME 없음(한글 직접 입력 불가)
 
+## QA 브리지 (`window.godotQa`, core/qa_bridge.gd)
+
+좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다 — `speed(x)` 로 바꾼다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
+
+```python
+page.wait_for_function("window.godotQa")
+st = page.evaluate("JSON.parse(window.godotQa.state())")   # {scene, nodes:{key:{type,visible,text,disabled,pressed,value,min,max,rect}}, extra}
+page.evaluate("window.godotQa.press('FoldButton')")          # -> JSON {"ok":bool,"error":str} (문자열). 토글은 뒤집고, 숨김·disabled·없음은 ok=false
+page.evaluate("window.godotQa.set_text('UsernameEdit', 'qauser1')")   # LineEdit, text_changed 발생
+page.evaluate("window.godotQa.set_value('RaiseSpin', 400)")           # Range/SpinBox
+```
+
+- 키: 고유 이름(`%`) Control 의 이름, 인스턴스된 씬 안은 `Seat3/NameLabel`(인스턴스된 씬 루트 이름이 앞에 붙는다). 이름 없는 보이는 Button 은 `<컨테이너키>/<순번>`(방 카드 `Rows/0`). 키 충돌은 `#2`
+- `extra`: 씬 루트에 `qa_state()` 가 있으면 그 반환값(홀덤 테이블: table_id·my_seat_no·street·available_actions·seats·winners 등)
+- 화면 전환 직후엔 state().scene 이 바뀔 때까지 기다린다
+
 ## 테스트 단계
 
 - 1단계(매 변경): 헤드리스 자체 점검 — `test_core`·`test_holdem`·`test_table`·`test_layout`(CLAUDE.md 명령어). 배치 겹침은 `test_layout` 으로 확인하고 스크린샷으로 대신하지 않는다

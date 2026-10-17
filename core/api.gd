@@ -21,6 +21,7 @@ var _refresh_due_ticks := -1 # 선제 갱신 시각(Time.get_ticks_msec 기준).
 
 func _ready() -> void:
 	Screen.setup(get_window()) # 화면 크기에 맞춘 배율(core/ui/screen.gd)
+	QaBridge.setup(get_tree()) # QA 전용 window.godotQa(core/qa_bridge.gd). 조건이 안 맞으면 아무것도 하지 않는다
 
 
 func origin() -> String:
