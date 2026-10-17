@@ -5,8 +5,16 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 # Web QA
 
-**라이브 테스트는 `qa.py` 를 쓴다. 새 하네스를 처음부터 만들지 않는다. 부족한 기능은 `qa.py` 에 더한다.**
-(예전에 하네스를 매번 새로 짜서 시나리오 하나에 30~70분이 걸렸다. `qa.py` 를 import 하면 몇 분이다.)
+**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~5분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`, 폰 크기: `--phone`.
+새 시나리오는 해당 게임의 `games/<game>.py` 에 함수로 더한다(공용 로그인·로비는 `suite.py`). 스크린샷은 디자인을 볼 때만(`--shots`). 새 하네스를 처음부터 만들지 않는다.**
+
+구성: `qa.py` = 게임 무관(REST·STOMP·Viewer 브리지·Ctx). `games/holdem.py` = 홀덤 봇·덱 고정·화면 흐름 보조·시나리오. `suite.py` = 러너(시나리오 발견, 표·JSON `$QA_OUT/suite.json`, 시나리오별 제한시간·콘솔 오류 수집).
+
+## 게임 추가 시
+
+- `games/<game>.py` 를 만들고 `SCENARIOS = [(이름, fn(c)), ...]`(fn.limit = 제한초, 선택 `cleanup()`)를 노출한다. 봇·REST 보조도 거기에 둔다
+- 그 게임 씬에 `qa_state()` 를 둔다(브리지 `extra`). 헤드리스 테스트는 `games/<game>/test_*.gd|tscn` 에 두면 run_all.sh 가 자동으로 집는다
+- 서버 쪽 QA 보조(덱 고정 같은)는 게임별로 서버에 있다
 
 ## 환경
 
@@ -17,26 +25,19 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 ## 1회 설정 (sudo 불필요)
 
-```bash
-uv venv <dir>/v && uv pip install -p <dir>/v/bin/python playwright
-<dir>/v/bin/python -m playwright install chromium
-<dir>/v/bin/python -B .claude/skills/web-qa/example_showdown_9.py <출력 디렉터리> d   # 동작 확인(약 2분)
-```
+`run_all.sh` 가 `~/.cache/web-qa-venv`(playwright + chromium)를 없으면 만든다. 직접 쓰려면 `QA_PY=<python>`. 스크립트는 `python -B` 로 실행한다(`.gitignore` 가 `__pycache__` 를 막는다).
 
-`-B`(또는 `PYTHONDONTWRITEBYTECODE=1`) 로 실행한다. 폴더의 `.gitignore` 가 `__pycache__` 를 막는다. 봇·REST·STOMP·덱 고정은 표준 라이브러리만 쓴다(playwright 는 브라우저 부분만).
-
-## 쓰는 법 — `import qa` (동기 API, 예: example_showdown_9.py)
+## 쓰는 법 (Python, 동기 API — 예: example_showdown_9.py)
 
 | 하고 싶은 것 | 호출 |
 |---|---|
-| 봇 | `b = qa.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.reserve_leave("SPECTATE"\|"LEAVE")` / `b.cancel_reservation()` / `b.act("RAISE_TO", n)`. `b.view`(공개)·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` |
-| 봇 자동 진행 | `ap = qa.Autoplay(bots, policy=qa.policy_check_call, skip=())` (`policy_fold`, `raise_to(n)` 또는 `(bot, view)` 함수). 브라우저 사용자는 `viewer.pump()`(메인 스레드) |
-| 정리 | 끝에 `qa.unseat_all()` — qa 계정 전부를 미착석으로. 브라우저를 닫은 뒤에 부른다 |
-| 덱 고정 | `qa.next_deck(tid, hole_cards={좌석:["As","Ah"]}, board=[...])`, 프리셋 `qa.deck_showdown(승자좌석)`·`deck_split([좌석,...])`·`deck_hero_wins(좌석)` (`**` 로 풀어 넘긴다) |
-| 브라우저 | `v = qa.Viewer(p, "qauser1", "d"\|"p")` → `v.login()` `v.to_room_list()` `v.open_room(index)` `v.spectate()`/`v.join()` → `v.screenshot(이름)` `v.frames(이름, 초)` `v.capture_ws_frames()` `v.errors`(콘솔) `qa.sheet(p, 이름)`(프레임 격자) |
-| 기다리기 | `qa.wait_for(pred, 초)`, `qa.wait_next_hand(bot)`, `qa.wait_result(bot, since)` |
+| 봇(홀덤) | `b = H.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.reserve_leave("SPECTATE"\|"LEAVE")` / `b.cancel_reservation()` / `b.act("RAISE_TO", n)`. `b.view`·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` (`H` = `from games import holdem as H`) |
+| 봇 자동 진행 | `H.Autoplay(bots, policy=H.policy_check_call, skip=())` (`policy_fold`, `raise_to(n)`, 런타임에 `ap.policy` 교체 가능) |
+| 덱 고정 | `H.next_deck(tid, hole_cards={좌석:["As","Ah"]}, board=[...])`, 프리셋 `H.deck_showdown`·`deck_split`·`deck_hero_wins` |
+| 브라우저 | `v = qa.Viewer(p, "qauser1", "d"\|"p")` → `v.open()` → `v.state()`·`v.press(키)`·`v.set_text`·`v.set_value`·`v.wait_state(pred, 초)`·`v.login()`·`v.open_game(번호\|제목)`. 홀덤 흐름은 `H.to_room_list(v)`·`H.open_room`·`H.join`·`H.spectate`. 콘솔 오류는 `v.errors` |
+| 정리 | 시나리오는 `c.on_cleanup(fn)` 으로 등록(러너가 브라우저를 닫은 뒤 부른다). 직접 쓸 땐 `H.unseat_all()` |
 
-화면 크기: `d` 1280x720, `p` 390x844 DPR2. 버튼 좌표는 `qa.POS[크기]` 한 곳에만 있다 — 레이아웃이 바뀌면 거기서 고친다.
+화면 크기: `d` 1280x720, `p` 390x844 DPR2. 좌표는 쓰지 않는다 — 전부 브리지 키다. 방 카드 안의 문구(게임 중 알약 등)처럼 이름 없는 Label 은 브리지가 안 줘서 못 읽는다(필요하면 게임 코드에 이름을 붙인다).
 
 ### 덱 고정(QA 서버 전용)
 
@@ -50,8 +51,10 @@ uv venv <dir>/v && uv pip install -p <dir>/v/bin/python playwright
 - 봇이 행동하지 않으면 턴 8초 타임아웃으로 자동 폴드·퇴장하고 방이 닫힌다 — 브라우저 단계 전에 `Autoplay` 를 먼저 켠다
 - 바이인이 하한(4,000)이면 몇 판 뒤 파산해 자리가 빈다 — 봇은 큰 바이인으로(예: 10,000)
 - playwright 동기 API 는 다른 스레드에서 못 쓴다 — 브라우저 조작은 메인 스레드, 봇은 `Autoplay` 스레드
-- 결과 화면은 다음 판 시작(1초)까지만 보인다 — `frames()` 가 결과가 처음 보인 프레임을 `{이름}_result.png` 로 남긴다
-- Godot 캔버스는 DOM 이 없어 좌표 클릭 + `keyboard.type`. 대기는 sleep 대신 `v.stable()`(연속 스크린샷이 같아질 때까지)
+- 결과 화면은 다음 판 시작(1초)까지만 보인다 — 한 `state()` 스냅샷에서 전부 판정한다
+- 시나리오는 한 번에 한 개씩, 같은 qa 계정을 쓰므로 병렬로 돌리지 않는다. 재착석 의무로 바이인 하한이 계정마다 달라진다 — 바이인은 `EntrySpin` 의 min/기본값을 쓴다. 방 목록 로드(`BuyInInfo`)가 끝나기 전에 만들면 서버가 거부한다
+- 착석 중 `GameList` 로 목록에 들어가면 곧바로 테이블로 보낸다(앱 동작) — 새로고침 뒤 재진입 확인에 쓴다
+- Godot 캔버스는 DOM 이 없다 — 브리지 키로 누르고 `wait_state` 로 기다린다(sleep·스크린샷 비교 금지)
 - 일어난 뒤 재착석하면 재착석 의무로 바이인이 올라갈 수 있다. 핸드 중 일어서기는 즉시 퇴장이 아니라 나가기 예약이다
 - 실제 GPU 없음(SwiftShader), IME 없음(한글 직접 입력 불가)
 
@@ -76,7 +79,7 @@ page.evaluate("window.godotQa.set_value('RaiseSpin', 400)")           # Range/Sp
 - 1단계(매 변경): 헤드리스 자체 점검 — `test_core`·`test_holdem`·`test_table`·`test_layout`(CLAUDE.md 명령어). 배치 겹침은 `test_layout` 으로 확인하고 스크린샷으로 대신하지 않는다
 - 2단계(바뀐 화면만): 라이브는 바뀐 시나리오만, 한 크기로(레이아웃을 바꿨으면 폰·데스크톱 둘 다)
 - 3단계(출시 전만): 전체 통합 시나리오
-- 계정은 에이전트끼리 나눠 쓴다. 스크린샷은 직접 Read 로 본다
+- 계정은 에이전트끼리 나눠 쓴다(같은 qa 계정으로 동시에 돌리지 않는다). 스크린샷은 `--shots`/`shots=True` 로 찍고 디자인을 볼 때만 Read 로 본다
 
 ## 테스트 계정 재생성
 

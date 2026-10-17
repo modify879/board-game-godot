@@ -1,5 +1,5 @@
-"""홀덤 라이브 QA 하네스 — 봇(REST+STOMP) + 덱 고정 + 헤드리스 브라우저. 동기 API, 표준 라이브러리 + playwright 만 쓴다.
-사용 예: example_showdown_9.py. 실행은 `python -B`(스킬 폴더에 __pycache__ 가 남지 않게).
+"""라이브 QA 하네스(게임 무관) — REST·STOMP 클라이언트 + 브리지(window.godotQa)로 모는 헤드리스 브라우저 + 시나리오 실행 컨텍스트.
+게임 전용 코드(봇 행동·덱 고정·시나리오)는 games/<game>.py. 동기 API, 표준 라이브러리 + playwright 만 쓴다. 실행은 `python -B`.
 
 함정(겪은 것):
 - 브라우저 사용자(예: qauser1)를 REST 로 로그인하지 않는다 — 브라우저의 refresh 세션이 무효화된다. 그 사용자의 착석은
@@ -31,12 +31,13 @@ def call(path, token=None, body=None, method=None, cookie=None):
     if cookie: h["Cookie"] = cookie
     r = urllib.request.Request(WEB + path, data=None if body is None else json.dumps(body).encode(), headers=h, method=method)
     try:
-        x = urllib.request.urlopen(r, timeout=15)
+        x = urllib.request.urlopen(r, timeout=30)
     except urllib.error.HTTPError as e:
         x = e
     except OSError as e:
         return 0, str(e)
-    d = x.read().decode()
+    try: d = x.read().decode()
+    except OSError as e: return 0, f"{method or 'POST' if body is not None else 'GET'} {path}: {e}"
     try: d = json.loads(d) if d else None
     except ValueError: pass
     return x.status, d
@@ -107,235 +108,105 @@ class _WS:
         except OSError: pass
 
 
-# ---------------------------------------------------------------- 봇
-def _seats(v): return [s for s in (v or {}).get("seats", []) if s]
 
-
-class Bot:
-    """REST 로 행동하고 STOMP 로 공개·개인 뷰를 받는다(holdem.md: 행동=REST, STOMP=수신 전용).
-    join-queue 는 연결 직후 구독해 두고 POST 한다. 개인 큐는 공개 뷰에 내가 앉아 있을 때만 구독한다."""
-
+class Client:
+    """로그인한 계정 + STOMP 연결. 게임 봇은 이걸 상속해 on_message(헤더, JSON) 를 구현한다"""
     def __init__(self, user):
-        self.user = user; self.view = None; self.results = []; self.private = None; self.events = []; self.tid = None
+        self.user = user
         self.token, self.cookie = rest_login(user)
         pl = self.token.split(".")[1]; self.uid = int(json.loads(base64.urlsafe_b64decode(pl + "=" * (-len(pl) % 4)))["sub"])
-        self._priv = False
         self.ws = _WS(self._on)
         self.ws.send(f"CONNECT\naccept-version:1.2\nhost:{urlparse(WEB).hostname}\nheart-beat:0,0\nAuthorization:Bearer {self.token}\n\n\0")
-        self.ws.send("SUBSCRIBE\nid:jq\ndestination:/user/queue/holdem/join-queue\n\n\0")
-
+    def subscribe(self, sid, dest): self.ws.send(f"SUBSCRIBE\nid:{sid}\ndestination:{dest}\n\n\0")
+    def unsubscribe(self, sid): self.ws.send(f"UNSUBSCRIBE\nid:{sid}\n\n\0")
     def _on(self, m):
         if not m.startswith("MESSAGE"): return
         h, _, b = m.partition("\n\n")
         try: d = json.loads(b.rstrip("\0"))
         except ValueError: return
-        if "/user/queue/tables/" in h: self.private = d
-        elif "/topic/tables/" in h:
-            if d.get("type") == "TABLE_CLOSED": self.view = None; return
-            if "seq" in d and d.get("seq", 0) >= (self.view or {}).get("seq", -1):  # seq 가 줄어든 메시지는 버린다
-                self.view = d; self._sync_private()
-                if d.get("result") and (not self.results or self.results[-1] != d["result"]): self.results.append(d["result"])
-        else: self.events.append(d)
-
-    def _sync_private(self):
-        me = self.my_seat()
-        if me and not self._priv:
-            self._priv = True; self.ws.send(f"SUBSCRIBE\nid:pv{self.tid}\ndestination:/user/queue/tables/{self.tid}\n\n\0")
-        elif not me and self._priv:
-            self._priv = False; self.ws.send(f"UNSUBSCRIBE\nid:pv{self.tid}\n\n\0"); self.private = None
-
-    def watch(self, tid):
-        """공개 토픽 구독(관전). 이미 구독 중이면 무시"""
-        if self.tid != tid:
-            self.tid = tid; self.view = None
-            self.ws.send(f"SUBSCRIBE\nid:pb{tid}\ndestination:/topic/tables/{tid}\n\n\0")
-
-    def stop(self):
-        self.ws.close(); rest_logout(self.token, self.cookie)
-
-    # --- 뷰 ---
-    def seat_of(self, uid): return next((s for s in _seats(self.view) if int(s["userId"]) == uid), None)
-    def my_seat(self): return self.seat_of(self.uid)
-    def hero_uid(self, bots):
-        """뷰에서 봇이 아닌 첫 착석자의 userId — 브라우저 사용자(REST 로그인 없이 알아낸다)"""
-        ids = {b.uid for b in bots}
-        return next((int(s["userId"]) for s in _seats(self.view) if int(s["userId"]) not in ids), None)
-    def wait_for(self, pred, timeout=30, what="뷰 조건"):
-        """pred(public_view) 가 참 값을 돌려줄 때까지"""
-        return wait_for(lambda: self.view and pred(self.view), timeout, what=what)
-
-    # --- 행동 ---
-    def _buy_in(self, path, want):
-        """원하는 바이인(없으면 하한)을 서버 범위로 맞춘다. 나간 지 30분 안이면 나간 금액만큼 하한이 올라간다(obligation)"""
-        r = call(path, self.token)[1]; return min(max(want or r["minBuyIn"], r["minBuyIn"]), r["maxBuyIn"])
-    def create_table(self, name, buy_in=None):
-        """만든 사람이 서버에서 바로 착석한다. 201 뒤 공개 토픽 구독"""
-        bi = self._buy_in("/api/holdem/buy-in", buy_in)
-        s, d = call("/api/holdem/tables", self.token, {"name": name, "buyIn": bi})
-        if s not in (200, 201): raise RuntimeError(f"방 생성 {s} {d}")
-        self.watch(d["tableId"]); self.wait_for(lambda v: self.my_seat(), 15, "방장 착석"); return d["tableId"]
-    def sit(self, tid, buy_in=None, wait=True):
-        """바이인(기본 하한)으로 참가. 핸드 중이면 대기열이라 다음 판에 앉는다"""
-        self.watch(tid)
-        bi = self._buy_in(f"/api/holdem/tables/{tid}/buy-in", buy_in)
-        s, d = call(f"/api/holdem/tables/{tid}/seats", self.token, {"buyIn": bi, "postBlindImmediately": False})
-        if s >= 300: raise RuntimeError(f"{self.user} 착석 {s} {d}")
-        if wait: self.wait_for(lambda v: self.my_seat(), 60, f"{self.user} 착석")
-    def stand(self): return call("/api/holdem/seat", self.token, method="DELETE")[0]  # 핸드 중 202(예약)
-    def reserve_leave(self, after="SPECTATE"): return call(f"/api/holdem/seat?after={after}", self.token, method="DELETE")[0]
-    def cancel_reservation(self): return call("/api/holdem/seat/leave-reservation", self.token, method="DELETE")[0]
-    def act(self, action, amount=None):
-        b = {"action": action}
-        if amount: b["raiseToAmount"] = amount
-        return call(f"/api/holdem/tables/{self.tid}/hands/actions", self.token, b)[0]
-    def to_act(self):
-        v = self.view or {}
-        return bool(v.get("handInProgress") and v.get("toActSeatNo") is not None and self.my_seat()
-                    and int(self.my_seat()["seatNo"]) == int(v["toActSeatNo"]))
-
-
-def policy_check_call(bot, v):  # 기본: 체크, 안 되면 콜, 그것도 안 되면 폴드
-    for a in ("CHECK", "CALL", "FOLD"):
-        if bot.act(a) < 300: return
-def policy_fold(bot, v): bot.act("FOLD")
-def raise_to(n):  # 첫 행동에 n 으로 레이즈, 안 되면 기본 정책
-    return lambda bot, v: bot.act("RAISE_TO", n) < 300 or policy_check_call(bot, v)
-
-
-class Autoplay:
-    """백그라운드 스레드: 자기 차례인 봇(skip 제외)이 policy(bot, view) 로 행동. 브라우저 사용자는 Viewer.pump() 가 맡는다
-    (playwright 동기 API 는 다른 스레드에서 못 쓴다)"""
-    def __init__(self, bots, policy=policy_check_call, skip=()):
-        self.bots, self.policy, self.skip, self.on = bots, policy, set(skip), True
-        self.acted = set(); threading.Thread(target=self._run, daemon=True).start()
-    def stop(self): self.on = False
-    def _run(self):
-        while self.on:
-            try:
-                v = next((b.view for b in self.bots if b.view), None)
-                if v and v.get("handInProgress") and v.get("toActSeatNo") is not None:
-                    n = int(v["toActSeatNo"]); s = next((x for x in _seats(v) if int(x["seatNo"]) == n), None)
-                    bot = next((b for b in self.bots if s and b.uid == int(s["userId"])), None)
-                    if bot and bot.user not in self.skip and (n, v["seq"]) not in self.acted:
-                        self.acted.add((n, v["seq"])); self.policy(bot, v)
-            except Exception as e: print("autoplay", e)
-            time.sleep(0.25)
-
-
-def wait_next_hand(bot, timeout=60):
-    """지금 핸드가 끝나고 다음 핸드가 시작(handInProgress 가 false -> true)될 때까지. 뷰에 핸드 번호가 없다"""
-    if (bot.view or {}).get("handInProgress"): bot.wait_for(lambda v: not v.get("handInProgress"), timeout, "핸드 종료")
-    bot.wait_for(lambda v: v.get("handInProgress"), timeout, "다음 핸드 시작")
-
-
-def wait_result(bot, since=0, timeout=60):
-    """bot.results[since] 가 생길 때까지 기다려 돌려준다. result = {payouts[{seatNo,userId,amount}], shownHands[{seatNo,holeCards,category}]}.
-    다음 판이 빨리 시작해 뷰의 result 가 사라져도 bot.results 에 남는다 — 쓰기 전에 since=len(bot.results) 를 잡아 둔다"""
-    return wait_for(lambda: len(bot.results) > since and bot.results[since], timeout, what="핸드 결과")
-
-
-def unseat_all(users=USERS, timeout=90):
-    """모든 qa 계정을 미착석으로 만든다(대기열 취소 + 폴드/일어서기 반복). REST 로그인하므로 브라우저를 닫은 뒤에 부른다."""
-    toks = {u: rest_login(u) for u in users}
-    try:
-        def left(u):
-            s, d = call("/api/holdem/me/seat", toks[u][0])
-            if s == 200 and d: return d["tableId"]  # 204 = 미착석
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            pend = {u: left(u) for u in users}; pend = {u: t for u, t in pend.items() if t}
-            if not pend: return
-            for u, tid in pend.items():
-                tok = toks[u][0]
-                call(f"/api/holdem/tables/{tid}/seats/request", tok, method="DELETE")
-                call(f"/api/holdem/tables/{tid}/hands/actions", tok, {"action": "FOLD"})
-                call("/api/holdem/seat", tok, method="DELETE")
-            time.sleep(1.5)
-        raise RuntimeError(f"{timeout}s 안에 못 비움: {pend}")
-    finally:
-        for t, c in toks.values(): rest_logout(t, c)
-
-
-_adm = {}
-
-
-def list_tables():
-    """방 목록(UI 와 같은 순서). 착석 중인 계정이 핸드 중에 부르면 서버가 409 HAND_IN_PROGRESS 를 줘서 qaadmin 토큰으로 읽는다"""
-    if "t" not in _adm: _adm["t"] = rest_login(ADMIN)[0]
-    s, d = call("/api/holdem/tables", _adm["t"]); return d["content"] if s == 200 else []
-
-# ---------------------------------------------------------------- 덱 고정 (QA 서버 전용, 다음 핸드 1회)
-CARD = re.compile(r"^[2-9TJQKA][shdc]$")
-
-def next_deck(tid, hole_cards=None, board=()):
-    """POST /api/admin/qa/holdem/tables/{tid}/next-deck. hole_cards={좌석번호:[c,c]}, board=[최대 5장]. 다음 핸드 시작 때 1회 적용
-    (예약은 핸드 시작 전까지 남는다 — 핸드 진행 중에 걸면 그다음 핸드에 적용). 지정 안 한 자리는 무작위. 204 가 아니면 예외.
-    qaadmin 토큰은 캐시하고 브라우저 사용자와 무관하다."""
-    cards = [c for h in (hole_cards or {}).values() for c in h] + list(board)
-    bad = [c for c in cards if not CARD.match(c)]
-    if bad or len(set(cards)) != len(cards): raise ValueError(f"카드 형식/중복 오류: {bad or cards}")
-    body = {"holeCards": {str(k): list(v) for k, v in (hole_cards or {}).items()}, "board": list(board)}
-    for _ in range(2):
-        if "t" not in _adm: _adm["t"] = rest_login(ADMIN)[0]
-        s, d = call(f"/api/admin/qa/holdem/tables/{tid}/next-deck", _adm["t"], body)
-        if s == 401: _adm.clear(); continue  # 토큰 만료면 재로그인
-        break
-    if s != 204: raise RuntimeError(f"next-deck {s} {d}")
-
-# 보드는 어떤 2장으로도 스트레이트·플러시가 안 되는 마른 보드. 패자 패는 보드와 랭크가 안 겹치는 무늬 같은 두 장(페어·스트레이트 불가)
-_BOARD = ["Kc", "8d", "3h", "Js", "5c"]
-_LOW = [r + s for s in "shdc" for r in "246T79"]
-
-def _losers(seats):
-    return {s: _LOW[2 * i:2 * i + 2] for i, s in enumerate(seats)}
-
-def deck_showdown(winner_seat, seats=range(1, 10)):
-    """winner_seat 이 AA 로 단독 승리(전원 쇼다운 가정 — 봇이 체크/콜). 나머지 좌석은 약한 하이카드"""
-    others = [s for s in seats if s != winner_seat]
-    return dict(hole_cards={winner_seat: ["As", "Ah"], **_losers(others)}, board=_BOARD)
-
-def deck_split(split_seats, seats=range(1, 10)):
-    """split_seats(2~4곳)가 A-Q 하이로 동률(칩 분할). 나머지는 약한 하이카드"""
-    sp = list(split_seats); assert 2 <= len(sp) <= 4
-    sa, sq = "shdc", "hdcs"
-    hole = {s: ["A" + sa[i], "Q" + sq[i]] for i, s in enumerate(sp)}
-    return dict(hole_cards={**hole, **_losers([s for s in seats if s not in sp])}, board=_BOARD)
-
-def deck_hero_wins(hero_seat, seats=range(1, 10)):
-    return deck_showdown(hero_seat, seats)
-
+        self.on_message(h, d)
+    def on_message(self, h, d): pass
+    def stop(self): self.ws.close(); rest_logout(self.token, self.cookie)
 
 # ---------------------------------------------------------------- 브라우저
 SIZES = {"d": (1280, 720, 1), "p": (390, 844, 2)}  # 데스크톱 / 폰(DPR2)
-# 좌표 표(화면 크기별). 레이아웃이 바뀌면 스크린샷에서 다시 잰다. 모두 CSS px
-POS = {
-    "d": dict(login_user=(640, 275), login_pw=(640, 334), lobby_enter=(640, 308), room_row0=(640, 154), room_pitch=74,
-              entry_spectate=(542, 476), entry_join=(737, 476), entry_post_blind=(475, 416), back=(72, 40),
-              stand=(530, 684),  # 착석 중(핸드 밖) 하단 "일어서기". 핸드 중엔 after_* 버튼이 같은 줄에 뜬다
-              fold=(424, 623), call=(640, 623), raise_=(856, 623), half=(356, 567), pot=(426, 567), allin=(492, 567),
-              after_spectate=(498, 684), cancel_reserve=(589, 684), after_leave=(659, 684)),
-    "p": dict(login_user=(195, 370), login_pw=(195, 417), lobby_enter=(195, 246), room_row0=(195, 123), room_pitch=59,
-              entry_spectate=(102, 808), entry_join=(286, 808), entry_post_blind=(36, 760), back=(103, 32),
-              fold=(70, 766), call=(195, 766), raise_=(318, 766), half=(42, 722), pot=(97, 722), allin=(150, 722),
-              after_spectate=(82, 815), cancel_reserve=(200, 815), after_leave=(210, 815)),
-}
+# 알려진 무해한 콘솔 오류: 첫 로드의 refresh 쿠키 없음 401, 서버가 의도해 내는 409(HAND_IN_PROGRESS 등) 리소스 로드 로그
+BENIGN = re.compile(r"Failed to load resource: the server responded with a status of (401|409)")
 
 
 class Viewer:
-    """헤드리스 Chromium 한 사용자. 사용자마다 별도 launch(쿠키 분리). with sync_playwright() as p: Viewer(p, 'qauser1', 'd')"""
-    def __init__(self, p, user, size="d", name=None):
-        w, h, dpr = SIZES[size]; self.user, self.size, self.pos = user, size, POS[size]; self.name = name or f"{user}_{size}"
+    """헤드리스 Chromium 한 사용자. 사용자마다 별도 launch(쿠키 분리). window.godotQa(core/qa_bridge.gd) 로 상태를 읽고 키로 누른다 —
+    좌표 클릭 없음. 스크린샷은 shots=True 일 때만 찍는다(디자인 확인용).
+    with sync_playwright() as p: Viewer(p, 'qauser1', 'd')"""
+    def __init__(self, p, user, size="d", name=None, shots=False, speed=None):
+        w, h, dpr = SIZES[size]; self.user, self.size, self.shots, self.speed = user, size, shots, speed
+        self.name = name or f"{user}_{size}"
         self.browser = p.chromium.launch(args=ARGS)
         self.page = self.browser.new_page(viewport={"width": w, "height": h}, device_scale_factor=dpr)
-        self.errors = []  # 콘솔 error/warning + pageerror. 첫 로드의 401(refresh 쿠키 없음) 1건은 정상
-        self.page.on("console", lambda m: self.errors.append((m.type, m.text[:200])) if m.type in ("error", "warning") else None)
+        self.poll = None  # 게임 모듈이 거는 훅(state) — wait_state 가 폴링마다 부른다
+        self.errors = []  # 콘솔 error/warning + pageerror (BENIGN 제외)
+        self.page.on("console", lambda m: self.errors.append((m.type, m.text[:200])) if m.type in ("error", "warning") and not BENIGN.search(m.text) else None)
         self.page.on("pageerror", lambda e: self.errors.append(("pageerror", str(e)[:200])))
         os.makedirs(OUT, exist_ok=True)
 
-    def click(self, key, wait=500):
-        x, y = self.pos[key] if isinstance(key, str) else key
-        self.page.mouse.click(x, y); self.page.wait_for_timeout(wait)
-    def type_at(self, key, text): self.click(key, 100); self.page.keyboard.type(text, delay=20)
+    # --- 브리지 ---
+    def open(self):
+        """?qa=1(+qa_speed) 로 열고 브리지가 생길 때까지 기다린다"""
+        self.page.goto(WEB + "/?qa=1" + (f"&qa_speed={self.speed}" if self.speed else ""))
+        self.page.wait_for_function("window.godotQa", timeout=60000)
+    def state(self):
+        """{scene, nodes:{key:{type,visible,text,disabled,pressed,value,...}}, extra:{...}}"""
+        return json.loads(self.page.evaluate("window.godotQa.state()"))
+    def _call(self, js, *a): return json.loads(self.page.evaluate(js, list(a)))
+    def try_press(self, key):
+        """한 번 눌러 본다 -> {ok, error}"""
+        return self._call("a => window.godotQa.press(a[0])", key)
+    def _retry(self, js, key, val, timeout=10):
+        last = {}
+        def f():
+            last.update(self._call(js, key, val)); return last["ok"]
+        try: wait_for(f, timeout, 0.1, key)
+        except TimeoutError: raise TimeoutError(f"{key} 설정 실패: {last.get('error')}")
+    def set_text(self, key, text): self._retry("a => window.godotQa.set_text(a[0], a[1])", key, text)
+    def set_value(self, key, v): self._retry("a => window.godotQa.set_value(a[0], a[1])", key, v)
+    def wait_state(self, pred, timeout=15, what="화면 상태", pump=True):
+        """pred(state) 가 참 값을 돌려줄 때까지 ~100ms 폴링(그 값을 돌려준다). 시간 초과면 TimeoutError.
+        pump=True 면 폴링하면서 self.poll(state) 훅을 부른다(게임 모듈이 거는 자동 진행, 예: 히어로 차례에 체크/콜). 직접 보려면 pump=False"""
+        def f():
+            s = self.state()
+            if pump and self.poll: self.poll(s)
+            return pred(s)
+        return wait_for(f, timeout, 0.1, what)
+    def press(self, key, timeout=10):
+        """키가 보이고 활성될 때까지 기다렸다 누른다. 안 되면 예외(마지막 오류 포함)"""
+        last = {}
+        def f():
+            last.update(self.try_press(key)); return last["ok"]
+        try: wait_for(f, timeout, 0.1, f"{key} 누르기")
+        except TimeoutError: raise TimeoutError(f"{key} 를 못 누름: {last.get('error')}")
+    def scene(self): return self.state()["scene"].rsplit("/", 1)[-1]
+    def wait_scene(self, name, timeout=15): return self.wait_state(lambda s: s["scene"].endswith(name), timeout, f"씬 {name}")
+    def extra(self): return self.state()["extra"]
+    @staticmethod
+    def vis(s, key): return bool(s["nodes"].get(key, {}).get("visible"))
+    @staticmethod
+    def text(s, key): return s["nodes"].get(key, {}).get("text", "")
+
+    # --- 흐름 ---
+    def open_game(self, game=0):
+        """로비의 게임 카드를 번호(0부터) 또는 제목(부분 일치)으로 눌러 게임 첫 화면으로"""
+        if isinstance(game, str):
+            s = self.state(); game = next(i for i in range(20) if game in s["nodes"].get(f"GameList/{i}", {}).get("text", "") + str(s["nodes"].get(f"GameList/{i}", {}).get("text")))
+        self.press(f"GameList/{game}")
+    def login(self, user=None, pw=PW):
+        if self.page.url in ("", "about:blank"): self.open()
+        self.wait_scene("login.tscn", 30)
+        self.set_text("UsernameEdit", user or self.user); self.set_text("PasswordEdit", pw); self.press("LoginButton")
+        self.wait_scene("lobby.tscn", 20)
+    def reload(self):
+        self.page.reload(); self.page.wait_for_function("window.godotQa", timeout=60000)
+
+    # --- 스크린샷(shots=True 일 때만. 디자인 확인용) ---
     def stable(self, timeout=15):
         """연속 스크린샷이 같아질 때까지(애니메이션·로딩 대기)"""
         prev, t = None, time.time()
@@ -343,64 +214,18 @@ class Viewer:
             hh = hashlib.md5(self.page.screenshot()).hexdigest()
             if hh == prev: return
             prev = hh; self.page.wait_for_timeout(300)
-
-    def login(self):
-        self.page.goto(WEB); self.page.wait_for_timeout(3000); self.stable()  # wasm 로딩
-        self.type_at("login_user", self.user); self.type_at("login_pw", PW); self.page.keyboard.press("Enter")
-        self.page.wait_for_timeout(1500); self.stable()
-    def to_room_list(self): self.click("lobby_enter", 2000); self.stable()
-    def open_room(self, index=0):
-        """방 목록 index 번째(REST 목록 순서와 같다) 카드 → 입장 패널. 화면 밖으로 밀린 행은 못 누른다(방 6개 이하로)"""
-        x, y = self.pos["room_row0"]; self.click((x, y + self.pos["room_pitch"] * index), 1500)
-    def spectate(self): self.click("entry_spectate", 2500); self.stable()
-    def join(self, post_blind=True):
-        """\"바로 참가\" 를 체크하고(기본) 참가한다. 안 체크하면 서버가 SITTING_OUT 으로 두고 BB 가 돌아올 때까지(최대 9판) 딜인하지 않는다.
-        attach() 했으면 봇의 공개 뷰로 히어로(봇이 아닌 착석자)가 ACTIVE/딜인될 때까지 확인하고, 아니면 바로 예외"""
-        if post_blind: self.click("entry_post_blind", 300)
-        self.click("entry_join", 3500); self.stable()
-        if not hasattr(self, "_bot"): return
-        def hero():
-            u = self._bot.hero_uid(self._bots)
-            return next((s for s in _seats(self._bot.view) if int(s["userId"]) == u), None) if u is not None else None
-        try: self.wait_for(lambda v: (hero() or {}).get("status") not in (None, "SITTING_OUT"), 30, "히어로 착석+딜인")
-        except Exception as e:
-            self.screenshot(f"{self.name}_join_fail", settle=False)
-            raise RuntimeError(f"join 실패: 히어로 좌석={hero()} (post_blind={post_blind}, 스크린샷 {OUT}/{self.name}_join_fail.png)") from e
-    def act_call(self): self.click("call", 100)  # 체크/콜 버튼(같은 자리)
-    def attach(self, bot, bots):
-        """pump()/wait_for()/frames() 가 쓸 공개 뷰 출처(bot)와 봇 목록. 봇이 아닌 착석자 = 이 브라우저 사용자"""
-        self._bot, self._bots, self._pumped = bot, bots, {}
-    def pump(self):
-        """브라우저 사용자(봇이 아닌 착석자)의 차례면 체크/콜 클릭. 메인 스레드에서만(playwright 제약)"""
-        v = self._bot.view or {}
-        if not (v.get("handInProgress") and v.get("toActSeatNo") is not None): return
-        s = next((x for x in _seats(v) if int(x["seatNo"]) == int(v["toActSeatNo"])), None)
-        if s and int(s["userId"]) not in {b.uid for b in self._bots} and time.time() - self._pumped.get((s["seatNo"], v["seq"]), 0) > 2.5:  # 같은 턴을 2.5초마다 재시도(클릭이 빗나가도 8초 턴 안에 만회)
-            self._pumped[(s["seatNo"], v["seq"])] = time.time(); self.act_call()
-    def wait_next_hand(self, timeout=60):
-        """qa.wait_next_hand 와 같지만 기다리는 동안 사용자 차례를 pump() 한다(안 그러면 턴 타임아웃으로 사용자가 퇴장한다)"""
-        if (self._bot.view or {}).get("handInProgress"): self.wait_for(lambda v: not v.get("handInProgress"), timeout, "핸드 종료")
-        self.wait_for(lambda v: v.get("handInProgress"), timeout, "다음 핸드 시작")
-    def wait_for(self, pred, timeout=60, what="뷰 조건"):
-        """pred(공개 뷰) 가 참일 때까지 기다리며 pump() 로 사용자 차례를 처리"""
-        def f():
-            self.pump(); self.page.wait_for_timeout(100); return self._bot.view and pred(self._bot.view)
-        return wait_for(f, timeout, 0, what)
-    def act_fold(self): self.click("fold", 100)
-    def back_to_list(self): self.click("back", 2000)
-
-    def screenshot(self, name, settle=True):
-        """settle=False 는 즉시 한 장(결과 화면처럼 금방 지나가는 상태용 — 다음 판이 1초 뒤 시작한다)"""
+    def screenshot(self, name, settle=True, force=False):
+        """shots 가 꺼져 있으면(force 아님) 아무것도 안 하고 None"""
+        if not (self.shots or force): return None
         path = f"{OUT}/{name}.png"
         if settle: self.stable()
         self.page.screenshot(path=path); return path
     def frames(self, name, seconds, fps=8):
-        """seconds 동안 jpg 프레임 + t.json([[번호, 경과초]]) 저장(실제 타임스탬프). 프레임 수는 캡처 속도(보통 6~10fps)에 좌우된다.
-        attach() 했으면 매 프레임 pump() 하고, 뷰에 result 가 처음 보인 프레임을 {name}_result.png 로 따로 남긴다(결과 상태는 금방 지나간다)"""
+        """seconds 동안 jpg 프레임 + t.json([[번호, 경과초]]) 저장. attach() 했으면 매 프레임 pump() 하고, 뷰에 result 가 처음 보인 프레임을 {name}_result.png 로 남긴다"""
         d = f"{OUT}/frames/{name}"; os.makedirs(d, exist_ok=True); t0 = time.time(); out = []; got = False
         while time.time() - t0 < seconds:
             t = time.time(); bot = getattr(self, "_bot", None)
-            if bot: self.pump()
+            if self.poll: self.poll(self.state())
             self.page.screenshot(path=f"{d}/{len(out):03d}.jpg", type="jpeg", quality=60)
             if bot and not got and (bot.view or {}).get("result"):
                 got = True; self.page.screenshot(path=f"{OUT}/{name}_result.png")
@@ -434,3 +259,28 @@ def side_by_side(browser, paths, out):
     imgs = "".join('<img style="height:400px" src="data:image/png;base64,%s">' % base64.b64encode(open(p, "rb").read()).decode() for p in paths)
     pg = browser.new_page(viewport={"width": 1600, "height": 400}); pg.set_content('<body style="margin:0;display:flex">' + imgs + "</body>")
     pg.screenshot(path=out, full_page=True); pg.close()
+
+
+class Ctx:
+    """시나리오 하나의 자원 묶음. 러너가 끝나면 cleanup() — 뷰어 닫기 -> 등록한 정리 함수(봇 정지·착석 해제 등) 순"""
+    def __init__(self, p, size, shots, speed):
+        self.p, self.size, self.shots, self.speed = p, size, shots, speed
+        self.viewers, self.closers = [], []
+    def viewer(self, user="qauser1"):
+        v = Viewer(self.p, user, self.size, shots=self.shots, speed=self.speed); self.viewers.append(v); v.open(); return v
+    def on_cleanup(self, fn): self.closers.append(fn)
+    def errors(self): return [e for v in self.viewers for e in v.errors]
+    def cleanup(self):
+        for v in self.viewers:
+            try: v.close()
+            except Exception: pass
+        for fn in self.closers:  # 브라우저를 닫은 뒤에 — 게임 쪽 정리가 REST 로그인하면 세션을 쫓아낸다
+            fn()
+
+
+def print_table(rows, label, total):
+    print(f"\n{'#':>2}  {'결과':<5}{'초':>6}  시나리오 [{label}]")
+    for r in rows: print(f"{r['n']:>2}  {r['result']:<5}{r['seconds']:>6}  {r['name']}" + (f"\n        -> {r['reason']}" if r["reason"] else ""))
+    print(f"합계 {sum(r['result'] == 'PASS' for r in rows)}/{len(rows)} 통과, {total}s")
+
+

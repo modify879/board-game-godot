@@ -1,0 +1,448 @@
+"""홀덤 QA: 봇(REST+STOMP), 덱 고정(QA 서버 전용), 브라우저 보조, 시나리오. suite.py 가 SCENARIOS·cleanup 을 찾아 쓴다.
+(이 폴더 파일만 지우면 홀덤이 빠진다 — qa.py 는 게임을 모른다)"""
+import re, threading, time
+import qa
+
+# ---------------------------------------------------------------- 봇
+def _seats(v): return [s for s in (v or {}).get("seats", []) if s]
+
+
+class Bot(qa.Client):
+    """REST 로 행동하고 STOMP 로 공개·개인 뷰를 받는다(holdem.md: 행동=REST, STOMP=수신 전용).
+    join-queue 는 연결 직후 구독해 두고 POST 한다. 개인 큐는 공개 뷰에 내가 앉아 있을 때만 구독한다."""
+
+    def __init__(self, user):
+        self.view = None; self.results = []; self.private = None; self.events = []; self.tid = None; self._priv = False
+        super().__init__(user)
+        self.subscribe("jq", "/user/queue/holdem/join-queue")
+
+    def on_message(self, h, d):
+        if "/user/queue/tables/" in h: self.private = d
+        elif "/topic/tables/" in h:
+            if d.get("type") == "TABLE_CLOSED": self.view = None; return
+            if "seq" in d and d.get("seq", 0) >= (self.view or {}).get("seq", -1):  # seq 가 줄어든 메시지는 버린다
+                self.view = d; self._sync_private()
+                if d.get("result") and (not self.results or self.results[-1] != d["result"]): self.results.append(d["result"])
+        else: self.events.append(d)
+
+    def _sync_private(self):
+        me = self.my_seat()
+        if me and not self._priv:
+            self._priv = True; self.subscribe(f"pv{self.tid}", f"/user/queue/tables/{self.tid}")
+        elif not me and self._priv:
+            self._priv = False; self.unsubscribe(f"pv{self.tid}"); self.private = None
+
+    def watch(self, tid):
+        """공개 토픽 구독(관전). 이미 구독 중이면 무시"""
+        if self.tid != tid:
+            self.tid = tid; self.view = None
+            self.subscribe(f"pb{tid}", f"/topic/tables/{tid}")
+
+    # --- 뷰 ---
+    def seat_of(self, uid): return next((s for s in _seats(self.view) if int(s["userId"]) == uid), None)
+    def my_seat(self): return self.seat_of(self.uid)
+    def hero_uid(self, bots):
+        """뷰에서 봇이 아닌 첫 착석자의 userId — 브라우저 사용자(REST 로그인 없이 알아낸다)"""
+        ids = {b.uid for b in bots}
+        return next((int(s["userId"]) for s in _seats(self.view) if int(s["userId"]) not in ids), None)
+    def wait_for(self, pred, timeout=30, what="뷰 조건"):
+        """pred(public_view) 가 참 값을 돌려줄 때까지"""
+        return qa.wait_for(lambda: self.view and pred(self.view), timeout, what=what)
+
+    # --- 행동 ---
+    def _buy_in(self, path, want):
+        """원하는 바이인(없으면 하한)을 서버 범위로 맞춘다. 나간 지 30분 안이면 나간 금액만큼 하한이 올라간다(obligation)"""
+        r = qa.call(path, self.token)[1]; return min(max(want or r["minBuyIn"], r["minBuyIn"]), r["maxBuyIn"])
+    def create_table(self, name, buy_in=None):
+        """만든 사람이 서버에서 바로 착석한다. 201 뒤 공개 토픽 구독"""
+        bi = self._buy_in("/api/holdem/buy-in", buy_in)
+        s, d = qa.call("/api/holdem/tables", self.token, {"name": name, "buyIn": bi})
+        if s not in (200, 201): raise RuntimeError(f"방 생성 {s} {d}")
+        self.watch(d["tableId"]); self.wait_for(lambda v: self.my_seat(), 15, "방장 착석"); return d["tableId"]
+    def sit(self, tid, buy_in=None, wait=True):
+        """바이인(기본 하한)으로 참가. 핸드 중이면 대기열이라 다음 판에 앉는다"""
+        self.watch(tid)
+        bi = self._buy_in(f"/api/holdem/tables/{tid}/buy-in", buy_in)
+        s, d = qa.call(f"/api/holdem/tables/{tid}/seats", self.token, {"buyIn": bi, "postBlindImmediately": False})
+        if s >= 300: raise RuntimeError(f"{self.user} 착석 {s} {d}")
+        if wait: self.wait_for(lambda v: self.my_seat(), 60, f"{self.user} 착석")
+    def stand(self): return qa.call("/api/holdem/seat", self.token, method="DELETE")[0]  # 핸드 중 202(예약)
+    def reserve_leave(self, after="SPECTATE"): return qa.call(f"/api/holdem/seat?after={after}", self.token, method="DELETE")[0]
+    def cancel_reservation(self): return qa.call("/api/holdem/seat/leave-reservation", self.token, method="DELETE")[0]
+    def act(self, action, amount=None):
+        b = {"action": action}
+        if amount: b["raiseToAmount"] = amount
+        return qa.call(f"/api/holdem/tables/{self.tid}/hands/actions", self.token, b)[0]
+    def to_act(self):
+        v = self.view or {}
+        return bool(v.get("handInProgress") and v.get("toActSeatNo") is not None and self.my_seat()
+                    and int(self.my_seat()["seatNo"]) == int(v["toActSeatNo"]))
+
+
+def policy_check_call(bot, v):  # 기본: 체크, 안 되면 콜, 그것도 안 되면 폴드
+    for a in ("CHECK", "CALL", "FOLD"):
+        if bot.act(a) < 300: return
+def policy_fold(bot, v): bot.act("FOLD")
+def raise_to(n):  # 첫 행동에 n 으로 레이즈, 안 되면 기본 정책
+    return lambda bot, v: bot.act("RAISE_TO", n) < 300 or policy_check_call(bot, v)
+
+
+class Autoplay:
+    """백그라운드 스레드: 자기 차례인 봇(skip 제외)이 policy(bot, view) 로 행동. 브라우저 사용자는 Viewer.pump() 가 맡는다
+    (playwright 동기 API 는 다른 스레드에서 못 쓴다)"""
+    def __init__(self, bots, policy=policy_check_call, skip=()):
+        self.bots, self.policy, self.skip, self.on = bots, policy, set(skip), True
+        self.acted = set(); threading.Thread(target=self._run, daemon=True).start()
+    def stop(self): self.on = False
+    def _run(self):
+        while self.on:
+            try:
+                v = next((b.view for b in self.bots if b.view), None)
+                if v and v.get("handInProgress") and v.get("toActSeatNo") is not None:
+                    n = int(v["toActSeatNo"]); s = next((x for x in _seats(v) if int(x["seatNo"]) == n), None)
+                    bot = next((b for b in self.bots if s and b.uid == int(s["userId"])), None)
+                    if bot and bot.user not in self.skip and (n, v["seq"]) not in self.acted:
+                        self.acted.add((n, v["seq"])); self.policy(bot, v)
+            except Exception as e: print("autoplay", e)
+            time.sleep(0.25)
+
+
+def wait_result(bot, since=0, timeout=60):
+    """bot.results[since] 가 생길 때까지 기다려 돌려준다. result = {payouts[{seatNo,userId,amount}], shownHands[{seatNo,holeCards,category}]}.
+    다음 판이 빨리 시작해 뷰의 result 가 사라져도 bot.results 에 남는다 — 쓰기 전에 since=len(bot.results) 를 잡아 둔다"""
+    return qa.wait_for(lambda: len(bot.results) > since and bot.results[since], timeout, what="핸드 결과")
+
+
+def unseat_all(users=qa.USERS, timeout=90):
+    """모든 qa 계정을 미착석으로 만든다(대기열 취소 + 폴드/일어서기 반복). REST 로그인하므로 브라우저를 닫은 뒤에 부른다."""
+    toks = {u: qa.rest_login(u) for u in users}
+    try:
+        def left(u):
+            s, d = qa.call("/api/holdem/me/seat", toks[u][0])
+            if s == 200 and d: return d["tableId"]  # 204 = 미착석
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            pend = {u: left(u) for u in users}; pend = {u: t for u, t in pend.items() if t}
+            if not pend: return
+            for u, tid in pend.items():
+                tok = toks[u][0]
+                qa.call(f"/api/holdem/tables/{tid}/seats/request", tok, method="DELETE")
+                qa.call(f"/api/holdem/tables/{tid}/hands/actions", tok, {"action": "FOLD"})
+                qa.call("/api/holdem/seat", tok, method="DELETE")
+            time.sleep(1.5)
+        raise RuntimeError(f"{timeout}s 안에 못 비움: {pend}")
+    finally:
+        for t, c in toks.values(): qa.rest_logout(t, c)
+
+
+_adm = {}
+
+
+def list_tables():
+    """방 목록(UI 와 같은 순서). 착석 중인 계정이 핸드 중에 부르면 서버가 409 HAND_IN_PROGRESS 를 줘서 qaadmin 토큰으로 읽는다"""
+    if "t" not in _adm: _adm["t"] = qa.rest_login(qa.ADMIN)[0]
+    s, d = qa.call("/api/holdem/tables", _adm["t"]); return d["content"] if s == 200 else []
+
+def nickname(uid):
+    """userId -> 닉네임(화면에 보이는 이름). qaadmin 토큰으로 읽는다"""
+    if "t" not in _adm: _adm["t"] = qa.rest_login(qa.ADMIN)[0]
+    return qa.call(f"/api/users/{uid}", _adm["t"])[1]["nickname"]
+
+# ---------------------------------------------------------------- 덱 고정 (QA 서버 전용, 다음 핸드 1회)
+CARD = re.compile(r"^[2-9TJQKA][shdc]$")
+
+def next_deck(tid, hole_cards=None, board=()):
+    """POST /api/admin/qa/holdem/tables/{tid}/next-deck. hole_cards={좌석번호:[c,c]}, board=[최대 5장]. 다음 핸드 시작 때 1회 적용
+    (예약은 핸드 시작 전까지 남는다 — 핸드 진행 중에 걸면 그다음 핸드에 적용). 지정 안 한 자리는 무작위. 204 가 아니면 예외.
+    qaadmin 토큰은 캐시하고 브라우저 사용자와 무관하다."""
+    cards = [c for h in (hole_cards or {}).values() for c in h] + list(board)
+    bad = [c for c in cards if not CARD.match(c)]
+    if bad or len(set(cards)) != len(cards): raise ValueError(f"카드 형식/중복 오류: {bad or cards}")
+    body = {"holeCards": {str(k): list(v) for k, v in (hole_cards or {}).items()}, "board": list(board)}
+    for _ in range(2):
+        if "t" not in _adm: _adm["t"] = qa.rest_login(qa.ADMIN)[0]
+        s, d = qa.call(f"/api/admin/qa/holdem/tables/{tid}/next-deck", _adm["t"], body)
+        if s == 401: _adm.clear(); continue  # 토큰 만료면 재로그인
+        break
+    if s != 204: raise RuntimeError(f"next-deck {s} {d}")
+
+# 보드는 어떤 2장으로도 스트레이트·플러시가 안 되는 마른 보드. 패자 패는 보드와 랭크가 안 겹치는 무늬 같은 두 장(페어·스트레이트 불가)
+_BOARD = ["Kc", "8d", "3h", "Js", "5c"]
+_LOW = [r + s for s in "shdc" for r in "246T79"]
+
+def _losers(seats):
+    return {s: _LOW[2 * i:2 * i + 2] for i, s in enumerate(seats)}
+
+def deck_showdown(winner_seat, seats=range(1, 10)):
+    """winner_seat 이 AA 로 단독 승리(전원 쇼다운 가정 — 봇이 체크/콜). 나머지 좌석은 약한 하이카드"""
+    others = [s for s in seats if s != winner_seat]
+    return dict(hole_cards={winner_seat: ["As", "Ah"], **_losers(others)}, board=_BOARD)
+
+def deck_split(split_seats, seats=range(1, 10)):
+    """split_seats(2~4곳)가 A-Q 하이로 동률(칩 분할). 나머지는 약한 하이카드"""
+    sp = list(split_seats); assert 2 <= len(sp) <= 4
+    sa, sq = "shdc", "hdcs"
+    hole = {s: ["A" + sa[i], "Q" + sq[i]] for i, s in enumerate(sp)}
+    return dict(hole_cards={**hole, **_losers([s for s in seats if s not in sp])}, board=_BOARD)
+
+def deck_hero_wins(hero_seat, seats=range(1, 10)):
+    return deck_showdown(hero_seat, seats)
+
+
+
+
+# ------------------------------------------------------------------ 브라우저 보조(Viewer 는 게임을 모른다 — 홀덤 화면 흐름은 여기)
+def to_room_list(v, game=0):
+    v.open_game(game); v.wait_scene("table_list.tscn", 15)
+    v.wait_state(lambda s: not s["nodes"].get("RefreshButton", {}).get("disabled", True) and v.text(s, "BuyInInfo"), 15, "방 목록·바이인 범위 로드")  # 범위가 오기 전에 만들면 서버가 거부한다
+
+
+def open_room(v, index=0):
+    """방 목록 index 번째(REST 목록 순서와 같다) 카드 -> 입장 패널(바이인 조회까지 끝나 참가 버튼이 풀릴 때까지)"""
+    v.press(f"Rows/{index}")
+    v.wait_state(lambda s: v.vis(s, "EntryPanel") and not s["nodes"]["EntryJoin"].get("disabled", True), 15, "입장 패널")
+
+
+def spectate(v):
+    v.press("EntryWatch"); v.wait_scene("table.tscn", 15)
+    v.wait_state(lambda s: s["extra"].get("table_id") and v.vis(s, "JoinButton"), 15, "관전 상태")
+
+
+def join(v, post_blind=True, timeout=30):
+    """입장 패널의 "바로 참가" 를 체크하고(기본) 참가한다. 안 체크하면 서버가 SITTING_OUT 으로 두고 BB 가 돌아올 때까지(최대 9판) 딜인하지 않는다.
+    착석하고 SITTING_OUT 이 아닐 때까지 확인한다"""
+    if post_blind and not v.state()["nodes"]["EntryPostBlind"].get("pressed"): v.press("EntryPostBlind")
+    v.press("EntryJoin"); v.wait_scene("table.tscn", 15)
+    def ok(s):
+        e = s["extra"]; me = e.get("my_seat_no", -1)
+        seat = next((x for x in e.get("seats", []) if x["seat_no"] == me), None)
+        return seat and seat["status"] != "SITTING_OUT"
+    v.wait_state(ok, timeout, "히어로 착석+딜인")
+
+
+def my_seat(v): return v.extra().get("my_seat_no", -1)
+def back_to_list(v): v.press("BackButton"); v.wait_scene("table_list.tscn", 15)
+
+
+def attach(v, bot, bots):
+    """wait_state/wait_for 가 히어로 차례에 체크/콜을 자동으로 누르게 걸고, 공개 뷰 출처(bot)와 봇 목록을 기억한다"""
+    v._bot, v._bots, v._pumped = bot, bots, {}; v.poll = lambda s: pump(v, s)
+
+
+def pump(v, s=None):
+    """히어로 차례면 체크/콜(브리지 상태로 판단). 메인 스레드에서만(playwright 제약). 같은 턴은 2초마다 재시도"""
+    e = (s or v.state())["extra"]; me = e.get("my_seat_no", -1)
+    if me != -1 and e.get("to_act_seat") == me and "FOLD" in e.get("available_actions", []):
+        k = (me, e.get("street"), e.get("table_id"))
+        if time.time() - v._pumped.get(k, 0) > 2:
+            v._pumped[k] = time.time(); v.try_press("CheckCallButton")
+
+
+def wait_for(v, pred, timeout=60, what="뷰 조건", pump_=True):
+    """pred(봇의 공개 뷰) 가 참일 때까지 기다리며 히어로 차례를 처리"""
+    def f():
+        if pump_: pump(v)
+        v.page.wait_for_timeout(80); return v._bot.view and pred(v._bot.view)
+    return qa.wait_for(f, timeout, 0, what)
+
+
+def wait_next_hand(v, timeout=60, pump=True):
+    """지금 핸드가 끝나고 다음 핸드가 시작될 때까지(끝나길 기다리는 동안은 pump. 시작을 기다릴 땐 pump=False 면 첫 차례를 직접 볼 수 있다)"""
+    if (v._bot.view or {}).get("handInProgress"): wait_for(v, lambda x: not x.get("handInProgress"), timeout, "핸드 종료")
+    wait_for(v, lambda x: x.get("handInProgress"), timeout, "다음 핸드 시작", pump)
+
+
+SCENARIOS = []
+def scenario(name, limit=90):
+    def d(f): f.limit = limit; SCENARIOS.append((name, f)); return f
+    return d
+
+
+ERR = {"TABLE_NAME_INVALID": "방 이름은 1~30자여야 합니다"}  # core/error_text.gd
+
+
+def table(c, name, n_bots, buy_in=10000, policy=policy_check_call):
+    """봇 n_bots 명(qauser2~)이 앉은 방. Autoplay 가 봇을 진행한다. -> (tid, bots, autoplay). 정리는 c 가 한다"""
+    bots = [Bot(f"qauser{i}") for i in range(2, 2 + n_bots)]
+    ap = Autoplay(bots, policy=policy) if policy else None
+    c.on_cleanup(lambda: [ap and ap.stop(), *[b.stop() for b in bots]])
+    tid = bots[0].create_table(name, buy_in)
+    for b in bots[1:]: b.sit(tid, buy_in)
+    return tid, bots, ap
+
+
+def hero(c, tid, bots, join_=True, buy_in=None):
+    """qauser1 브라우저: 로그인 -> 방 목록 -> tid 카드 -> 참가/관전. 봇 뷰에 attach"""
+    v = c.viewer(); v.login(); to_room_list(v); attach(v, bots[0], bots); enter(v, tid, join_, buy_in); return v
+
+
+def enter(v, tid, do_join=True, buy_in=None):
+    ids = [t["tableId"] for t in list_tables()]
+    assert tid in ids[:20], f"방 {tid} 가 목록 첫 페이지에 없다: {ids}"
+    v.wait_state(lambda s: sum(k.startswith("Rows/") and k[5:].isdigit() for k in s["nodes"]) == min(len(ids), 20), 10, "방 카드 수 = REST 목록 수")
+    open_room(v, ids.index(tid))
+    if do_join:
+        if buy_in == "min": buy_in = v.state()["nodes"]["EntrySpin"]["min"]  # 재착석 의무로 하한이 계정마다 다르다
+        if buy_in: v.set_value("EntrySpin", buy_in)
+        v.last_buy_in = int(v.state()["nodes"]["EntrySpin"]["value"])
+        join(v)
+    else: spectate(v)
+
+
+def occupied(host): return sorted(int(s["seatNo"]) for s in _seats(host.view))
+def winner_names(s):
+    """보이는 Payout 라벨이 있는 좌석의 닉네임(좌석 노드 키는 안정적이지 않아 같은 접두의 NameLabel 로 찾는다)"""
+    n = s["nodes"]
+    return [n[k[:-6] + "NameLabel"]["text"] for k, d in n.items() if k.endswith("/Payout") and d["visible"] and d.get("text", "").startswith("+")]
+
+
+def fixed_hand(v, host, tid, deck_fn):
+    """deck_fn(좌석목록) 덱이 걸린 핸드(착석자 전원 ACTIVE)가 막 시작된 상태로 돌려준다. 시작 직후엔 pump 하지 않는다(첫 차례를 직접 보게)"""
+    for _ in range(6):
+        wait_for(v, lambda x: not x["handInProgress"], 60, "핸드 종료")
+        next_deck(tid, **deck_fn(occupied(host)))
+        wait_next_hand(v, pump=False)
+        if all(x["status"] == "ACTIVE" for x in _seats(host.view)): return
+    raise RuntimeError("전원 ACTIVE 인 핸드를 못 잡음")
+
+
+def hero_turn(s):
+    e = s["extra"]; return e["my_seat_no"] != -1 and e["to_act_seat"] == e["my_seat_no"] and "FOLD" in e["available_actions"]
+
+
+def rejoin(v):
+    """관전 중 JoinButton -> 착석 팝업 -> 확인 -> 착석"""
+    v.press("JoinButton"); v.wait_state(lambda s: not s["nodes"]["SitPopupOk"].get("disabled", True) and v.vis(s, "SitPopup"), 15, "착석 팝업")
+    if not v.state()["nodes"]["PostBlindCheck"].get("pressed"): v.press("PostBlindCheck")
+    v.press("SitPopupOk"); v.wait_state(lambda s: s["extra"]["my_seat_no"] != -1, 30, "재착석")
+
+
+def in_hand_active(s):
+    e = s["extra"]; me = e["my_seat_no"]
+    return me != -1 and e["hand_in_progress"] and any(x["seat_no"] == me and x["status"] == "ACTIVE" for x in e["seats"])
+
+
+# ------------------------------------------------------------------ 시나리오
+@scenario("방 만들기(검증 오류 + 성공)", 60)
+def s2(c):
+    v = c.viewer(); v.login(); to_room_list(v)
+    v.press("OpenCreateButton"); v.wait_state(lambda s: v.vis(s, "CreatePanel"), 10, "만들기 패널")
+    for bad in ("", "   "):  # 길이 31 은 NameEdit.max_length=30 이 잘라 낸다
+        v.set_text("NameEdit", bad); v.press("CreateButton")
+        s = v.wait_state(lambda s: v.vis(s, "CreateErrorLabel") and s, 10, "방 이름 오류")
+        assert v.text(s, "CreateErrorLabel") == ERR["TABLE_NAME_INVALID"], f"{bad!r}: {v.text(s, 'CreateErrorLabel')!r}"
+        assert v.scene() == "table_list.tscn", "검증 실패인데 화면이 바뀌었다"
+    v.set_text("NameEdit", "QA스위트"); v.press("CreateButton"); v.wait_scene("table.tscn", 15)
+    v.wait_state(lambda s: s["extra"].get("my_seat_no", -1) != -1, 30, "방장 착석")
+
+
+@scenario("입장 패널: 관전 / 바이인 참가", 90)
+def s3(c):
+    tid, bots, _ = table(c, "S3", 1)
+    v = c.viewer(); v.login(); to_room_list(v); enter(v, tid, do_join=False)
+    s = v.state(); e = s["extra"]
+    assert e["table_id"] == tid and e["my_seat_no"] == -1, f"관전인데 my_seat_no={e['my_seat_no']}"
+    assert v.vis(s, "JoinButton") and not v.vis(s, "SitPopup"), "관전: 참가 버튼이 안 보이거나 팝업이 떠 있다"
+    back_to_list(v); enter(v, tid, do_join=True, buy_in="min")
+    s = v.state(); e = s["extra"]; me = next(x for x in e["seats"] if x["seat_no"] == e["my_seat_no"])
+    assert not v.vis(s, "SitPopup"), "참가 뒤 착석 팝업이 떴다"
+    assert v.last_buy_in - 400 <= me["stack"] <= v.last_buy_in, f"바이인 {v.last_buy_in} 인데 스택 {me['stack']}"  # 블라인드만큼은 빠질 수 있다
+
+
+@scenario("고정 덱 한 판 vs 봇", 120)
+def s4(c):
+    tid, bots, _ = table(c, "S4", 2); host = bots[0]
+    v = hero(c, tid, bots); me = my_seat(v); nick = nickname(host.hero_uid(bots))
+    fixed_hand(v, host, tid, lambda seats: deck_hero_wins(me, seats))
+    s = v.wait_state(lambda s: hero_turn(s) and s, 30, "히어로 차례", pump=False)
+    assert all(v.vis(s, k) for k in ("FoldButton", "CheckCallButton", "ActionBar")), "행동 버튼이 안 보인다"
+    assert sorted(s["extra"]["my_hole_cards"]) == ["Ah", "As"], f"홀카드 {s['extra']['my_hole_cards']}"
+    assert v.text(s, "CheckCallButton") and not s["nodes"]["CheckCallButton"].get("disabled"), "체크/콜 버튼 문구/상태"
+    v.press("CheckCallButton"); n0 = len(host.results)
+    s = v.wait_state(lambda s: s["extra"]["winners"] and s, 60, "결과(승자)")  # 한 스냅샷에서 전부 판정한다(결과는 금방 지나간다)
+    assert [w["seat_no"] for w in s["extra"]["winners"]] == [me], f"승자 {s['extra']['winners']} (기대 좌석 {me})"
+    assert nick in winner_names(s), f"승자 문구에 {nick!r} 없음: {winner_names(s)}"
+    r = wait_result(host, n0, 5); assert [p["seatNo"] for p in r["payouts"]] == [me], f"서버 결과 {r['payouts']}"
+    s = v.wait_state(lambda s: ("다음 판" in v.text(s, "StatusLabel") or s["extra"]["next_hand_seconds"] >= 0) and s, 15, "다음 판 카운트다운", pump=False)
+
+
+@scenario("폴드 승리 -> 패 보여주기 버튼", 120)
+def s5(c):
+    tid, bots, _ = table(c, "S5", 1, policy=policy_fold); host = bots[0]
+    v = hero(c, tid, bots); me = my_seat(v)
+    s = v.wait_state(lambda s: v.vis(s, "ShowHandButton") and s, 60, "패 보여주기 버튼")  # 봇이 폴드 -> 히어로 폴드 승
+    e = s["extra"]
+    assert [w["seat_no"] for w in e["winners"]] == [me] and not e["hand_in_progress"], f"폴드 승 조건: {e['winners']} 진행={e['hand_in_progress']}"
+    assert not host.results[-1]["shownHands"], "폴드 종료인데 shownHands 가 비어 있지 않다"
+    n = len(host.results); v.press("ShowHandButton")
+    qa.wait_for(lambda: any(h["seatNo"] == me for r in host.results[n - 1:] for h in r["shownHands"]), 5, what="shownHands 에 히어로")
+
+
+def _in_hand(c, name, n_bots=2):
+    tid, bots, ap = table(c, name, n_bots); v = hero(c, tid, bots)
+    v.wait_state(in_hand_active, 40, "히어로가 참가한 핸드"); return tid, bots, ap, v
+
+
+@scenario("나가기 예약 3종(관전/방 나가기/새로고침)", 170)
+def s6(c):
+    tid, bots, ap, v = _in_hand(c, "S6")
+    s = v.state(); assert v.text(s, "StandButton") == "핸드 후 관전" and v.text(s, "LeaveRoomButton") == "핸드 후 방 나가기", f"버튼 문구 {v.text(s, 'StandButton')!r}/{v.text(s, 'LeaveRoomButton')!r}"
+    v.press("StandButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼")
+    assert "관전 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
+    v.wait_state(lambda s: s["extra"]["my_seat_no"] == -1, 60, "핸드 후 일어섬")
+    time.sleep(2); s = v.state()
+    assert s["scene"].endswith("table.tscn") and v.vis(s, "JoinButton"), f"관전 후 화면 {s['scene']}"
+    # 핸드 후 방 나가기
+    rejoin(v); v.wait_state(in_hand_active, 40, "재참가 후 핸드")
+    v.press("LeaveRoomButton"); v.wait_scene("table_list.tscn", 60)
+    # 새로고침: 느린 봇 + 폴드로 핸드를 길게 둔다
+    enter(v, tid, True)
+    ap.policy = lambda bot, view: (time.sleep(3), policy_check_call(bot, view))  # 착석 뒤에 건다(느린 봇 앞에서 대기하면 30초를 넘긴다)
+    v.wait_state(in_hand_active, 60, "히어로 핸드")
+    v.wait_state(lambda s: hero_turn(s) and s, 40, "히어로 차례", pump=False); v.press("FoldButton")
+    v.press("LeaveRoomButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼")
+    assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
+    v.reload(); v.wait_state(lambda s: s["scene"].endswith("lobby.tscn") or v.vis(s, "UsernameEdit"), 30, "새로고침 후 화면")  # 세션이 남아 있으면 로비, 아니면 로그인 폼
+    if v.scene() == "login.tscn": v.login()
+    v.open_game(0); s = v.wait_state(lambda s: s["scene"].endswith("table.tscn") and v.vis(s, "CancelLeaveButton") and s, 20, "재진입 시 예약 취소 버튼")
+    assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), f"새로고침 뒤 문구 {v.text(s, 'CancelLeaveButton')!r}"
+
+
+@scenario("예약 취소 -> 핸드 후에도 착석", 100)
+def s7(c):
+    tid, bots, ap, v = _in_hand(c, "S7")
+    v.press("StandButton"); v.wait_state(lambda s: v.vis(s, "CancelLeaveButton"), 10, "예약 취소 버튼")
+    v.press("CancelLeaveButton"); v.wait_state(lambda s: not v.vis(s, "CancelLeaveButton") and v.vis(s, "StandButton"), 10, "예약 취소됨")
+    v.wait_state(lambda s: not s["extra"]["hand_in_progress"], 60, "핸드 종료"); time.sleep(2); s = v.state()
+    assert s["extra"]["my_seat_no"] != -1 and s["scene"].endswith("table.tscn"), f"취소했는데 일어섰다 seat={s['extra']['my_seat_no']}"
+
+
+@scenario("방이 닫히면 관전자는 목록으로", 90)
+def s8(c):
+    tid, bots, _ = table(c, "S8", 1, policy=None)
+    v = c.viewer(); v.login(); to_room_list(v); enter(v, tid, do_join=False)
+    assert bots[0].stand() in (200, 204), "방장 일어서기 실패"  # 빈 방은 서버가 15초 뒤 닫는다
+    v.wait_scene("table_list.tscn", 60)
+
+
+@scenario("목록에 게임 중 표시(REST 기준)", 90)
+def s9(c):
+    tid, bots, _ = table(c, "S9", 2)
+    qa.wait_for(lambda: next((t for t in list_tables() if t["tableId"] == tid and t.get("handInProgress")), None), 30, what="목록의 handInProgress")
+    v = c.viewer(); v.login(); to_room_list(v); idx = [t["tableId"] for t in list_tables()].index(tid)
+    open_room(v, idx)  # 입장 패널이 열리는지까지만. 알약(Label)은 브리지 키가 없어 화면에서 못 읽는다
+
+
+@scenario("9석 테이블 렌더", 150)
+def s10(c):
+    tid, bots, _ = table(c, "S10", 8)
+    v = hero(c, tid, bots)
+    s = v.wait_state(lambda s: len(s["extra"]["seats"]) == 9 and s, 40, "9석 착석")
+    names = [d["text"] for k, d in s["nodes"].items() if k.endswith("/NameLabel") and d["visible"] and d["text"]]
+    assert len(names) == 9 and len(set(names)) == 9, f"보이는 이름 {names}"
+    time.sleep(2)
+
+
+
+
+cleanup = unseat_all  # 러너가 시작·매 시나리오 뒤에 부른다(모든 qa 계정을 미착석으로)
