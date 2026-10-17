@@ -310,11 +310,12 @@ SIZES = {"d": (1280, 720, 1), "p": (390, 844, 2)}  # 데스크톱 / 폰(DPR2)
 # 좌표 표(화면 크기별). 레이아웃이 바뀌면 스크린샷에서 다시 잰다. 모두 CSS px
 POS = {
     "d": dict(login_user=(640, 275), login_pw=(640, 334), lobby_enter=(640, 308), room_row0=(640, 154), room_pitch=74,
-              entry_spectate=(542, 476), entry_join=(737, 476), back=(72, 40),
+              entry_spectate=(542, 476), entry_join=(737, 476), entry_post_blind=(475, 416), back=(72, 40),
+              stand=(530, 684),  # 착석 중(핸드 밖) 하단 "일어서기". 핸드 중엔 after_* 버튼이 같은 줄에 뜬다
               fold=(424, 623), call=(640, 623), raise_=(856, 623), half=(356, 567), pot=(426, 567), allin=(492, 567),
               after_spectate=(498, 684), cancel_reserve=(589, 684), after_leave=(659, 684)),
     "p": dict(login_user=(195, 370), login_pw=(195, 417), lobby_enter=(195, 246), room_row0=(195, 123), room_pitch=59,
-              entry_spectate=(102, 808), entry_join=(286, 808), back=(103, 32),
+              entry_spectate=(102, 808), entry_join=(286, 808), entry_post_blind=(36, 760), back=(103, 32),
               fold=(70, 766), call=(195, 766), raise_=(318, 766), half=(42, 722), pot=(97, 722), allin=(150, 722),
               after_spectate=(82, 815), cancel_reserve=(200, 815), after_leave=(210, 815)),
 }
@@ -352,18 +353,30 @@ class Viewer:
         """방 목록 index 번째(REST 목록 순서와 같다) 카드 → 입장 패널. 화면 밖으로 밀린 행은 못 누른다(방 6개 이하로)"""
         x, y = self.pos["room_row0"]; self.click((x, y + self.pos["room_pitch"] * index), 1500)
     def spectate(self): self.click("entry_spectate", 2500); self.stable()
-    def join(self): self.click("entry_join", 3500); self.stable()  # 바이인 기본값으로 참가(두 번째 팝업 없음)
+    def join(self, post_blind=True):
+        """\"바로 참가\" 를 체크하고(기본) 참가한다. 안 체크하면 서버가 SITTING_OUT 으로 두고 BB 가 돌아올 때까지(최대 9판) 딜인하지 않는다.
+        attach() 했으면 봇의 공개 뷰로 히어로(봇이 아닌 착석자)가 ACTIVE/딜인될 때까지 확인하고, 아니면 바로 예외"""
+        if post_blind: self.click("entry_post_blind", 300)
+        self.click("entry_join", 3500); self.stable()
+        if not hasattr(self, "_bot"): return
+        def hero():
+            u = self._bot.hero_uid(self._bots)
+            return next((s for s in _seats(self._bot.view) if int(s["userId"]) == u), None) if u is not None else None
+        try: self.wait_for(lambda v: (hero() or {}).get("status") not in (None, "SITTING_OUT"), 30, "히어로 착석+딜인")
+        except Exception as e:
+            self.screenshot(f"{self.name}_join_fail", settle=False)
+            raise RuntimeError(f"join 실패: 히어로 좌석={hero()} (post_blind={post_blind}, 스크린샷 {OUT}/{self.name}_join_fail.png)") from e
     def act_call(self): self.click("call", 100)  # 체크/콜 버튼(같은 자리)
     def attach(self, bot, bots):
         """pump()/wait_for()/frames() 가 쓸 공개 뷰 출처(bot)와 봇 목록. 봇이 아닌 착석자 = 이 브라우저 사용자"""
-        self._bot, self._bots, self._pumped = bot, bots, set()
+        self._bot, self._bots, self._pumped = bot, bots, {}
     def pump(self):
         """브라우저 사용자(봇이 아닌 착석자)의 차례면 체크/콜 클릭. 메인 스레드에서만(playwright 제약)"""
         v = self._bot.view or {}
         if not (v.get("handInProgress") and v.get("toActSeatNo") is not None): return
         s = next((x for x in _seats(v) if int(x["seatNo"]) == int(v["toActSeatNo"])), None)
-        if s and int(s["userId"]) not in {b.uid for b in self._bots} and (s["seatNo"], v["seq"]) not in self._pumped:
-            self._pumped.add((s["seatNo"], v["seq"])); self.act_call()
+        if s and int(s["userId"]) not in {b.uid for b in self._bots} and time.time() - self._pumped.get((s["seatNo"], v["seq"]), 0) > 2.5:  # 같은 턴을 2.5초마다 재시도(클릭이 빗나가도 8초 턴 안에 만회)
+            self._pumped[(s["seatNo"], v["seq"])] = time.time(); self.act_call()
     def wait_next_hand(self, timeout=60):
         """qa.wait_next_hand 와 같지만 기다리는 동안 사용자 차례를 pump() 한다(안 그러면 턴 타임아웃으로 사용자가 퇴장한다)"""
         if (self._bot.view or {}).get("handInProgress"): self.wait_for(lambda v: not v.get("handInProgress"), timeout, "핸드 종료")
