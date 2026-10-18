@@ -113,9 +113,20 @@ def wait_result(bot, since=0, timeout=60):
     return qa.wait_for(lambda: len(bot.results) > since and bot.results[since], timeout, what="핸드 결과")
 
 
-def unseat_all(users=qa.USERS, timeout=90):
-    """모든 qa 계정을 미착석으로 만든다(대기열 취소 + 폴드/일어서기 반복). REST 로그인하므로 브라우저를 닫은 뒤에 부른다."""
-    toks = {u: qa.rest_login(u) for u in users}
+def _login_retry(u, tries=4):
+    """서버가 바쁠 때 로그인이 소켓 시간 초과(OSError)로 터지는 일이 있어 재시도한다"""
+    for i in range(tries):
+        try: return qa.rest_login(u)
+        except OSError:
+            if i == tries - 1: raise
+            time.sleep(2)
+
+
+def unseat_all(users=qa.USERS, timeout=120):
+    """모든 qa 계정을 미착석으로 만든다(대기열 취소 + 차례면 폴드 + 일어서기를 미착석이 확인될 때까지 반복 — 핸드 중 일어서기는 예약뿐이라
+    핸드를 빨리 끝내려고 폴드를 계속 시도한다). 멱등이라 시나리오 시작·끝에 모두 부른다. 시나리오 SIGALRM 과 별개의 자기 제한시간.
+    REST 로그인하므로 브라우저를 닫은 뒤에 부른다."""
+    toks = {u: _login_retry(u) for u in users}
     try:
         def left(u):
             s, d = qa.call("/api/holdem/me/seat", toks[u][0])
@@ -132,7 +143,9 @@ def unseat_all(users=qa.USERS, timeout=90):
             time.sleep(1.5)
         raise RuntimeError(f"{timeout}s 안에 못 비움: {pend}")
     finally:
-        for t, c in toks.values(): qa.rest_logout(t, c)
+        for t, c in toks.values():
+            try: qa.rest_logout(t, c)
+            except OSError: pass
 
 
 _adm = {}
@@ -194,12 +207,12 @@ def deck_hero_wins(hero_seat, seats=range(1, 10)):
 # ------------------------------------------------------------------ 브라우저 보조(Viewer 는 게임을 모른다 — 홀덤 화면 흐름은 여기)
 def to_room_list(v, game=0):
     v.open_game(game); v.wait_scene("table_list.tscn", 15)
-    v.wait_state(lambda s: not s["nodes"].get("RefreshButton", {}).get("disabled", True) and v.text(s, "BuyInInfo"), 15, "방 목록·바이인 범위 로드")  # 범위가 오기 전에 만들면 서버가 거부한다
+    v.wait_state(lambda s: not s["nodes"].get("RefreshButton", {}).get("disabled", True), 15, "방 목록 로드")
 
 
-def open_room(v, index=0):
-    """방 목록 index 번째(REST 목록 순서와 같다) 카드 -> 입장 패널(바이인 조회까지 끝나 참가 버튼이 풀릴 때까지)"""
-    v.press(f"Rows/{index}")
+def open_room(v, index=0, key=None):
+    """방 목록 index 번째(REST 목록 순서와 같다) 카드 -> 입장 패널(바이인 조회까지 끝나 참가 버튼이 풀릴 때까지). key 를 주면 그 카드 키를 누른다"""
+    v.press(key or f"Rows/{index}")
     v.wait_state(lambda s: v.vis(s, "EntryPanel") and not s["nodes"]["EntryJoin"].get("disabled", True), 15, "입장 패널")
 
 
@@ -277,10 +290,10 @@ def hero(c, tid, bots, join_=True, buy_in=None):
 
 
 def enter(v, tid, do_join=True, buy_in=None):
-    ids = [t["tableId"] for t in list_tables()]
-    assert tid in ids[:20], f"방 {tid} 가 목록 첫 페이지에 없다: {ids}"
-    v.wait_state(lambda s: sum(k.startswith("Rows/") and k[5:].isdigit() for k in s["nodes"]) == min(len(ids), 20), 10, "방 카드 수 = REST 목록 수")
-    open_room(v, ids.index(tid))
+    def card(s): return next((r for r in s["extra"].get("rooms", []) if r["table_id"] == tid), None)
+    try: room = v.wait_state(card, 5, "방 카드")
+    except TimeoutError: v.press("RefreshButton"); room = v.wait_state(card, 10, "방 카드(새로고침 후)")  # 방 목록 화면 상태는 bridge 의 rooms 가 기준
+    open_room(v, key=room["card_key"])
     if do_join:
         if buy_in == "min": buy_in = v.state()["nodes"]["EntrySpin"]["min"]  # 재착석 의무로 하한이 계정마다 다르다
         if buy_in: v.set_value("EntrySpin", buy_in)
@@ -290,10 +303,10 @@ def enter(v, tid, do_join=True, buy_in=None):
 
 
 def occupied(host): return sorted(int(s["seatNo"]) for s in _seats(host.view))
-def winner_names(s):
-    """보이는 Payout 라벨이 있는 좌석의 닉네임(좌석 노드 키는 안정적이지 않아 같은 접두의 NameLabel 로 찾는다)"""
-    n = s["nodes"]
-    return [n[k[:-6] + "NameLabel"]["text"] for k, d in n.items() if k.endswith("/Payout") and d["visible"] and d.get("text", "").startswith("+")]
+def paid_seats(s):
+    """보이는 Payout 라벨(+…)이 있는 좌석 번호 — 좌석 노드는 Seat1..9"""
+    n = s["nodes"]; return sorted(i for i in range(1, 10) if n.get(f"Seat{i}/Payout", {}).get("visible") and n[f"Seat{i}/Payout"].get("text", "").startswith("+"))
+def seat_nick(s, no): return next(x["nickname"] for x in s["extra"]["seats"] if x["seat_no"] == no)
 
 
 def fixed_hand(v, host, tid, deck_fn):
@@ -325,7 +338,12 @@ def in_hand_active(s):
 # ------------------------------------------------------------------ 시나리오
 @scenario("방 만들기(검증 오류 + 성공)", 60)
 def s2(c):
-    v = c.viewer(); v.login(); to_room_list(v)
+    v = c.viewer(); v.login(); v.open_game(0); v.wait_scene("table_list.tscn", 15)
+    def loaded(s):  # 바이인 범위가 오기 전에는 만들기가 막혀 있어야 한다(관측하는 모든 스냅샷에서)
+        n = s["nodes"]; info = v.text(s, "BuyInInfo")
+        assert info or n["CreateButton"].get("disabled"), "바이인 로드 전인데 CreateButton 이 켜져 있다"
+        return info and not n["CreateButton"].get("disabled")
+    v.wait_state(loaded, 15, "바이인 로드 후 CreateButton 활성")
     v.press("OpenCreateButton"); v.wait_state(lambda s: v.vis(s, "CreatePanel"), 10, "만들기 패널")
     for bad in ("", "   "):  # 길이 31 은 NameEdit.max_length=30 이 잘라 낸다
         v.set_text("NameEdit", bad); v.press("CreateButton")
@@ -361,7 +379,8 @@ def s4(c):
     v.press("CheckCallButton"); n0 = len(host.results)
     s = v.wait_state(lambda s: s["extra"]["winners"] and s, 60, "결과(승자)")  # 한 스냅샷에서 전부 판정한다(결과는 금방 지나간다)
     assert [w["seat_no"] for w in s["extra"]["winners"]] == [me], f"승자 {s['extra']['winners']} (기대 좌석 {me})"
-    assert nick in winner_names(s), f"승자 문구에 {nick!r} 없음: {winner_names(s)}"
+    assert paid_seats(s) == [me], f"지급액이 보이는 좌석 {paid_seats(s)} (기대 {me})"
+    assert seat_nick(s, me) == nick and nick in v.text(s, "BoardLabel"), f"결과 문구에 {nick!r} 없음: {seat_nick(s, me)!r} / {v.text(s, 'BoardLabel')!r}"
     r = wait_result(host, n0, 5); assert [p["seatNo"] for p in r["payouts"]] == [me], f"서버 결과 {r['payouts']}"
     s = v.wait_state(lambda s: ("다음 판" in v.text(s, "StatusLabel") or s["extra"]["next_hand_seconds"] >= 0) and s, 15, "다음 판 카운트다운", pump=False)
 
@@ -425,12 +444,16 @@ def s8(c):
     v.wait_scene("table_list.tscn", 60)
 
 
-@scenario("목록에 게임 중 표시(REST 기준)", 90)
+@scenario("목록에 게임 중 표시", 90)
 def s9(c):
     tid, bots, _ = table(c, "S9", 2)
     qa.wait_for(lambda: next((t for t in list_tables() if t["tableId"] == tid and t.get("handInProgress")), None), 30, what="목록의 handInProgress")
-    v = c.viewer(); v.login(); to_room_list(v); idx = [t["tableId"] for t in list_tables()].index(tid)
-    open_room(v, idx)  # 입장 패널이 열리는지까지만. 알약(Label)은 브리지 키가 없어 화면에서 못 읽는다
+    v = c.viewer(); v.login(); to_room_list(v)
+    s = v.wait_state(lambda s: any(r["table_id"] == tid for r in s["extra"].get("rooms", [])) and s, 15, "목록에 방")
+    room = next(r for r in s["extra"]["rooms"] if r["table_id"] == tid)
+    assert room["in_progress"], f"UI 목록 데이터에 게임 중 표시가 없다: {room}"
+    v.press(room["card_key"])  # 눌러서 입장 패널이 열리는 카드까지 UI 데이터로 찾는다
+    v.wait_state(lambda s: v.vis(s, "EntryPanel"), 15, "입장 패널")
 
 
 @scenario("9석 테이블 렌더", 150)

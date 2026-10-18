@@ -50,6 +50,10 @@ def main():
     with sync_playwright() as p:
         for n, game, name, f in todo:
             c = qa.Ctx(p, size, a.shots, a.speed); t0 = time.time(); why = ""; limit = getattr(f, "limit", 90)
+            try:  # 이전 시나리오가 남긴 착석이 연쇄 실패를 만들지 않게 시작도 깨끗하게(자기 제한시간이 있다)
+                for m in mods:
+                    if hasattr(m, "cleanup"): m.cleanup()
+            except BaseException as e: print(f"시작 정리 실패: {e}", flush=True)
             signal.alarm(limit)
             try: f(c)
             except Timebox: why = f"시간 초과 {limit}s"
