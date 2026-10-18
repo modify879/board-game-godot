@@ -116,6 +116,7 @@ func _init() -> void:
 
 	# ErrorText
 	check(et.of("LOGIN_FAILED") == "아이디 또는 비밀번호가 올바르지 않습니다", "ErrorText known code")
+	check(et.of("JOIN_QUEUE_FULL") == "대기 인원이 많아 지금은 참가할 수 없습니다. 잠시 후 다시 시도해 주세요", "ErrorText JOIN_QUEUE_FULL")
 	check(et.of("NOPE") == "오류가 발생했습니다 (NOPE)", "ErrorText fallback")
 
 	# is_admin_token
