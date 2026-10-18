@@ -91,14 +91,16 @@ class Autoplay:
     """백그라운드 스레드: 자기 차례인 봇(skip 제외)이 policy(bot, view) 로 행동. 브라우저 사용자는 Viewer.pump() 가 맡는다
     (playwright 동기 API 는 다른 스레드에서 못 쓴다)"""
     def __init__(self, bots, policy=policy_check_call, skip=()):
-        self.bots, self.policy, self.skip, self.on = bots, policy, set(skip), True
+        self.bots, self.policy, self.skip, self.on, self.paused = bots, policy, set(skip), True, False
         self.acted = set(); threading.Thread(target=self._run, daemon=True).start()
     def stop(self): self.on = False
+    def pause(self): self.paused = True  # 핸드를 얼린다(봇이 행동하지 않는다)
+    def resume(self): self.paused = False
     def _run(self):
         while self.on:
             try:
                 v = next((b.view for b in self.bots if b.view), None)
-                if v and v.get("handInProgress") and v.get("toActSeatNo") is not None:
+                if v and not self.paused and v.get("handInProgress") and v.get("toActSeatNo") is not None:
                     n = int(v["toActSeatNo"]); s = next((x for x in _seats(v) if int(x["seatNo"]) == n), None)
                     bot = next((b for b in self.bots if s and b.uid == int(s["userId"])), None)
                     if bot and bot.user not in self.skip and (n, v["seq"]) not in self.acted:
@@ -406,19 +408,19 @@ def _in_hand(c, name, n_bots=2):
 def s6(c):
     tid, bots, ap, v = _in_hand(c, "S6")
     s = v.state(); assert v.text(s, "StandButton") == "핸드 후 관전" and v.text(s, "LeaveRoomButton") == "핸드 후 방 나가기", f"버튼 문구 {v.text(s, 'StandButton')!r}/{v.text(s, 'LeaveRoomButton')!r}"
-    v.press("StandButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼")
+    ap.pause(); v.press("StandButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼"); ap.resume()
     assert "관전 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
     v.wait_state(lambda s: s["extra"]["my_seat_no"] == -1, 60, "핸드 후 일어섬")
     time.sleep(2); s = v.state()
     assert s["scene"].endswith("table.tscn") and v.vis(s, "JoinButton"), f"관전 후 화면 {s['scene']}"
     # 핸드 후 방 나가기
-    rejoin(v); v.wait_state(in_hand_active, 40, "재참가 후 핸드")
-    v.press("LeaveRoomButton"); v.wait_scene("table_list.tscn", 60)
+    rejoin(v); v.wait_state(in_hand_active, 40, "재참가 후 핸드"); ap.pause()
+    v.press("LeaveRoomButton"); ap.resume(); v.wait_scene("table_list.tscn", 60)
     # 새로고침: 느린 봇 + 폴드로 핸드를 길게 둔다
     enter(v, tid, True)
     ap.policy = lambda bot, view: (time.sleep(3), policy_check_call(bot, view))  # 착석 뒤에 건다(느린 봇 앞에서 대기하면 30초를 넘긴다)
     v.wait_state(in_hand_active, 60, "히어로 핸드")
-    v.wait_state(lambda s: hero_turn(s) and s, 40, "히어로 차례", pump=False); v.press("FoldButton")
+    v.wait_state(lambda s: hero_turn(s) and s, 40, "히어로 차례", pump=False); ap.pause(); v.press("FoldButton")
     v.press("LeaveRoomButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼")
     assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
     v.reload(); v.wait_state(lambda s: s["scene"].endswith("lobby.tscn") or v.vis(s, "UsernameEdit"), 30, "새로고침 후 화면")  # 세션이 남아 있으면 로비, 아니면 로그인 폼
@@ -430,8 +432,8 @@ def s6(c):
 @scenario("예약 취소 -> 핸드 후에도 착석", 100)
 def s7(c):
     tid, bots, ap, v = _in_hand(c, "S7")
-    v.press("StandButton"); v.wait_state(lambda s: v.vis(s, "CancelLeaveButton"), 10, "예약 취소 버튼")
-    v.press("CancelLeaveButton"); v.wait_state(lambda s: not v.vis(s, "CancelLeaveButton") and v.vis(s, "StandButton"), 10, "예약 취소됨")
+    ap.pause(); v.press("StandButton"); v.wait_state(lambda s: v.vis(s, "CancelLeaveButton"), 10, "예약 취소 버튼")
+    v.press("CancelLeaveButton"); v.wait_state(lambda s: not v.vis(s, "CancelLeaveButton") and v.vis(s, "StandButton"), 10, "예약 취소됨"); ap.resume()
     v.wait_state(lambda s: not s["extra"]["hand_in_progress"], 60, "핸드 종료"); time.sleep(2); s = v.state()
     assert s["extra"]["my_seat_no"] != -1 and s["scene"].endswith("table.tscn"), f"취소했는데 일어섰다 seat={s['extra']['my_seat_no']}"
 
@@ -446,8 +448,9 @@ def s8(c):
 
 @scenario("목록에 게임 중 표시", 90)
 def s9(c):
-    tid, bots, _ = table(c, "S9", 2)
+    tid, bots, ap = table(c, "S9", 2)
     qa.wait_for(lambda: next((t for t in list_tables() if t["tableId"] == tid and t.get("handInProgress")), None), 30, what="목록의 handInProgress")
+    ap.stop()  # 핸드를 얼린다(차례 봇이 행동하지 않으면 턴 타임아웃까지 진행 중). 다음 핸드가 빨리 끝나 UI 확인 전에 사라지는 것을 막는다
     v = c.viewer(); v.login(); to_room_list(v)
     s = v.wait_state(lambda s: any(r["table_id"] == tid for r in s["extra"].get("rooms", [])) and s, 15, "목록에 방")
     room = next(r for r in s["extra"]["rooms"] if r["table_id"] == tid)
