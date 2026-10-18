@@ -47,6 +47,11 @@ func _ready() -> void:
 	check(table.action_bar.visible, "action bar visible on my turn")
 	var qs: Dictionary = table.qa_state()
 	check(qs.to_act_seat == 1 and qs.hand_in_progress and qs.board.size() == 3 and qs.seats.size() == 2 and qs.available_actions == ["CHECK", "FOLD"], "qa_state 기본 필드")
+	var names_ok := true
+	for i in 9:
+		names_ok = names_ok and table.seat_nodes[i].name == "Seat%d" % (i + 1)
+	check(names_ok, "seat nodes named Seat1..Seat9")
+	check(qs.seats[0].nickname != "" and qs.seats[1].nickname == table.seat_nodes[1].name_label.text, "qa_state nickname falls back to displayed name")
 	table._handle_public(_view(7, [_seat(1, 7, "ALL_IN"), _seat(2, 8, "ALL_IN")],
 		{"handInProgress": true, "board": ["As", "Kd", "2c"]}))
 	check(not table.action_bar.visible, "action bar hidden when nobody to act")

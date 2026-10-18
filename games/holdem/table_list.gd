@@ -48,6 +48,8 @@ static var pending_buy_in := 0 # 같은 이유로 바이인도 되살린다
 var pager: Pager
 var seat_ok := false # /me/seat 가 204(미착석)
 var buy_in_blocked := false # 지갑이 최소 바이인에 못 미친다
+var buy_in_loaded := false # GET /api/holdem/buy-in 성공 — 전에는 만들기를 막아 범위 검사를 건너뛰지 않게 한다
+var room_items: Array = [] # 지금 그려진 방 카드(qa_state 용)
 var buy_in_min := Rules.DEFAULT_MIN_BUY_IN # buy-in GET 응답. 못 받으면 기본 범위(서버보다 엄격하지 않게)
 var buy_in_max := Rules.DEFAULT_MAX_BUY_IN
 var buy_in_wallet := -1 # -1 = 모름
@@ -113,7 +115,7 @@ func _check_seat() -> bool:
 
 
 func _update_create_button() -> void:
-	create_button.disabled = not seat_ok or buy_in_blocked
+	create_button.disabled = not seat_ok or not buy_in_loaded or buy_in_blocked
 	open_create_button.disabled = create_button.disabled
 	empty_create_button.disabled = create_button.disabled
 
@@ -121,10 +123,13 @@ func _update_create_button() -> void:
 ## 방 생성 바이인 범위·지갑을 GET /api/holdem/buy-in 으로 읽는다. 실패하면 기본 범위로 둔다
 func _load_buy_in() -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/buy-in")
-	if not r.ok: # 범위를 모르면 기본 범위로 두고 서버가 판단하게 한다
+	if not r.ok: # 범위를 모르면 만들기를 막아 둔다(새로고침으로 다시 읽는다)
+		buy_in_loaded = false
 		buy_in_info.text = ""
 		buy_in_blocked_label.hide()
+		_update_create_button()
 		return
+	buy_in_loaded = true
 	buy_in_min = int(r.data.minBuyIn)
 	buy_in_max = int(r.data.maxBuyIn)
 	buy_in_wallet = int(r.data.walletBalance)
@@ -290,11 +295,21 @@ func _load(page: int) -> void:
 
 func _build_rows(items: Array) -> void:
 	Rows.clear(rows)
+	room_items = items
 	empty_box.visible = items.is_empty()
 	for item in items:
 		var card := RoomWidgets.card_button(item.name, int(item.occupiedSeats), int(item.maxSeats), item.get("handInProgress", false))
 		card.pressed.connect(_open_entry.bind(item))
 		rows.add_child(card)
+
+
+## QA 브리지(core/qa_bridge.gd)용. card_key = 그 방 카드 버튼의 브리지 키
+func qa_state() -> Dictionary:
+	var out := []
+	for i in room_items.size():
+		var it: Dictionary = room_items[i]
+		out.append({"table_id": int(it.tableId), "name": it.name, "occupied": int(it.occupiedSeats), "max": int(it.maxSeats), "in_progress": it.get("handInProgress", false), "card_key": "Rows/%d" % i})
+	return {"rooms": out}
 
 
 func _on_create() -> void:

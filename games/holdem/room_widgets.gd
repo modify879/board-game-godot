@@ -35,6 +35,7 @@ static func badge(occupied: int, max_seats: int) -> PanelContainer:
 static func in_progress_pill() -> PanelContainer:
 	var pill := badge(1, 9) # 알약 틀만 빌린다
 	var l: Label = pill.get_child(0)
+	l.name = "InProgress"
 	l.text = "● 게임 중"
 	l.theme_type_variation = &""
 	l.add_theme_color_override("font_color", Color("4FB477"))
