@@ -5,7 +5,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 # Web QA
 
-**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~5분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`, 폰 크기: `--phone`.
+**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~5분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`. 시나리오는 기본으로 데스크톱·폰 둘 다 돈다. 한 크기만: `--desktop` 또는 `--phone`.
 새 시나리오는 해당 게임의 `games/<game>.py` 에 함수로 더한다(공용 로그인·로비는 `suite.py`). 스크린샷은 디자인을 볼 때만(`--shots`). 새 하네스를 처음부터 만들지 않는다.**
 
 구성: `qa.py` = 게임 무관(REST·STOMP·Viewer 브리지·Ctx). `games/holdem.py` = 홀덤 봇·덱 고정·화면 흐름 보조·시나리오. `suite.py` = 러너(시나리오 발견, 표·JSON `$QA_OUT/suite.json`, 시나리오별 제한시간·콘솔 오류 수집).

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 전체 점검: 헤드리스 테스트(core/test_*.gd, games/*/test_*.gd|tscn 자동 발견) + (바뀌었으면) Web 빌드 + QA 시나리오(:8001).
-# 사용: run_all.sh [--game 이름] [--only N,M] [--phone]   (인자는 suite.py 로 넘긴다. --game 이면 core + 그 게임의 헤드리스만)
+# 사용: run_all.sh [--game 이름] [--only N,M] [--desktop | --phone]   (인자는 suite.py 로 넘긴다. --game 이면 core + 그 게임의 헤드리스만)
+#       QA 시나리오는 기본으로 데스크톱 → 폰 두 번. --desktop · --phone 이면 그 크기만.
 set -u
 cd "$(dirname "$0")/../../.."          # 프로젝트 루트
 GODOT=/mnt/c/Users/jsm/.godot/Godot.exe
@@ -29,8 +30,12 @@ if [ ! -e build/web/index.pck ] || [ -n "$(find . \( -path ./build -o -path ./.g
     && gzip -kf9 build/web/index.{wasm,pck,js} && echo "PASS  Web 빌드 ($((SECONDS - t))s)" || { echo "FAIL  Web 빌드"; tail -15 /tmp/qa_build.log; FAILED+=("Web 빌드"); }
 else echo "SKIP  Web 빌드(바뀐 파일 없음)"; fi
 
-# QA 시나리오
-t=$SECONDS; "$PY" -B .claude/skills/web-qa/suite.py "$@" || FAILED+=("QA 시나리오")
+# QA 시나리오: 기본은 데스크톱 → 폰(suite.py 두 번). --phone · --desktop 이면 그 크기만. --desktop 은 suite.py 가 모르니 뺀다
+SIZE=both; ARGS=()
+for a in "$@"; do case $a in --phone) SIZE=phone;; --desktop) SIZE=desktop;; *) ARGS+=("$a");; esac; done
+T_D=-; T_P=-
+if [ $SIZE != phone ]; then t=$SECONDS; "$PY" -B .claude/skills/web-qa/suite.py ${ARGS[@]+"${ARGS[@]}"} || FAILED+=("QA 시나리오(데스크톱)"); T_D="$((SECONDS - t))s"; fi
+if [ $SIZE != desktop ]; then t=$SECONDS; "$PY" -B .claude/skills/web-qa/suite.py ${ARGS[@]+"${ARGS[@]}"} --phone || FAILED+=("QA 시나리오(폰)"); T_P="$((SECONDS - t))s"; fi
 echo
-echo "==== 요약: 총 $((SECONDS - T0))s (시나리오 $((SECONDS - t))s) — $([ ${#FAILED[@]} -eq 0 ] && echo 전부 통과 || echo "실패: ${FAILED[*]}")"
+echo "==== 요약: 총 $((SECONDS - T0))s (시나리오 데스크톱 $T_D · 폰 $T_P) — $([ ${#FAILED[@]} -eq 0 ] && echo 전부 통과 || echo "실패: ${FAILED[*]}")"
 [ ${#FAILED[@]} -eq 0 ]
