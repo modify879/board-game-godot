@@ -1,3 +1,9 @@
+# 서버로 가는 연결을 재사용한다 — 요청마다 새 연결을 맺으면 도커 NAT 에서 가끔 연결 시도가 버려져 10~25초 멈춘다(QA 측정)
+upstream api_upstream {
+    server ${SERVER_UPSTREAM};
+    keepalive 32;
+}
+
 server {
     listen 80;
     root /usr/share/nginx/html;
@@ -15,7 +21,9 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://${SERVER_UPSTREAM};
+        proxy_pass http://api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
