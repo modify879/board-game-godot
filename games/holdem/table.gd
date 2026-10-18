@@ -208,6 +208,7 @@ func _build_seats() -> void:
 	felt_area.add_child(dealer_marker)
 	for seat_no in range(1, 10):
 		var seat_node: Control = SeatScene.instantiate()
+		seat_node.name = "Seat%d" % seat_no # QA 브리지 키(Seat3/NameLabel)
 		felt_area.add_child(seat_node)
 		seat_nodes.append(seat_node)
 	motion = Motion.new()
@@ -681,7 +682,8 @@ func _deal_my_cards() -> void:
 func qa_state() -> Dictionary:
 	var seats := []
 	for seat in public_view.get("seats", []):
-		seats.append({"seat_no": int(seat.seatNo), "nickname": nickname_cache.get(seat.userId, ""), "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.get("leaveReserved", false)})
+		var nick: String = nickname_cache.get(seat.userId, seat_nodes[int(seat.seatNo) - 1].name_label.text) # 캐시가 비면 화면에 보이는 이름
+		seats.append({"seat_no": int(seat.seatNo), "nickname": nick, "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.get("leaveReserved", false)})
 	var winners := []
 	var result = public_view.get("result")
 	if result != null:
