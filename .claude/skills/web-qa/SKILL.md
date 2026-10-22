@@ -5,7 +5,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 # Web QA
 
-**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~5분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`. 시나리오는 기본으로 데스크톱·폰 둘 다 돈다. 한 크기만: `--desktop` 또는 `--phone`.
+**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~4분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`. 시나리오는 기본으로 데스크톱·폰 둘 다 돈다. 한 크기만: `--desktop` 또는 `--phone`.
 새 시나리오는 해당 게임의 `games/<game>.py` 에 함수로 더한다(공용 로그인·로비는 `suite.py`). 스크린샷은 디자인을 볼 때만(`--shots`). 새 하네스를 처음부터 만들지 않는다.**
 
 구성: `qa.py` = 게임 무관(REST·STOMP·Viewer 브리지·Ctx). `games/holdem.py` = 홀덤 봇·덱 고정·화면 흐름 보조·시나리오. `suite.py` = 러너(시나리오 발견, 표·JSON `$QA_OUT/suite.json`, 시나리오별 제한시간·콘솔 오류 수집).
@@ -19,7 +19,8 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 ## 환경
 
 - 라이브 테스트는 QA 전용: 클라이언트 `http://localhost:8001`(nginx, CLAUDE.md 명령) → QA 서버 :8081. API·WS 는 같은 origin(8001)으로 간다. `qa.py` 는 :8000/:8080(사용자 환경)을 거부한다
-- QA 서버는 서버 세션이 별도 워크트리 `~/IdeaProjects/board-game-qa` 에서 `./gradlew qaBootRun` 으로 띄운다(이 저장소에서 띄우지 않는다, 라이브 테스트 중 재기동하지 않는다)
+- 두 서버(:8080 기본, :8081 qa 프로필)는 서버 세션이 서버 저장소 메인 트리에서 `./gradlew bootRun`(QA 는 `--args='--spring.profiles.active=qa'`)으로 띄운다. 이 저장소에서 띄우지 않고, 재기동이 필요하면 서버 세션에 요청한다. `GET /api/server-info` 가 `{"environment":"qa"}` 면 QA 서버다
+- 서버는 DevTools 라 서버 저장소에서 빌드하면 몇 초씩 자동 재시작한다. 긴 QA(run_all.sh 등)를 돌리기 전에 서버 세션에 시작을 알려 빌드를 미루게 하고, 끝나면 끝났다고 알린다
 - QA 서버: 다음 판 1초, 턴 8초, 빈 방 15초. 별도 DB·Redis. 계정 qauser1~9·qaadmin, 비밀번호 `qapass1234`, qauser 지갑 10,000,000
 - 코드와 같은 시점의 Web 빌드가 8001 에 서빙돼야 한다(CLAUDE.md 빌드 명령, `.gz` 재압축 포함)
 
@@ -37,7 +38,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 | 브라우저 | `v = qa.Viewer(p, "qauser1", "d"\|"p")` → `v.open()` → `v.state()`·`v.press(키)`·`v.set_text`·`v.set_value`·`v.wait_state(pred, 초)`·`v.login()`·`v.open_game(번호\|제목)`. 홀덤 흐름은 `H.to_room_list(v)`·`H.open_room`·`H.join`·`H.spectate`. 콘솔 오류는 `v.errors` |
 | 정리 | 시나리오는 `c.on_cleanup(fn)` 으로 등록(러너가 브라우저를 닫은 뒤 부른다). 직접 쓸 땐 `H.unseat_all()` |
 
-화면 크기: `d` 1280x720, `p` 390x844 DPR2. 좌표는 쓰지 않는다 — 전부 브리지 키다. 방 카드 안의 문구(게임 중 알약 등)처럼 이름 없는 Label 은 브리지가 안 줘서 못 읽는다(필요하면 게임 코드에 이름을 붙인다).
+화면 크기: `d` 1280x720, `p` 390x844 DPR2. 좌표는 쓰지 않는다 — 전부 브리지 키다. 코드로 만든 이름 없는 Label 은 브리지 nodes 에 안 나온다 — 화면이 `qa_state()` 로 주는 `extra` 를 쓴다(예: 방 목록 `extra.rooms[].in_progress`·`card_key`, 테이블 `extra.seats`). 없으면 그 화면에 `qa_state()` 를 더한다.
 
 ### 덱 고정(QA 서버 전용)
 
