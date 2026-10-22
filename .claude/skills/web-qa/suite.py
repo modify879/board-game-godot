@@ -18,6 +18,8 @@ def login_lobby(c):
     assert v.text(s, "NicknameLabel").strip(), "닉네임 라벨이 비었다"
     assert any(ch.isdigit() for ch in v.text(s, "BalanceLabel")), f"잔액 문구: {v.text(s, 'BalanceLabel')!r}"
     assert v.vis(s, "GameList/0"), "게임 카드가 안 보인다"
+    s = v.wait_state(lambda s: s.get("env") == "qa" and s, 5, "QA 서버 환경(server-info)")  # 요청이 비동기라 잠깐 기다린다
+    assert s.get("env_badge_visible"), "QA 환경인데 QA 서버 배지가 안 보인다"
 login_lobby.limit = 45
 
 
@@ -31,6 +33,17 @@ def discover(game=None):
         rows += [(name, n, f) for n, f in m.SCENARIOS]
     if game: rows = rows[1:]
     return [(i, g, n, f) for i, (g, n, f) in enumerate(rows, 1)], mods
+
+
+def dump_fail(c, mods, n, why):
+    """실패 진단 -> $QA_OUT/<n>_fail.json: 열린 뷰어마다 브리지 state() + 게임 모듈의 fail_snapshot(c)(있으면)"""
+    d = dict(reason=why, viewers={}, game=[])
+    for v in c.viewers:
+        try: d["viewers"][v.name] = v.state()
+        except BaseException as e: d["viewers"][v.name] = f"state 실패: {e}"
+    for m in mods:
+        if hasattr(m, "fail_snapshot"): d["game"] += m.fail_snapshot(c)
+    json.dump(d, open(f"{qa.OUT}/{n}_fail.json", "w"), ensure_ascii=False, indent=1, default=str)
 
 
 class Timebox(Exception): pass
@@ -62,6 +75,9 @@ def main():
                 why = f"{type(e).__name__}: {e} ({tb.name}:{tb.lineno})".replace("\n", " ")[:300]
             finally:
                 signal.alarm(0)
+            if why and not why.startswith("정리"):
+                try: dump_fail(c, mods, n, why)
+                except BaseException as e: print(f"진단 저장 실패: {e}", flush=True)
             errs = c.errors()
             if not why and errs: why = f"콘솔 오류 {len(errs)}건: {errs[0]}"
             elif why and errs: why += f" | 콘솔 {errs[0]}"

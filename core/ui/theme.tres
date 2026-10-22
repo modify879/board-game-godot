@@ -507,6 +507,15 @@ content_margin_top = 1
 content_margin_right = 1
 content_margin_bottom = 1
 
+[sub_resource type="StyleBoxFlat" id="badge_warn"]
+bg_color = Color(0.9608, 0.6196, 0.0431, 1)
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 8
+content_margin_top = 0
+content_margin_right = 8
+content_margin_bottom = 1
+
 [resource]
 default_font = ExtResource("1_font")
 default_font_size = 20
@@ -629,3 +638,9 @@ PanelCard/base_type = &"PanelContainer"
 PanelCard/styles/panel = SubResource("card")
 LabelAccent/base_type = &"Label"
 LabelAccent/colors/font_color = Color(0.9020, 0.7255, 0.2902, 1)
+PanelBadgeWarn/base_type = &"PanelContainer"
+PanelBadgeWarn/styles/panel = SubResource("badge_warn")
+LabelBadge/base_type = &"Label"
+LabelBadge/colors/font_color = Color(0.1020, 0.0784, 0.0196, 1)
+LabelBadge/font_sizes/font_size = 12
+LabelBadge/fonts/font = SubResource("bold")

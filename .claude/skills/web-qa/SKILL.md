@@ -70,6 +70,8 @@ page.evaluate("window.godotQa.set_text('UsernameEdit', 'qauser1')")   # LineEdit
 page.evaluate("window.godotQa.set_value('RaiseSpin', 400)")           # Range/SpinBox
 ```
 
+`state()` 최상위 `env`("qa"|"default", 앱 시작 때 `/api/server-info` 로 한 번 물음)·`env_badge_visible` — QA 환경이면 오른쪽 위에 "QA 서버" 배지(core/ui/env_badge.gd)가 떠 있다.
+
 - 키: 고유 이름(`%`) Control 의 이름, 인스턴스된 씬 안은 `Seat3/NameLabel`(인스턴스된 씬 루트 이름이 앞에 붙는다). 이름 없는 보이는 Button 은 `<컨테이너키>/<순번>`(방 카드 `Rows/0`). 키 충돌은 `#2`
 - `extra`: 씬 루트에 `qa_state()` 가 있으면 그 반환값(홀덤 테이블: table_id·my_seat_no·street·available_actions·seats·winners 등)
 - 화면 전환 직후엔 state().scene 이 바뀔 때까지 기다린다
