@@ -114,7 +114,7 @@ static func snapshot(root: Node) -> Dictionary:
 			nodes[key] = _describe(ks[key])
 		if root.has_method("qa_state"):
 			extra = root.qa_state()
-	return {"scene": "" if root == null else root.scene_file_path, "nodes": nodes, "extra": extra}
+	return {"scene": "" if root == null else root.scene_file_path, "nodes": nodes, "extra": extra, "env": EnvBadge.environment, "env_badge_visible": EnvBadge.is_visible()}
 
 
 static func _describe(c: Control) -> Dictionary:

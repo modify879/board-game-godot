@@ -311,6 +311,13 @@ func _init() -> void:
 	check(QaBridge.snapshot(qroot).extra == {}, "QaBridge qa_state 없으면 extra 비어 있음")
 	qroot.free()
 
+	check(EnvBadge.environment_of({"ok": true, "data": {"environment": "qa"}}) == "qa", "EnvBadge qa")
+	check(EnvBadge.environment_of({"ok": true, "data": {"environment": "default"}}) == "default", "EnvBadge default")
+	check(EnvBadge.environment_of({"ok": true, "data": {"environment": "staging"}}) == "default", "EnvBadge 모르는 값은 default")
+	check(EnvBadge.environment_of({"ok": true, "data": {}}) == "default", "EnvBadge 필드 없음은 default")
+	check(EnvBadge.environment_of({"ok": false, "status": 0, "data": null, "error": "NETWORK_ERROR"}) == "default", "EnvBadge 요청 실패는 default")
+	check(EnvBadge.environment_of({"ok": true, "data": null}) == "default" and EnvBadge.environment_of({"ok": true, "data": "qa"}) == "default", "EnvBadge dict 아닌 data 는 default")
+
 	quit(1 if failures else 0)
 
 
