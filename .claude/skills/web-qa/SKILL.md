@@ -32,8 +32,8 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 | 하고 싶은 것 | 호출 |
 |---|---|
-| 봇(홀덤) | `b = H.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.reserve_leave("SPECTATE"\|"LEAVE")` / `b.cancel_reservation()` / `b.act("RAISE_TO", n)`. `b.view`·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` (`H` = `from games import holdem as H`) |
-| 봇 자동 진행 | `H.Autoplay(bots, policy=H.policy_check_call, skip=())` (`policy_fold`, `raise_to(n)`, 런타임에 `ap.policy` 교체 가능) |
+| 봇(홀덤) | `b = H.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.act("RAISE_TO", n)`. `b.view`·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` (`H` = `from games import holdem as H`) |
+| 봇 자동 진행 | `H.Autoplay(bots, policy=H.policy_check_call, skip=())` (`policy_fold`, 런타임에 `ap.policy` 교체 가능) |
 | 덱 고정 | `H.next_deck(tid, hole_cards={좌석:["As","Ah"]}, board=[...])`, 프리셋 `H.deck_showdown`·`deck_split`·`deck_hero_wins` |
 | 브라우저 | `v = qa.Viewer(p, "qauser1", "d"\|"p")` → `v.open()` → `v.state()`·`v.press(키)`·`v.set_text`·`v.set_value`·`v.wait_state(pred, 초)`·`v.login()`·`v.open_game(번호\|제목)`. 홀덤 흐름은 `H.to_room_list(v)`·`H.open_room`·`H.join`·`H.spectate`. 콘솔 오류는 `v.errors` |
 | 같은 브라우저 context 의 두 번째 탭 | `b = c.viewer(share=v)`(이름에 `_tab2`) — 쿠키·`BroadcastChannel`·locks 를 공유한다. 닫을 때 브라우저는 그대로 |
@@ -64,7 +64,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 ## QA 브리지 (`window.godotQa`, core/qa_bridge.gd)
 
-좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다 — `speed(x)` 로 바꾼다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
+좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
 
 ```python
 page.wait_for_function("window.godotQa")

@@ -24,12 +24,12 @@ static func setup(tree: SceneTree) -> void:
 	Engine.time_scale = speed
 	# 콜백 반환값은 JS 로 전달되지 않는다 — 콜백이 raw.r 에 결과를 쓰고, JS 래퍼가 동기로 읽어 돌려준다
 	_raw = JavaScriptBridge.create_object("Object")
-	for fn in ["state", "press", "set_text", "set_value", "speed", "refresh"]:
+	for fn in ["state", "press", "set_text", "set_value", "refresh"]:
 		var cb := JavaScriptBridge.create_callback(Callable(QaBridge, "_js_" + fn))
 		_callbacks.append(cb)
 		_raw[fn] = cb
 	JavaScriptBridge.get_interface("window").__godotQaRaw = _raw
-	JavaScriptBridge.eval("window.godotQa = {}; for (const f of ['state','press','set_text','set_value','speed','refresh']) window.godotQa[f] = function(){ window.__godotQaRaw[f].apply(null, arguments); return window.__godotQaRaw.r; };")
+	JavaScriptBridge.eval("window.godotQa = {}; for (const f of ['state','press','set_text','set_value','refresh']) window.godotQa[f] = function(){ window.__godotQaRaw[f].apply(null, arguments); return window.__godotQaRaw.r; };")
 
 
 static func _root() -> Node:
@@ -50,11 +50,6 @@ static func _js_set_text(args: Array) -> void:
 
 static func _js_set_value(args: Array) -> void:
 	_raw.r = JSON.stringify(set_value(_root(), str(args[0]), float(args[1])))
-
-
-static func _js_speed(args: Array) -> void:
-	Engine.time_scale = float(args[0])
-	_raw.r = "{}"
 
 
 static func _js_refresh(_args: Array) -> void:

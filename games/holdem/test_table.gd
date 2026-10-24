@@ -7,13 +7,13 @@ var failures := 0
 
 func _seat(no: int, user: int, status := "ACTIVE") -> Dictionary:
 	return {"seatNo": float(no), "userId": float(user), "stack": 1000.0, "status": status,
-		"presence": "CONNECTED", "totalContributed": 0.0}
+		"presence": "CONNECTED", "totalContributed": 0.0, "leaveReserved": false}
 
 
 func _view(seq: int, seats: Array, extra := {}) -> Dictionary:
 	var v := {"seq": float(seq), "seats": seats, "board": [], "handInProgress": false,
 		"toActSeatNo": null, "buttonSeatNo": 1.0, "street": "FLOP", "result": null,
-		"revealedHands": [], "nextHandInMs": null}
+		"revealedHands": [], "nextHandInMs": null, "turnRemainingMs": null}
 	v.merge(extra, true)
 	return v
 
@@ -123,7 +123,7 @@ func _ready() -> void:
 	table.my_available_actions = {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
 	table._update_action_bar()
 	check(table.raise_button.text.begins_with("레이즈"), "preflop BB option stays 레이즈: '%s'" % table.raise_button.text)
-	var flop_actions := {"seq": 1.0, "holeCards": [], "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}}
+	var flop_actions := {"seq": 1.0, "holeCards": [], "leaveReservation": null, "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}}
 	# (a) 공개 뷰가 먼저(낡은 프리플롭 액션이 남아 있음), 그 뒤 개인 뷰
 	table._handle_public(_view(13, seats, {"handInProgress": true, "toActSeatNo": 1.0, "street": "FLOP"}))
 	table._handle_private(flop_actions)
@@ -143,7 +143,7 @@ func _ready() -> void:
 		table.raise_spin.value = mm[1]
 		check(int(table.raise_slider.value) == mm[1], "raise max %d exact (got %d)" % [mm[1], int(table.raise_slider.value)])
 
-	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김, 키가 없으면(옛 서버) 30초 어림
+	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김
 	var seat1: Control = table.seat_nodes[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
 	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
@@ -155,11 +155,6 @@ func _ready() -> void:
 	table._handle_public(_view(17, seats, turn_extra.merged({"turnRemainingMs": null})))
 	table._update_turn_timer()
 	check(seat1.timer_left < 0.0, "null turnRemainingMs hides timer")
-	table._handle_public(_view(18, seats, turn_extra.merged({"toActSeatNo": 2.0}, true)))
-	table._handle_public(_view(19, seats, turn_extra))
-	table._handle_public(_view(20, seats, turn_extra.merged({"street": "TURN"}, true)))
-	table._update_turn_timer()
-	check(absf(seat1.timer_left - 30.0) < 0.5, "absent turnRemainingMs falls back to 30s: %.2f" % seat1.timer_left)
 
 	# 10. 방 생성 중(table_id 0): join-queue 이벤트는 버리지 않고 모아 둔다
 	script.table_id = 0
@@ -334,12 +329,10 @@ func _ready() -> void:
 	table.leave_room_after_stand = true
 	table._apply_cancel_result({"ok": true, "status": 204})
 	check(not table.leave_room_after_stand, "cancel success clears intent")
-	# 14e. 새 서버 개인 뷰 leaveReservation: 메모리 없이도 복원, null 은 해제, 키가 없으면 메모리 유지
+	# 14e. 개인 뷰 leaveReservation: 메모리 없이도 복원, null 은 해제
 	table.leave_room_after_stand = false
 	table._handle_private({"seq": 900000.0, "holeCards": [], "leaveReservation": "LEAVE"})
 	check(table.leave_room_after_stand, "private leaveReservation LEAVE restores intent")
-	table._handle_private({"seq": 900001.0, "holeCards": []})
-	check(table.leave_room_after_stand, "private view without key keeps memory")
 	table._handle_private({"seq": 900002.0, "holeCards": [], "leaveReservation": "SPECTATE"})
 	check(not table.leave_room_after_stand, "private SPECTATE -> not leaving")
 	table.leave_room_after_stand = true
