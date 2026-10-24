@@ -138,11 +138,16 @@ class Viewer:
     """헤드리스 Chromium 한 사용자. 사용자마다 별도 launch(쿠키 분리). window.godotQa(core/qa_bridge.gd) 로 상태를 읽고 키로 누른다 —
     좌표 클릭 없음. 스크린샷은 shots=True 일 때만 찍는다(디자인 확인용).
     with sync_playwright() as p: Viewer(p, 'qauser1', 'd')"""
-    def __init__(self, p, user, size="d", name=None, shots=False, speed=None):
+    def __init__(self, p, user, size="d", name=None, shots=False, speed=None, share=None):
+        """share=다른 Viewer 면 그 브라우저 context 에서 페이지(탭)만 더 연다 — 쿠키·BroadcastChannel·locks 를 공유한다"""
         w, h, dpr = SIZES[size]; self.user, self.size, self.shots, self.speed = user, size, shots, speed
         self.name = name or f"{user}_{size}"
-        self.browser = p.chromium.launch(args=ARGS)
-        self.page = self.browser.new_page(viewport={"width": w, "height": h}, device_scale_factor=dpr)
+        self.share = share
+        self.browser = share.browser if share else p.chromium.launch(args=ARGS)
+        self.context = share.context if share else self.browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr)
+        self.page = self.context.new_page()
+        self.refreshes = self.unauth = 0  # /api/auth/refresh 응답 수, 401 응답 수(탭 간 토큰 공유 점검)
+        self.page.on("response", self._count)
         self.poll = None  # 게임 모듈이 거는 훅(state) — wait_state 가 폴링마다 부른다
         self.errors = []  # 콘솔 error/warning + pageerror (BENIGN 제외)
         self.page.on("console", lambda m: self.errors.append((m.type, m.text[:200])) if m.type in ("error", "warning") and not BENIGN.search(m.text) else None)
@@ -239,7 +244,10 @@ class Viewer:
         c.on("Network.webSocketCreated", lambda e: ev.append(dict(t=time.time(), dir="OPEN", data=e["url"])))
         c.on("Network.webSocketClosed", lambda e: ev.append(dict(t=time.time(), dir="CLOSE", data="")))
         return ev
-    def close(self): self.browser.close()
+    def _count(self, r):
+        if "/api/auth/refresh" in r.url: self.refreshes += 1
+        if r.status == 401: self.unauth += 1
+    def close(self): self.page.close() if self.share else self.browser.close()
 
 
 def sheet(p, name, start=0, end=None, step=1, cols=4, width=480):
@@ -266,8 +274,8 @@ class Ctx:
     def __init__(self, p, size, shots, speed):
         self.p, self.size, self.shots, self.speed = p, size, shots, speed
         self.viewers, self.closers = [], []
-    def viewer(self, user="qauser1"):
-        v = Viewer(self.p, user, self.size, shots=self.shots, speed=self.speed); self.viewers.append(v); v.open(); return v
+    def viewer(self, user="qauser1", share=None):
+        v = Viewer(self.p, user, self.size, shots=self.shots, speed=self.speed, share=share); self.viewers.append(v); v.open(); return v
     def on_cleanup(self, fn): self.closers.append(fn)
     def errors(self): return [e for v in self.viewers for e in v.errors]
     def cleanup(self):

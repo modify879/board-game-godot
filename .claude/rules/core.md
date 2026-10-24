@@ -21,6 +21,7 @@ paths: ["core/**"]
   데스크톱(개발용)만 `Set-Cookie` 를 직접 파싱해 `user://session.cfg` 에 둔다
 - refresh 쿠키는 `Secure`·`SameSite=Strict` 다. Web 빌드는 HTTPS 또는 localhost 에서만 쿠키가 저장된다 — `http://<LAN IP>` 로 열면 자동 로그인·갱신이 안 되고 access 만료 때 로그아웃된다
 - refresh 는 회전식이다. 동시에 두 번 보내면 방금 받은 토큰이 무효가 된다 — `_refresh()` 의 단일 비행을 우회하지 않는다
+- Web 은 탭 간 `navigator.locks` + `BroadcastChannel("auth")` 로 갱신을 직렬화하고 토큰을 공유한다(`window.__auth`, api.gd `AUTH_JS`). 이를 우회해 refresh 를 직접 보내지 않는다
 - `/me` 가 없다. 내 userId 는 access 토큰 JWT 의 `sub`(`Api.user_id`)
 - 서버에 CORS·허용 origin 설정이 없다. Web 빌드는 같은 origin 프록시(`/` = 빌드, `/api`·`/ws` → 8080)로 서빙한다
 - STOMP 는 raw WebSocket `/ws`(SockJS 아님). 인증은 CONNECT 프레임의 `Authorization` 헤더 — 브라우저 WebSocket 은 HTTP 헤더를 못 붙인다

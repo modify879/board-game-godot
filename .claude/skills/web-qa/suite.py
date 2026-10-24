@@ -23,15 +23,45 @@ def login_lobby(c):
 login_lobby.limit = 45
 
 
+def tab_token_share(c):
+    """같은 context 의 두 탭이 access 토큰을 공유한다: 새 탭은 refresh 없이 들어오고, 한 탭의 갱신이 다른 탭에 전파되고, 로그아웃도 전파된다"""
+    a = c.viewer(); a.wait_scene("login.tscn", 30)
+    a.set_text("UsernameEdit", "qauser1"); a.set_text("PasswordEdit", qa.PW); a.press("LoginButton"); a.wait_scene("lobby.tscn", 20)
+    a.wait_state(lambda s: a.text(s, "BalanceLabel").strip() and s, 15, "A 잔액 표시")
+    a.refreshes = a.unauth = 0  # 로그인 화면의 자동 로그인 시도(401)는 기준에서 뺀다
+    tail = lambda v: v.state()["token_tail"]
+    def wallet_roundtrip(v):  # 로비에서 REST 를 부르는 화면 전환 하나 -> 다시 로비
+        v.press("WalletButton"); v.wait_scene("wallet.tscn", 15); v.page.wait_for_timeout(1500)
+        v.press("BackButton"); v.wait_scene("lobby.tscn", 15)
+    # 1) B 는 refresh 없이 로비, 토큰 같음
+    b = c.viewer(share=a); b.wait_scene("lobby.tscn", 30)
+    assert b.refreshes == 0, f"B 가 refresh 를 {b.refreshes}번 보냈다(토큰을 받아야 한다)"
+    assert tail(a) and tail(a) == tail(b), f"토큰 불일치 A={tail(a)} B={tail(b)}"
+    # 2) B 를 연 뒤에도 A 의 REST 가 성공
+    wallet_roundtrip(a)
+    assert a.unauth == 0 and b.unauth == 0, f"401 A={a.unauth} B={b.unauth}"
+    # 3) A 갱신 -> refresh 1건, B 토큰이 바뀌고 B 의 REST 도 성공
+    old = tail(a)
+    a.page.evaluate("window.godotQa.refresh()")
+    b.wait_state(lambda s: s["token_tail"] != old and s, 15, "B 토큰 갱신")
+    assert tail(a) == tail(b), f"갱신 뒤 불일치 A={tail(a)} B={tail(b)}"
+    assert a.refreshes + b.refreshes == 1, f"refresh 요청 A={a.refreshes} B={b.refreshes} (합 1이어야 한다)"
+    wallet_roundtrip(b)
+    assert a.unauth == 0 and b.unauth == 0, f"갱신 뒤 401 A={a.unauth} B={b.unauth}"
+    # 4) A 로그아웃 -> B 로그인 화면
+    a.press("LogoutButton"); a.wait_scene("login.tscn", 15); b.wait_scene("login.tscn", 15)
+tab_token_share.limit = 90
+
+
 def discover(game=None):
     """-> [(번호, 게임, 이름, fn)], [모듈]"""
-    mods, rows = [], [("", "로그인 -> 로비", login_lobby)]
+    mods, rows = [], [("", "로그인 -> 로비", login_lobby), ("", "탭 간 토큰 공유", tab_token_share)]
     for path in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "games", "*.py"))):
         name = os.path.basename(path)[:-3]
         if name.startswith("_") or (game and name != game): continue
         m = importlib.import_module(f"games.{name}"); mods.append(m)
         rows += [(name, n, f) for n, f in m.SCENARIOS]
-    if game: rows = rows[1:]
+    if game: rows = rows[2:]
     return [(i, g, n, f) for i, (g, n, f) in enumerate(rows, 1)], mods
 
 
