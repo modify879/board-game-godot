@@ -51,17 +51,56 @@ def tab_token_share(c):
     # 4) A 로그아웃 -> B 로그인 화면
     a.press("LogoutButton"); a.wait_scene("login.tscn", 15); b.wait_scene("login.tscn", 15)
 tab_token_share.limit = 90
+tab_token_share.sizes = ("d",)
+
+
+def tab_other_account(c):
+    """세션 없는 탭은 다른 탭의 토큰을 무시하고, 다른 탭이 다른 계정으로 로그인하면 세션 있는 탭이 그 계정의 로비로 간다"""
+    a = c.viewer(); a.wait_scene("login.tscn", 30); b = c.viewer(share=a); b.wait_scene("login.tscn", 30)
+    b.wait_state(lambda s: b.vis(s, "UsernameEdit") and s, 15, "B 로그인 폼(자동 로그인 시도 끝)")  # 끝나기 전에 A 가 로그인하면 B 는 ask 로 A 토큰을 받는다(정상 동작)
+    tail = lambda v: v.state()["token_tail"]
+    a.set_text("UsernameEdit", "qauser1"); a.set_text("PasswordEdit", qa.PW); a.press("LoginButton"); a.wait_scene("lobby.tscn", 20)
+    a.wait_state(lambda s: a.text(s, "NicknameLabel").startswith("QA유저1") and s, 15, "A 닉네임 QA유저1")
+    b.page.wait_for_timeout(1500)  # 전파가 도착할 시간
+    assert b.scene() == "login.tscn" and not tail(b), f"세션 없는 B 가 A 토큰을 받았다 scene={b.scene()} tail={tail(b)!r} B.refreshes={b.refreshes} A.refreshes={a.refreshes}"
+    b.set_text("UsernameEdit", "qauser2"); b.set_text("PasswordEdit", qa.PW); b.press("LoginButton"); b.wait_scene("lobby.tscn", 20)
+    a.wait_state(lambda s: a.text(s, "NicknameLabel").startswith("QA유저2") and s, 15, "A 가 QA유저2 로비로")
+    assert a.scene() == "lobby.tscn" and tail(a) and tail(a) == tail(b), f"토큰 불일치 A={tail(a)} B={tail(b)}"
+tab_other_account.limit = 60
+tab_other_account.sizes = ("d",)
+
+
+def hidden_tabs_new_tab(c):
+    """A·B 둘 다 숨은 탭(루프 정지)이어도 새 탭 C 는 refresh 없이 로비로 들어온다(JS 가 ask 에 답한다)"""
+    a = c.viewer(); a.wait_scene("login.tscn", 30)
+    a.set_text("UsernameEdit", "qauser1"); a.set_text("PasswordEdit", qa.PW); a.press("LoginButton"); a.wait_scene("lobby.tscn", 20)
+    a.wait_state(lambda s: a.text(s, "BalanceLabel").strip() and s, 15, "A 잔액 표시")
+    b = c.viewer(share=a); b.wait_scene("lobby.tscn", 30)
+    a.refreshes = a.unauth = b.refreshes = b.unauth = 0
+    a.pause(); b.pause()
+    cc = c.viewer(share=a); cc.wait_scene("lobby.tscn", 30)
+    ta = a.page.evaluate("window.__auth.token")
+    assert cc.refreshes == 0 and a.refreshes + b.refreshes == 0, f"refresh 요청 A={a.refreshes} B={b.refreshes} C={cc.refreshes} (0 이어야 한다)"
+    assert cc.state()["token_tail"] == ta[-8:], f"토큰 불일치 C={cc.state()['token_tail']} A={ta[-8:]}"
+    cc.wait_state(lambda s: cc.text(s, "BalanceLabel").strip() and s, 15, "C 잔액 표시(REST 성공)")
+    assert cc.unauth == 0, f"C 401 {cc.unauth}건"
+hidden_tabs_new_tab.limit = 60
+hidden_tabs_new_tab.sizes = ("d",)  # 숨은 탭 시나리오는 데스크톱만(폰 크기에선 의미 없이 느리다)
+
+
+COMMON = [("", "로그인 -> 로비", login_lobby), ("", "탭 간 토큰 공유", tab_token_share), ("", "다른 계정 로그인 전파", tab_other_account),
+          ("", "숨은 탭 둘 + 새 탭", hidden_tabs_new_tab)]
 
 
 def discover(game=None):
     """-> [(번호, 게임, 이름, fn)], [모듈]"""
-    mods, rows = [], [("", "로그인 -> 로비", login_lobby), ("", "탭 간 토큰 공유", tab_token_share)]
+    mods, rows = [], list(COMMON)
     for path in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "games", "*.py"))):
         name = os.path.basename(path)[:-3]
         if name.startswith("_") or (game and name != game): continue
         m = importlib.import_module(f"games.{name}"); mods.append(m)
         rows += [(name, n, f) for n, f in m.SCENARIOS]
-    if game: rows = rows[2:]
+    if game: rows = rows[len(COMMON):]
     return [(i, g, n, f) for i, (g, n, f) in enumerate(rows, 1)], mods
 
 
@@ -92,6 +131,8 @@ def main():
         if hasattr(m, "cleanup"): m.cleanup()
     with sync_playwright() as p:
         for n, game, name, f in todo:
+            if size not in getattr(f, "sizes", ("d", "p")):
+                rows.append(dict(n=n, game=game or "-", name=name, result="SKIP", seconds=0, reason="")); print(f"{n:>2} SKIP {name}", flush=True); continue
             c = qa.Ctx(p, size, a.shots, a.speed); t0 = time.time(); why = ""; limit = getattr(f, "limit", 90)
             try:  # 이전 시나리오가 남긴 착석이 연쇄 실패를 만들지 않게 시작도 깨끗하게(자기 제한시간이 있다)
                 for m in mods:
@@ -118,7 +159,7 @@ def main():
             except BaseException as e: why = why or f"정리 실패: {e}"
             rows.append(dict(n=n, game=game or "-", name=name, result="FAIL" if why else "PASS", seconds=round(time.time() - t0, 1), reason=why))
             print(f"{n:>2} {rows[-1]['result']} {rows[-1]['seconds']:>5}s {name} {why}", flush=True)
-    total = round(time.time() - t_all, 1); ok = all(r["result"] == "PASS" for r in rows)
+    total = round(time.time() - t_all, 1); ok = all(r["result"] != "FAIL" for r in rows)
     qa.print_table(rows, "폰 390x844" if a.phone else "데스크톱 1280x720", total)
     json.dump(dict(size=size, total_seconds=total, ok=ok, scenarios=rows), open(a.json, "w"), ensure_ascii=False, indent=1)
     sys.exit(0 if ok else 1)

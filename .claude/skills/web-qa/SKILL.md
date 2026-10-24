@@ -12,7 +12,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 ## 게임 추가 시
 
-- `games/<game>.py` 를 만들고 `SCENARIOS = [(이름, fn(c)), ...]`(fn.limit = 제한초, 선택 `cleanup()`)를 노출한다. 봇·REST 보조도 거기에 둔다
+- `games/<game>.py` 를 만들고 `SCENARIOS = [(이름, fn(c)), ...]`(fn.limit = 제한초, 선택 `fn.sizes = ("d",)` = 그 크기에서만 실행·나머지는 SKIP, 선택 `cleanup()`)를 노출한다. 봇·REST 보조도 거기에 둔다
 - 그 게임 씬에 `qa_state()` 를 둔다(브리지 `extra`). 헤드리스 테스트는 `games/<game>/test_*.gd|tscn` 에 두면 run_all.sh 가 자동으로 집는다
 - 서버 쪽 QA 보조(덱 고정 같은)는 게임별로 서버에 있다
 
