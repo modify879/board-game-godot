@@ -15,7 +15,7 @@ Godot 은 PATH 에 없다. 프로젝트 루트에서 `--path .` 로 실행한다
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . res://games/holdem/test_layout.tscn            # 홀덤 테이블 배치 겹침 점검(폰·데스크톱, 2·9인)
 /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --quit-after 120                    # 메인 씬 로드 확인
 rm -f build/web/index.{wasm,pck,js}.gz && /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --export-release "Web" build/web/index.html && gzip -kf9 build/web/index.{wasm,pck,js}   # Web 빌드 + 미리 압축. 꼭 함께 — nginx gzip_static 은 .gz 가 있으면 그것을 보내 옛 빌드가 나간다
-.claude/skills/web-qa/run_all.sh   # 전체 점검: 헤드리스 전부 + (바뀌었으면) Web 빌드 + QA 시나리오(:8001). 끝에 표와 소요 시간. QA 시나리오는 데스크톱 → 폰 순으로 돌되 폰은 화면 배치 시나리오만(`--desktop`·`--phone` 이면 그 크기만). 한 게임만: run_all.sh --game holdem  (--only 4,5 도 넘어간다)
+.claude/skills/web-qa/run_all.sh   # 전체 점검: 헤드리스 전부 + (바뀌었으면) Web 빌드 + QA 시나리오(:8001). 끝에 표와 소요 시간. QA 시나리오는 데스크톱 → 폰 순으로 돌되 폰은 화면 배치 시나리오만(`--desktop`·`--phone` 이면 그 크기만). 한 게임만: run_all.sh --game holdem / 일부만: --only 4,5(번호는 시나리오가 늘면 밀린다)
 (cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose up -d)              # http://localhost:8000 (같은 origin 프록시)
 (cd deploy && WEB_PORT=8001 SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8081 docker compose -p board-game-qa-web up -d)   # QA 전용 http://localhost:8001 → QA 서버 :8081(짧은 대기). 사용자용 :8000 과 분리
 ```
@@ -55,3 +55,4 @@ res://
 - `master` 에 직접 커밋하지 않는다
 - 작업 브랜치는 **항상 `feature/` 로 시작한다** — 버그 수정·리팩터링·문서도 예외 없다. 그 뒤에 영역 접두를 붙인다(`feature/auth-signup`, `feature/holdem-table`)
 - 커밋은 Conventional Commits + 영역 스코프(`feat(lobby): ...`, 스코프는 `core`·`auth`·`lobby`·`admin`·게임 이름)
+- `master` 는 아직 초기 커밋뿐이다 — 에이전트 worktree 격리(`isolation: worktree`)는 `master` 기준으로 만들어지므로, 그 안에서 작업하면 먼저 `develop` 에서 브랜치를 다시 따야 한다(아니면 옛 코드 위에서 작업해 병합 때 충돌한다)

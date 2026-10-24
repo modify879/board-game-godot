@@ -61,10 +61,12 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 - Godot 캔버스는 DOM 이 없다 — 브리지 키로 누르고 `wait_state` 로 기다린다(sleep·스크린샷 비교 금지)
 - 일어난 뒤 재착석하면 재착석 의무로 바이인이 올라갈 수 있다. 핸드 중 일어서기는 즉시 퇴장이 아니라 나가기 예약이다
 - 실제 GPU 없음(SwiftShader), IME 없음(한글 직접 입력 불가)
+- `qa_speed`(기본 4)는 `Engine.time_scale` 이라 `create_timer`·`HTTPRequest.timeout` 도 그만큼 빨라진다 — QA 에서 HTTP 타임아웃(result=13)은 15초가 아니라 약 4초에 난다. 실측 시간이 필요하면 `--speed 1`
+- 실패하면 `$QA_OUT/<번호>_fail.json`(기본 `/tmp/qa_out`)에 열린 탭마다 브리지 `state()` 와 게임 스냅샷이 남는다 — 다음 실행이 덮어쓰니 먼저 본다
 
 ## QA 브리지 (`window.godotQa`, core/qa_bridge.gd)
 
-좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
+좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다. 타이머는 영향을 받는다(함정 참고).
 
 ```python
 page.wait_for_function("window.godotQa")
