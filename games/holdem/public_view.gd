@@ -2,6 +2,18 @@ extends RefCounted
 ## 공개 뷰(public_view) 순수 조회·계산. 노드·Api·시계에 기대지 않고 전부 인자로 받는다(헤드리스 점검용).
 
 
+## 좌석 마지막 행동 배지 문구. 서버가 정산 뒤 lastAction 을 null 로 지우므로 핸드 중일 때만 보인다.
+static func action_label(seat: Dictionary, hand_in_progress: bool) -> String:
+	if not hand_in_progress:
+		return ""
+	match seat.get("lastAction"):
+		"FOLD": return "폴드"
+		"CHECK": return "체크"
+		"CALL": return "콜"
+		"RAISE_TO": return "레이즈"
+	return ""
+
+
 static func find_seat(view: Dictionary, seat_no: int) -> Variant:
 	for seat in view.get("seats", []):
 		if seat.seatNo == seat_no:

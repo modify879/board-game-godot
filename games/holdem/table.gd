@@ -708,7 +708,8 @@ func qa_state() -> Dictionary:
 	var seats := []
 	for seat in public_view.get("seats", []):
 		var nick: String = nickname_cache.get(seat.userId, seat_nodes[int(seat.seatNo) - 1].name_label.text) # 캐시가 비면 화면에 보이는 이름
-		seats.append({"seat_no": int(seat.seatNo), "nickname": nick, "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.leaveReserved})
+		seats.append({"seat_no": int(seat.seatNo), "nickname": nick, "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.leaveReserved,
+			"last_action": PublicView.action_label(seat, public_view.get("handInProgress", false))})
 	var winners := []
 	var result = public_view.get("result")
 	if result != null:
@@ -937,7 +938,7 @@ func _center_blockers() -> Array:
 func _dealer_spot_ok(r: Rect2, seat_node: Control, hero: int, g: Dictionary) -> bool:
 	if not Rect2(Vector2.ZERO, felt_area.size).encloses(r):
 		return false
-	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave]:
+	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave, seat_node.badge_action]:
 		if cr.visible and _seat_rect(seat_node, cr).grow(2.0).intersects(r):
 			return false
 	for b: Rect2 in _center_blockers():
@@ -955,7 +956,7 @@ func _place_payouts(hero: int, g: Dictionary) -> void:
 	var blockers: Array = []
 	for seat_no in range(1, 10):
 		var n: Control = seat_nodes[seat_no - 1]
-		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.hand_pill]:
+		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.badge_action, n.hand_pill]:
 			if c.visible:
 				blockers.append(_seat_rect(n, c))
 		if bet_boxes[seat_no - 1].visible:
@@ -1020,6 +1021,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"to_act": _to_act_seat_no() == seat_no,
 		"folded": seat.status == "FOLDED",
 		"all_in": seat.status == "ALL_IN",
+		"action": PublicView.action_label(seat, hand_in_progress),
 		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
 		"leave_reserved": seat.leaveReserved,
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",

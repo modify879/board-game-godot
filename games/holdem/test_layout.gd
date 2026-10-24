@@ -74,6 +74,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 				extra["leaveReserved"] = true
 			else:
 				status = "ALL_IN"
+		extra["lastAction"] = "RAISE_TO" # 행동 배지(가장 긴 문구)도 겹침을 본다
 		seats.append(_seat(no, user, status, extra))
 	var view_extra := {}
 	var hole := ["As", "Kd"]
@@ -140,7 +141,7 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				items.append({"o": o, "k": "cards", "r": c.get_global_rect()})
-		for l: Label in [s.badge_all_in, s.badge_presence, s.badge_leave]:
+		for l: Label in [s.badge_all_in, s.badge_presence, s.badge_leave, s.badge_action]:
 			if l.visible:
 				items.append({"o": o, "k": "badge", "r": l.get_global_rect()})
 		if s.hand_pill.visible:

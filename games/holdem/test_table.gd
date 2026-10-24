@@ -406,6 +406,19 @@ func _ready() -> void:
 		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
 	check(settled, "첫 뷰(재연결)는 도는 연출을 끊고 노드를 scale 1 / alpha 1 로 맞춘다")
 
+	# 마지막 행동 배지: 핸드 중에만 보이고, 정산 뒤(handInProgress=false)엔 숨는다
+	var acted := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
+	acted[0]["lastAction"] = "RAISE_TO"
+	acted[1]["lastAction"] = "FOLD"
+	acted[2]["lastAction"] = "CALL"
+	table.have_view = false
+	table._handle_public(_view(400, acted, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	var sn: Array = table.seat_nodes
+	check(sn[0].badge_action.visible and sn[0].badge_action.text == "레이즈" and sn[1].badge_action.text == "폴드" and sn[2].badge_action.text == "콜" and sn[2].badge_all_in.visible, "행동 배지 문구")
+	check(table.qa_state().seats[0].last_action == "레이즈", "qa_state last_action")
+	table._handle_public(_view(401, acted, {"handInProgress": false}))
+	check(not sn[0].badge_action.visible and not sn[1].badge_action.visible and not sn[2].badge_action.visible, "핸드 밖에서는 행동 배지 숨김")
+
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")
 	check(hh.player_text({"seatNo": 3.0, "userId": 7.0, "startingStack": 5000.0, "endingStack": 6200.0}, 3, 7, false) == "좌석 3 (D) 나  +1,200", "핸드 기록: 내 좌석·버튼·이익")

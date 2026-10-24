@@ -102,6 +102,12 @@ func _init() -> void:
 	check(pv.street_bet({"seatNo": 2, "totalContributed": 200}, base) == 200, "street_bet base 없으면 전액")
 	var bet_view := {"seats": [{"seatNo": 1, "totalContributed": 450}, {"seatNo": 7, "totalContributed": 800}]}
 	check(pv.current_max_bet(bet_view, base) == 300 and pv.current_max_bet({}, {}) == 0, "current_max_bet")
+	var al := func(extra: Dictionary, hip := true) -> String: return pv.action_label({"status": "ACTIVE"}.merged(extra, true), hip)
+	check(al.call({"lastAction": "FOLD"}) == "폴드" and al.call({"lastAction": "CHECK"}) == "체크", "action_label 폴드·체크")
+	check(al.call({"lastAction": "CALL"}) == "콜" and al.call({"lastAction": "RAISE_TO"}) == "레이즈", "action_label 콜·레이즈")
+	check(al.call({"status": "ALL_IN", "lastAction": "CALL"}) == "콜" and al.call({"status": "ALL_IN"}) == "", "action_label 올인 좌석도 lastAction 만 본다")
+	check(al.call({"lastAction": "CALL"}, false) == "", "action_label 핸드 밖은 빈 문자열")
+	check(al.call({}) == "" and al.call({"lastAction": null}) == "" and al.call({"lastAction": "X"}) == "", "action_label 없음·null·모르는 값은 빈 문자열")
 	check(pv.deal_order(view) == [7, 1], "deal_order 버튼 왼쪽부터, ACTIVE·ALL_IN 만")
 	check(pv.deal_order({"buttonSeatNo": 7, "seats": seats}) == [1, 7], "deal_order 버튼 바뀌면 회전")
 

@@ -35,6 +35,7 @@ var _style := StyleBoxFlat.new()
 @onready var badge_all_in: Label = %BadgeAllIn
 @onready var badge_presence: Label = %BadgePresence
 @onready var badge_leave: Label = %BadgeLeave
+@onready var badge_action: Label = %BadgeAction
 @onready var hand_pill: Label = %HandPill
 @onready var payout_label: Label = %Payout
 
@@ -55,6 +56,7 @@ func _ready() -> void:
 	_pill(badge_all_in, ACCENT, ON_ACCENT)
 	_pill(badge_presence, Color(0.33, 0.36, 0.40), TEXT)
 	_pill(badge_leave, SURFACE_RAISED, TEXT_MUTED, BORDER)
+	_pill(badge_action, SURFACE_RAISED, TEXT, ACCENT)
 	_pill(hand_pill, SURFACE_RAISED, TEXT, ACCENT)
 	payout_label.add_theme_color_override("font_color", ACCENT)
 	payout_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
@@ -82,7 +84,7 @@ func set_compact(is_compact: bool) -> void:
 	stack_label.position = Vector2(x0, h / 2.0 - 1)
 	stack_label.size = Vector2(size.x - x0 - 10, 22)
 	var fs := 10 if is_compact else 11
-	for l: Label in [badge_all_in, badge_presence, badge_leave, hand_pill]:
+	for l: Label in [badge_all_in, badge_presence, badge_leave, badge_action, hand_pill]:
 		l.add_theme_font_size_override("font_size", fs)
 	payout_label.add_theme_font_size_override("font_size", 15 if is_compact else 17)
 	var er := _empty_rect()
@@ -119,7 +121,7 @@ func show_empty(seat_no: int, cards: Array = [], category := "") -> void:
 	is_me = false
 	to_act = false
 	modulate = Color.WHITE
-	for l: Control in [initial, name_label, stack_label, badge_all_in, badge_presence, badge_leave, payout_label]:
+	for l: Control in [initial, name_label, stack_label, badge_all_in, badge_presence, badge_leave, badge_action, payout_label]:
 		l.hide()
 	_badge_count = 0
 	empty_label.text = "빈 자리 %d" % seat_no
@@ -129,7 +131,7 @@ func show_empty(seat_no: int, cards: Array = [], category := "") -> void:
 	queue_redraw()
 
 
-## info: nickname, stack, is_me, to_act, folded, all_in, presence_text, leave_reserved, leave_text(optional), cards, category, payout
+## info: action(optional), nickname, stack, is_me, to_act, folded, all_in, presence_text, leave_reserved, leave_text(optional), cards, category, payout
 func show_player(info: Dictionary) -> void:
 	empty = false
 	is_me = info.is_me
@@ -149,7 +151,13 @@ func show_player(info: Dictionary) -> void:
 	badge_presence.visible = disconnected
 	badge_leave.text = info.get("leave_text", "일어서기 예약") # 서버는 예약 종류를 구분하지 않는다 — 내 좌석만 로컬 의도(관전/나가기)를 안다
 	badge_leave.visible = info.leave_reserved
+	var action: String = info.get("action", "")
+	var changed := action != "" and action != badge_action.text
+	badge_action.text = action
+	badge_action.visible = action != ""
 	_place_badges()
+	if changed:
+		_pop(badge_action)
 	_set_cards(info.cards) # 내 카드는 table.gd 가 크게 따로 그린다 — 여기엔 빈 배열이 온다
 	_set_pill(info.category)
 	payout_label.text = "+%s" % Format.comma(info.payout)
@@ -192,7 +200,7 @@ func _set_pill(category: String) -> void:
 
 func _place_badges() -> void:
 	var shown: Array = []
-	for l: Label in [badge_all_in, badge_presence, badge_leave]:
+	for l: Label in [badge_all_in, badge_presence, badge_leave, badge_action]:
 		if l.visible:
 			l.reset_size()
 			shown.append(l)
@@ -207,6 +215,13 @@ func _place_badges() -> void:
 	for l: Label in shown:
 		l.position = Vector2(x, size.y - 6)
 		x += l.size.x + 4.0
+
+
+## 배지가 새 문구로 바뀔 때 살짝 커졌다 돌아온다
+func _pop(l: Label) -> void:
+	l.pivot_offset = l.size / 2.0
+	l.scale = Vector2(1.25, 1.25)
+	create_tween().tween_property(l, "scale", Vector2.ONE, 0.15)
 
 
 func _draw() -> void:
