@@ -24,12 +24,12 @@ static func setup(tree: SceneTree) -> void:
 	Engine.time_scale = speed
 	# 콜백 반환값은 JS 로 전달되지 않는다 — 콜백이 raw.r 에 결과를 쓰고, JS 래퍼가 동기로 읽어 돌려준다
 	_raw = JavaScriptBridge.create_object("Object")
-	for fn in ["state", "press", "set_text", "set_value", "speed"]:
+	for fn in ["state", "press", "set_text", "set_value", "speed", "refresh"]:
 		var cb := JavaScriptBridge.create_callback(Callable(QaBridge, "_js_" + fn))
 		_callbacks.append(cb)
 		_raw[fn] = cb
 	JavaScriptBridge.get_interface("window").__godotQaRaw = _raw
-	JavaScriptBridge.eval("window.godotQa = {}; for (const f of ['state','press','set_text','set_value','speed']) window.godotQa[f] = function(){ window.__godotQaRaw[f].apply(null, arguments); return window.__godotQaRaw.r; };")
+	JavaScriptBridge.eval("window.godotQa = {}; for (const f of ['state','press','set_text','set_value','speed','refresh']) window.godotQa[f] = function(){ window.__godotQaRaw[f].apply(null, arguments); return window.__godotQaRaw.r; };")
 
 
 static func _root() -> Node:
@@ -54,6 +54,11 @@ static func _js_set_value(args: Array) -> void:
 
 static func _js_speed(args: Array) -> void:
 	Engine.time_scale = float(args[0])
+	_raw.r = "{}"
+
+
+static func _js_refresh(_args: Array) -> void:
+	_tree.root.get_node("Api")._refresh() # await 하지 않는다 — 결과는 state() 로 본다
 	_raw.r = "{}"
 
 
@@ -114,7 +119,7 @@ static func snapshot(root: Node) -> Dictionary:
 			nodes[key] = _describe(ks[key])
 		if root.has_method("qa_state"):
 			extra = root.qa_state()
-	return {"scene": "" if root == null else root.scene_file_path, "nodes": nodes, "extra": extra, "env": EnvBadge.environment, "env_badge_visible": EnvBadge.is_visible()}
+	return {"scene": "" if root == null else root.scene_file_path, "nodes": nodes, "extra": extra, "env": EnvBadge.environment, "env_badge_visible": EnvBadge.is_visible(), "token_tail": "" if _tree == null else _tree.root.get_node("Api").access_token.right(8)}
 
 
 static func _describe(c: Control) -> Dictionary:
