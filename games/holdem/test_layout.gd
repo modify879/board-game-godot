@@ -141,11 +141,12 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				items.append({"o": o, "k": "cards", "r": c.get_global_rect()})
-		for l: Label in [s.badge_all_in, s.badge_presence, s.badge_leave, s.badge_action]:
+		for l: Label in [s.badge_all_in, s.badge_presence, s.badge_leave]:
 			if l.visible:
 				items.append({"o": o, "k": "badge", "r": l.get_global_rect()})
-		if s.hand_pill.visible:
-			items.append({"o": o, "k": "pill", "r": s.hand_pill.get_global_rect()})
+		for l: Label in [s.hand_pill, s.badge_action]: # 둘 다 캡슐 윗변에 걸친 알약 — 자기 카드에 높이 절반까지만 걸친다
+			if l.visible:
+				items.append({"o": o, "k": "pill", "r": l.get_global_rect()})
 		if s.payout_label.visible:
 			items.append({"o": o, "k": "payout", "r": s.payout_label.get_global_rect()})
 		if table.bet_boxes[no - 1].visible:

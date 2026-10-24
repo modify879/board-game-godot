@@ -11,6 +11,8 @@ const DANGER := Color(0.8980, 0.2824, 0.3020)
 const TEXT := Color(0.9098, 0.9255, 0.9490)
 const TEXT_MUTED := Color(0.6039, 0.6431, 0.6980)
 const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
+## 행동 배지 바탕색(문구별). 폴드 회색·체크 파랑·콜 초록·레이즈 주황
+const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
 const AVATAR_COLORS := [Color("5B7DB1"), Color("7A5BB1"), Color("B15B7A"), Color("B1895B"), Color("4F9E7E"), Color("5B9EB1")]
 const TURN_SECONDS := 30.0
 const WARN_SECONDS := 5.0
@@ -56,7 +58,7 @@ func _ready() -> void:
 	_pill(badge_all_in, ACCENT, ON_ACCENT)
 	_pill(badge_presence, Color(0.33, 0.36, 0.40), TEXT)
 	_pill(badge_leave, SURFACE_RAISED, TEXT_MUTED, BORDER)
-	_pill(badge_action, SURFACE_RAISED, TEXT, ACCENT)
+	_pill(badge_action, SURFACE_RAISED, Color.WHITE)
 	_pill(hand_pill, SURFACE_RAISED, TEXT, ACCENT)
 	payout_label.add_theme_color_override("font_color", ACCENT)
 	payout_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
@@ -84,8 +86,10 @@ func set_compact(is_compact: bool) -> void:
 	stack_label.position = Vector2(x0, h / 2.0 - 1)
 	stack_label.size = Vector2(size.x - x0 - 10, 22)
 	var fs := 10 if is_compact else 11
-	for l: Label in [badge_all_in, badge_presence, badge_leave, badge_action, hand_pill]:
+	for l: Label in [badge_all_in, badge_presence, badge_leave, hand_pill]:
 		l.add_theme_font_size_override("font_size", fs)
+	badge_action.add_theme_font_size_override("font_size", 13 if is_compact else 15)
+	_place_action()
 	payout_label.add_theme_font_size_override("font_size", 15 if is_compact else 17)
 	var er := _empty_rect()
 	empty_label.position = er.position
@@ -155,6 +159,9 @@ func show_player(info: Dictionary) -> void:
 	var changed := action != "" and action != badge_action.text
 	badge_action.text = action
 	badge_action.visible = action != ""
+	if action != "":
+		(badge_action.get_theme_stylebox("normal") as StyleBoxFlat).bg_color = ACTION_COLORS.get(action, SURFACE_RAISED)
+	_place_action()
 	_place_badges()
 	if changed:
 		_pop(badge_action)
@@ -200,7 +207,7 @@ func _set_pill(category: String) -> void:
 
 func _place_badges() -> void:
 	var shown: Array = []
-	for l: Label in [badge_all_in, badge_presence, badge_leave, badge_action]:
+	for l: Label in [badge_all_in, badge_presence, badge_leave]:
 		if l.visible:
 			l.reset_size()
 			shown.append(l)
@@ -217,11 +224,17 @@ func _place_badges() -> void:
 		x += l.size.x + 4.0
 
 
+## 행동 배지는 캡슐 윗변에 걸쳐 가운데에 둔다
+func _place_action() -> void:
+	badge_action.reset_size()
+	badge_action.position = Vector2((size.x - badge_action.size.x) / 2.0, -badge_action.size.y / 2.0)
+
+
 ## 배지가 새 문구로 바뀔 때 살짝 커졌다 돌아온다
 func _pop(l: Label) -> void:
 	l.pivot_offset = l.size / 2.0
-	l.scale = Vector2(1.25, 1.25)
-	create_tween().tween_property(l, "scale", Vector2.ONE, 0.15)
+	l.scale = Vector2(1.35, 1.35)
+	create_tween().tween_property(l, "scale", Vector2.ONE, 0.18)
 
 
 func _draw() -> void:
