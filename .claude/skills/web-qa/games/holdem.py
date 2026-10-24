@@ -474,11 +474,12 @@ def s9(c):
 s9.sizes = ("d",)
 
 
+QA_RESUME_GAP_S = 5  # core/stomp.gd RESUME_GAP_MS. 이보다 오래 정지했다 돌아오면 소켓을 한 번 교체해 구독 스냅샷으로 재동기화한다
 QA_ROTATION_GRACE_S = 5  # 서버 app.auth.stomp-rotation-grace (qa 프로필 5s, 운영 30s). 숨은 탭 시나리오의 대기 시간은 이 값에 맞춘다
 
 
 def _hidden_tab_setup(c, name):
-    """A(로비) + B(같은 context, 홀덤 테이블 관전 = STOMP 소켓 열림, 소켓 OPEN/CLOSE 기록). UI 로그인. -> a, b, ws_events"""
+    """A(로비) + B(같은 context, 홀덤 테이블 관전 = STOMP 소켓 열림, 소켓 OPEN/CLOSE 기록). UI 로그인. -> a, b, ws_events, bot(공개 뷰 출처)"""
     tid, bots, ap = table(c, name, 2)
     a = c.viewer(); a.login(); a.wait_state(lambda s: a.text(s, "BalanceLabel").strip() and s, 15, "A 잔액 표시")
     b = c.viewer(share=a); b.wait_scene("lobby.tscn", 30)
@@ -486,11 +487,11 @@ def _hidden_tab_setup(c, name):
     to_room_list(b); enter(b, tid, do_join=False)
     qa.wait_for(lambda: (b.page.wait_for_timeout(50), any(e["dir"] == "OPEN" for e in ev))[1], 10, what="B STOMP 소켓 OPEN")
     a.refreshes = a.unauth = b.refreshes = b.unauth = 0
-    return a, b, ev
+    return a, b, ev, bots[0]
 
 
-def _hidden_tab_refresh(a, b, ev, hold):
-    """B 정지 -> A refresh -> 정지 중 B 의 JS 토큰 확인 -> hold 초 뒤 재개 -> A 갱신 시점부터 유예+3초(길게 정지했으면 재개 뒤 4초)가 지나도록 소켓이 안 닫혔는지. 관찰을 문자열 목록으로 돌려준다"""
+def _hidden_tab_refresh(a, b, ev, bot, hold):
+    """B 정지 -> A refresh -> 정지 중 B 의 JS 토큰 확인 -> hold 초 뒤 재개 -> A 갱신 시점부터 유예+3초(길게 정지했으면 재개 뒤 4초)가 지나도록 소켓 변화(짧게 정지면 없음, 5초 넘게 정지면 재개 뒤 교체 한 번). 관찰을 문자열 목록으로 돌려준다"""
     tail = lambda v: v.state()["token_tail"]; old = tail(a); notes = []
     b.pause(); t0 = time.time(); n0 = len(ev)
     a.page.evaluate("window.godotQa.refresh()")
@@ -502,6 +503,7 @@ def _hidden_tab_refresh(a, b, ev, hold):
     while time.time() - t0 < hold: b.page.wait_for_timeout(200)
     closed_paused = [round(e["t"] - t0, 1) for e in ev[n0:] if e["dir"] == "CLOSE"]
     notes.append(f"정지 {round(time.time() - t0, 1)}s 동안 소켓 CLOSE={closed_paused}")
+    want_seq = (bot.view or {}).get("seq", 0)
     b.resume()
     # 4) 재개 뒤
     b.wait_state(lambda s: s["token_tail"] == tail(a) and s, 10, "재개 뒤 B 토큰 == A")
@@ -511,7 +513,12 @@ def _hidden_tab_refresh(a, b, ev, hold):
     changes = [(e["dir"], round(e["t"] - t0, 1)) for e in ev[n0:] if e["dir"] in ("OPEN", "CLOSE")]
     notes.append(f"인밴드 SEND={[round(e['t'] - t0, 1) for e in sent]} 응답={[round(e['t'] - t0, 1) for e in recv]} 소켓 OPEN/CLOSE={changes}")
     print("   [hidden-tab]", "; ".join(notes), flush=True)
-    assert not changes, "소켓이 바뀌었다/닫혔다: " + "; ".join(notes)
+    if hold <= QA_RESUME_GAP_S:
+        assert not changes, "소켓이 바뀌었다/닫혔다: " + "; ".join(notes)
+    else:  # 재개 뒤 make-before-break 교체가 정확히 한 번: 새 OPEN -> 옛 CLOSE, CLOSE 가 OPEN 보다 먼저 오면 끊김
+        assert [d for d, _ in changes] == ["OPEN", "CLOSE"] and changes[0][1] >= hold - 0.5, "재개 뒤 OPEN->CLOSE 한 번이어야 한다: " + "; ".join(notes)
+        # 재동기화: B 의 공개 뷰가 봇이 재개 시점에 이미 받은 최신 seq 를 따라잡았다(숨은 동안 놓친 상태 복구)
+        qa.wait_for(lambda: (b.page.wait_for_timeout(100), b.state()["extra"]["last_public_seq"] >= want_seq)[1], 5, what=f"B 공개 뷰 seq >= {want_seq}")
     back_to_list(b)  # B 의 REST(방 목록) — 소켓 판정 뒤에(나가면 소켓을 의도해 닫는다)
     assert b.refreshes == 0 and a.refreshes == 1, f"refresh 요청 A={a.refreshes} B={b.refreshes} (A=1, B=0 이어야 한다)"
     assert tail(b) == tail(a) and b.unauth == 0 and a.unauth == 0, f"B REST 401 A={a.unauth} B={b.unauth} tail A={tail(a)} B={tail(b)}"
@@ -519,13 +526,13 @@ def _hidden_tab_refresh(a, b, ev, hold):
 
 @scenario("숨은 탭 B: 정지 중 갱신, 3초 뒤 재개, 소켓 유지", 100)
 def hidden_short(c):
-    a, b, ev = _hidden_tab_setup(c, "HS"); _hidden_tab_refresh(a, b, ev, 3)
+    a, b, ev, bot = _hidden_tab_setup(c, "HS"); _hidden_tab_refresh(a, b, ev, bot, 3)
 hidden_short.sizes = ("d",)
 
 
-@scenario(f"숨은 탭 B: {QA_ROTATION_GRACE_S + 3}초 내내 정지, 소켓 유지", 100)
+@scenario(f"숨은 탭 B: {QA_ROTATION_GRACE_S + 3}초 내내 정지, 재개 뒤 소켓 한 번 교체·재동기화", 100)
 def hidden_long(c):
-    a, b, ev = _hidden_tab_setup(c, "HL"); _hidden_tab_refresh(a, b, ev, QA_ROTATION_GRACE_S + 3)
+    a, b, ev, bot = _hidden_tab_setup(c, "HL"); _hidden_tab_refresh(a, b, ev, bot, QA_ROTATION_GRACE_S + 3)
 hidden_long.sizes = ("d",)
 
 
