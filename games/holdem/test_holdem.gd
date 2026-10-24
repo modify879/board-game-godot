@@ -53,6 +53,58 @@ func _init() -> void:
 	check(rules.preset_raise_to(0.5, 0, 650, 0, 200, 5000) == 300, "프리셋 100 단위 내림 (325 -> 300)")
 	check(rules.preset_raise_to(0.5, 0, 750, 0, 200, 5000) == 400, "프리셋 100 단위 올림 (375 -> 400)")
 
+	# public_view — 공개 뷰 순수 조회·계산
+	var pv := preload("res://games/holdem/public_view.gd")
+	var seats := [
+		{"seatNo": 1, "userId": 10, "status": "ACTIVE", "totalContributed": 300},
+		{"seatNo": 4, "userId": 11, "status": "FOLDED", "totalContributed": 100},
+		{"seatNo": 7, "userId": 12, "status": "ALL_IN", "totalContributed": 500},
+		{"seatNo": 8, "userId": 13, "status": "SITTING_OUT", "totalContributed": 0},
+	]
+	var view := {"seats": seats, "buttonSeatNo": 4, "street": "FLOP", "handInProgress": false}
+	check(pv.find_seat(view, 7).userId == 12 and pv.find_seat(view, 2) == null, "find_seat 찾기·없음")
+	check(pv.find_seat_by_user(view, 11).seatNo == 4 and pv.find_seat_by_user(view, 99) == null, "find_seat_by_user 찾기·없음")
+	check(pv.seat_held_by(view, 2, 10.0), "seat_held_by 빈 좌석이면 true")
+	check(pv.seat_held_by(view, 1, 10.0), "seat_held_by 같은 사용자 true")
+	check(not pv.seat_held_by(view, 1, 11.0), "seat_held_by 다른 사용자 false")
+	check(not pv.seat_held_by(view, 1, null), "seat_held_by null 사용자 false")
+	check(pv.to_act_seat_no({"toActSeatNo": null}) == -1 and pv.to_act_seat_no({}) == -1, "to_act_seat_no null·키 없음 = -1")
+	check(pv.to_act_seat_no({"toActSeatNo": 5.0}) == 5, "to_act_seat_no 정수")
+	var shown := {"seatNo": 1, "userId": 10}
+	var res := {"shownHands": [shown], "payouts": [{"seatNo": 1, "userId": 10, "amount": 700.0}]}
+	var rview := {"seats": seats, "result": res}
+	check(pv.find_shown_hand(rview, 1) == shown and pv.find_shown_hand(rview, 4) == null, "find_shown_hand 찾기·없음")
+	check(pv.payout_for(rview, 1) == 700 and pv.payout_for(rview, 4) == 0, "payout_for 지급액·없음")
+	check(pv.find_shown_hand(view, 1) == null and pv.payout_for(view, 1) == 0, "결과 없으면 null·0")
+	var taken := {"seats": [{"seatNo": 1, "userId": 99}], "result": res}
+	check(pv.find_shown_hand(taken, 1) == null and pv.payout_for(taken, 1) == 0, "다른 사람이 앉으면 shown·payout 무시")
+	var emptied := {"seats": [], "result": res}
+	check(pv.find_shown_hand(emptied, 1) == shown and pv.payout_for(emptied, 1) == 700, "좌석이 비면 shown·payout 유지")
+	var revealed := {"seatNo": 7, "cards": ["As", "Kd"]}
+	check(pv.find_revealed_hand({"revealedHands": [revealed]}, 7) == revealed and pv.find_revealed_hand({"revealedHands": [revealed]}, 1) == null and pv.find_revealed_hand({}, 7) == null, "find_revealed_hand")
+	var fold_win := {"handInProgress": false, "result": {"shownHands": [], "payouts": [{"seatNo": 1, "userId": 10, "amount": 300.0}]}}
+	check(pv.can_show_hand(fold_win, 10), "can_show_hand 폴드 승리 true")
+	check(not pv.can_show_hand(fold_win, 11), "can_show_hand 다른 사용자 false")
+	var showdown: Dictionary = fold_win.duplicate(true)
+	showdown.result.shownHands = [shown]
+	check(not pv.can_show_hand(showdown, 10), "can_show_hand 쇼다운 false")
+	var live: Dictionary = fold_win.duplicate(true)
+	live.handInProgress = true
+	check(not pv.can_show_hand(live, 10), "can_show_hand 핸드 중 false")
+	var zero: Dictionary = fold_win.duplicate(true)
+	zero.result.payouts[0].amount = 0
+	check(not pv.can_show_hand(zero, 10) and not pv.can_show_hand({}, 10), "can_show_hand 지급 0·결과 없음 false")
+	check(pv.street_base({"street": "PREFLOP", "seats": seats}).is_empty(), "street_base 프리플랍은 비어 있음")
+	var base: Dictionary = pv.street_base(view)
+	check(base == {1: 300, 4: 100, 7: 500, 8: 0}, "street_base 플랍은 totalContributed")
+	check(pv.street_bet({"seatNo": 1, "totalContributed": 450}, base) == 150, "street_bet 차이")
+	check(pv.street_bet({"seatNo": 1, "totalContributed": 200}, base) == 0, "street_bet 0 으로 자름")
+	check(pv.street_bet({"seatNo": 2, "totalContributed": 200}, base) == 200, "street_bet base 없으면 전액")
+	var bet_view := {"seats": [{"seatNo": 1, "totalContributed": 450}, {"seatNo": 7, "totalContributed": 800}]}
+	check(pv.current_max_bet(bet_view, base) == 300 and pv.current_max_bet({}, {}) == 0, "current_max_bet")
+	check(pv.deal_order(view) == [7, 1], "deal_order 버튼 왼쪽부터, ACTIVE·ALL_IN 만")
+	check(pv.deal_order({"buttonSeatNo": 7, "seats": seats}) == [1, 7], "deal_order 버튼 바뀌면 회전")
+
 	quit(1 if failures else 0)
 
 
