@@ -68,24 +68,16 @@ class Bot(qa.Client):
         if s >= 300: raise RuntimeError(f"{self.user} 착석 {s} {d}")
         if wait: self.wait_for(lambda v: self.my_seat(), 60, f"{self.user} 착석")
     def stand(self): return qa.call("/api/holdem/seat", self.token, method="DELETE")[0]  # 핸드 중 202(예약)
-    def reserve_leave(self, after="SPECTATE"): return qa.call(f"/api/holdem/seat?after={after}", self.token, method="DELETE")[0]
-    def cancel_reservation(self): return qa.call("/api/holdem/seat/leave-reservation", self.token, method="DELETE")[0]
     def act(self, action, amount=None):
         b = {"action": action}
         if amount: b["raiseToAmount"] = amount
         return qa.call(f"/api/holdem/tables/{self.tid}/hands/actions", self.token, b)[0]
-    def to_act(self):
-        v = self.view or {}
-        return bool(v.get("handInProgress") and v.get("toActSeatNo") is not None and self.my_seat()
-                    and int(self.my_seat()["seatNo"]) == int(v["toActSeatNo"]))
 
 
 def policy_check_call(bot, v):  # 기본: 체크, 안 되면 콜, 그것도 안 되면 폴드
     for a in ("CHECK", "CALL", "FOLD"):
         if bot.act(a) < 300: return
 def policy_fold(bot, v): bot.act("FOLD")
-def raise_to(n):  # 첫 행동에 n 으로 레이즈, 안 되면 기본 정책
-    return lambda bot, v: bot.act("RAISE_TO", n) < 300 or policy_check_call(bot, v)
 
 
 class Autoplay:

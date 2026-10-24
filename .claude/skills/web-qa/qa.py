@@ -260,25 +260,6 @@ class Viewer:
     def close(self): self.page.close() if self.share else self.browser.close()
 
 
-def sheet(p, name, start=0, end=None, step=1, cols=4, width=480):
-    """frames(name) 로 저장한 프레임을 시각 라벨 붙은 격자 한 장({OUT}/{name}_sheet.png)으로 합친다(PIL 없이 playwright 렌더)"""
-    d = f"{OUT}/frames/{name}"; t = dict(json.load(open(f"{d}/t.json")))
-    idx = [i for i in range(start, end if end is not None else len(t), step) if i in t]
-    cells = "".join('<div style="position:relative"><img style="width:%dpx;display:block" src="data:image/jpeg;base64,%s">'
-                    '<b style="position:absolute;left:4px;top:2px;color:#ff0;font:12px monospace">#%d %.2fs</b></div>'
-                    % (width, base64.b64encode(open(f"{d}/{i:03d}.jpg", "rb").read()).decode(), i, t[i]) for i in idx)
-    b = p.chromium.launch(); pg = b.new_page(viewport={"width": width * cols, "height": 400})
-    pg.set_content(f'<body style="margin:0;display:grid;grid-template-columns:repeat({cols},{width}px);gap:2px;background:#000">{cells}</body>')
-    pg.screenshot(path=f"{OUT}/{name}_sheet.png", full_page=True); b.close(); return f"{OUT}/{name}_sheet.png"
-
-
-def side_by_side(browser, paths, out):
-    """PNG 여러 장을 가로로 붙인다(PIL 없이 playwright 로 렌더)"""
-    imgs = "".join('<img style="height:400px" src="data:image/png;base64,%s">' % base64.b64encode(open(p, "rb").read()).decode() for p in paths)
-    pg = browser.new_page(viewport={"width": 1600, "height": 400}); pg.set_content('<body style="margin:0;display:flex">' + imgs + "</body>")
-    pg.screenshot(path=out, full_page=True); pg.close()
-
-
 class Ctx:
     """시나리오 하나의 자원 묶음. 러너가 끝나면 cleanup() — 뷰어 닫기 -> 등록한 정리 함수(봇 정지·착석 해제 등) 순"""
     def __init__(self, p, size, shots, speed):

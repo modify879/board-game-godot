@@ -32,7 +32,6 @@ const PHONE_WIDTH := 700.0 # 이보다 좁으면 카드를 세로로 쌓고 만�
 @onready var entry_watch: Button = %EntryWatch
 @onready var entry_join: Button = %EntryJoin
 @onready var rows_margin: MarginContainer = %RowsMargin
-@onready var bottom_bar: MarginContainer = %BottomBar
 @onready var error_label: Label = %ErrorLabel
 @onready var rows: VBoxContainer = %Rows
 @onready var empty_box: Control = %EmptyBox
@@ -178,7 +177,7 @@ func _open_entry(item: Dictionary) -> void:
 	Rows.clear(entry_sub)
 	entry_sub.add_child(RoomWidgets.count_label(occupied, max_seats))
 	entry_sub.add_child(RoomWidgets.badge(occupied, max_seats))
-	if item.get("handInProgress", false):
+	if item.handInProgress:
 		entry_sub.add_child(RoomWidgets.in_progress_pill())
 	entry_info.text = ""
 	entry_error.hide()
@@ -298,7 +297,7 @@ func _build_rows(items: Array) -> void:
 	room_items = items
 	empty_box.visible = items.is_empty()
 	for item in items:
-		var card := RoomWidgets.card_button(item.name, int(item.occupiedSeats), int(item.maxSeats), item.get("handInProgress", false))
+		var card := RoomWidgets.card_button(item.name, int(item.occupiedSeats), int(item.maxSeats), item.handInProgress)
 		card.pressed.connect(_open_entry.bind(item))
 		rows.add_child(card)
 
@@ -308,7 +307,7 @@ func qa_state() -> Dictionary:
 	var out := []
 	for i in room_items.size():
 		var it: Dictionary = room_items[i]
-		out.append({"table_id": int(it.tableId), "name": it.name, "occupied": int(it.occupiedSeats), "max": int(it.maxSeats), "in_progress": it.get("handInProgress", false), "card_key": "Rows/%d" % i})
+		out.append({"table_id": int(it.tableId), "name": it.name, "occupied": int(it.occupiedSeats), "max": int(it.maxSeats), "in_progress": it.handInProgress, "card_key": "Rows/%d" % i})
 	return {"rooms": out}
 
 

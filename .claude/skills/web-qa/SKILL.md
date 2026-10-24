@@ -5,7 +5,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 # Web QA
 
-**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~4분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`. 시나리오는 기본으로 데스크톱·폰 둘 다 돈다. 한 크기만: `--desktop` 또는 `--phone`.
+**테스트는 `run_all.sh` 로 돌린다(헤드리스 전부 + 바뀌었으면 Web 빌드 + 시나리오 → 표와 소요 시간, 약 3~4분). 한 게임만: `run_all.sh --game holdem`, 일부만: `--only 4,5`(번호는 시나리오가 늘면 밀린다 — run 표에서 확인). 시나리오는 데스크톱 → 폰 순으로 두 번 도는데 폰은 화면 배치 시나리오만 돌고 `fn.sizes = ("d",)` 인 것은 SKIP 이다. 한 크기만: `--desktop` 또는 `--phone`.
 새 시나리오는 해당 게임의 `games/<game>.py` 에 함수로 더한다(공용 로그인·로비는 `suite.py`). 스크린샷은 디자인을 볼 때만(`--shots`). 새 하네스를 처음부터 만들지 않는다.**
 
 구성: `qa.py` = 게임 무관(REST·STOMP·Viewer 브리지·Ctx). `games/holdem.py` = 홀덤 봇·덱 고정·화면 흐름 보조·시나리오. `suite.py` = 러너(시나리오 발견, 표·JSON `$QA_OUT/suite.json`, 시나리오별 제한시간·콘솔 오류 수집).
@@ -21,7 +21,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 - 라이브 테스트는 QA 전용: 클라이언트 `http://localhost:8001`(nginx, CLAUDE.md 명령) → QA 서버 :8081. API·WS 는 같은 origin(8001)으로 간다. `qa.py` 는 :8000/:8080(사용자 환경)을 거부한다
 - 두 서버(:8080 기본, :8081 qa 프로필)는 서버 세션이 서버 저장소 메인 트리에서 `./gradlew bootRun`(QA 는 `--args='--spring.profiles.active=qa'`)으로 띄운다. 이 저장소에서 띄우지 않고, 재기동이 필요하면 서버 세션에 요청한다. `GET /api/server-info` 가 `{"environment":"qa"}` 면 QA 서버다
 - 서버는 DevTools 라 서버 저장소에서 빌드하면 몇 초씩 자동 재시작한다. 긴 QA(run_all.sh 등)를 돌리기 전에 서버 세션에 시작을 알려 빌드를 미루게 하고, 끝나면 끝났다고 알린다
-- QA 서버: 다음 판 1초, 턴 8초, 빈 방 15초. 별도 DB·Redis. 계정 qauser1~9·qaadmin, 비밀번호 `qapass1234`, qauser 지갑 10,000,000
+- QA 서버: 다음 판 1초, 턴 8초, 빈 방 15초, 소켓 유예 5초(`app.auth.stomp-rotation-grace`). 계정 qauser1~9·qaadmin, 비밀번호 `qapass1234`, qauser 지갑 10,000,000
 - 코드와 같은 시점의 Web 빌드가 8001 에 서빙돼야 한다(CLAUDE.md 빌드 명령, `.gz` 재압축 포함)
 
 ## 1회 설정 (sudo 불필요)
@@ -32,10 +32,13 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 | 하고 싶은 것 | 호출 |
 |---|---|
-| 봇(홀덤) | `b = H.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.reserve_leave("SPECTATE"\|"LEAVE")` / `b.cancel_reservation()` / `b.act("RAISE_TO", n)`. `b.view`·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` (`H` = `from games import holdem as H`) |
-| 봇 자동 진행 | `H.Autoplay(bots, policy=H.policy_check_call, skip=())` (`policy_fold`, `raise_to(n)`, 런타임에 `ap.policy` 교체 가능) |
+| 봇(홀덤) | `b = H.Bot("qauser2")` → `tid = b.create_table(이름, 바이인)` / `b.sit(tid, 바이인)` / `b.stand()` / `b.act("RAISE_TO", n)`. `b.view`·`b.private`·`b.results` 는 STOMP 로 갱신, `b.wait_for(lambda v: ..., 초)` (`H` = `from games import holdem as H`) |
+| 봇 자동 진행 | `H.Autoplay(bots, policy=H.policy_check_call, skip=())` (`policy_fold`, 런타임에 `ap.policy` 교체 가능) |
 | 덱 고정 | `H.next_deck(tid, hole_cards={좌석:["As","Ah"]}, board=[...])`, 프리셋 `H.deck_showdown`·`deck_split`·`deck_hero_wins` |
 | 브라우저 | `v = qa.Viewer(p, "qauser1", "d"\|"p")` → `v.open()` → `v.state()`·`v.press(키)`·`v.set_text`·`v.set_value`·`v.wait_state(pred, 초)`·`v.login()`·`v.open_game(번호\|제목)`. 홀덤 흐름은 `H.to_room_list(v)`·`H.open_room`·`H.join`·`H.spectate`. 콘솔 오류는 `v.errors` |
+| 같은 브라우저 context 의 두 번째 탭 | `b = c.viewer(share=v)`(이름에 `_tab2`) — 쿠키·`BroadcastChannel`·locks 를 공유한다. 닫을 때 브라우저는 그대로 |
+| 숨은 탭 흉내 | `v.pause()` / `v.resume()` — rAF 만 세워 메인 루프를 멈춘다(JS 이벤트·`BroadcastChannel` 은 돈다) |
+| 토큰 공유 점검 | `v.refreshes`(`/api/auth/refresh` 응답 수)·`v.unauth`(401 수), 브리지 `godotQa.refresh()`(`Api._refresh()` 호출)·`state().token_tail`(access 끝 8자), 테이블 `extra.last_public_seq` |
 | 정리 | 시나리오는 `c.on_cleanup(fn)` 으로 등록(러너가 브라우저를 닫은 뒤 부른다). 직접 쓸 땐 `H.unseat_all()` |
 
 화면 크기: `d` 1280x720, `p` 390x844 DPR2. 좌표는 쓰지 않는다 — 전부 브리지 키다. 코드로 만든 이름 없는 Label 은 브리지 nodes 에 안 나온다 — 화면이 `qa_state()` 로 주는 `extra` 를 쓴다(예: 방 목록 `extra.rooms[].in_progress`·`card_key`, 테이블 `extra.seats`). 없으면 그 화면에 `qa_state()` 를 더한다.
@@ -61,7 +64,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 ## QA 브리지 (`window.godotQa`, core/qa_bridge.gd)
 
-좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다 — `speed(x)` 로 바꾼다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
+좌표 클릭·스크린샷 대신 이름으로 상태를 읽고 버튼을 누른다. **Web 이고 URL 에 `qa=1` 이거나 포트가 8001 일 때만** 생긴다(8000 사용자 환경엔 없다). `qa_speed=N` 쿼리(기본 4)로 Engine.time_scale 을 올린다. 카운트다운은 `Time.get_ticks_msec` 라 영향 없다.
 
 ```python
 page.wait_for_function("window.godotQa")
@@ -79,10 +82,10 @@ page.evaluate("window.godotQa.set_value('RaiseSpin', 400)")           # Range/Sp
 
 ## 테스트 단계
 
-- 1단계(매 변경): 헤드리스 자체 점검 — `test_core`·`test_holdem`·`test_table`·`test_layout`(CLAUDE.md 명령어). 배치 겹침은 `test_layout` 으로 확인하고 스크린샷으로 대신하지 않는다
-- 2단계(바뀐 화면만): 라이브는 바뀐 시나리오만, 한 크기로(레이아웃을 바꿨으면 폰·데스크톱 둘 다)
-- 3단계(출시 전만): 전체 통합 시나리오
-- 계정은 에이전트끼리 나눠 쓴다(같은 qa 계정으로 동시에 돌리지 않는다). 스크린샷은 `--shots`/`shots=True` 로 찍고 디자인을 볼 때만 Read 로 본다
+- 1단계(매 변경): 헤드리스 자체 점검(CLAUDE.md 명령어). 배치 겹침은 `test_layout` 으로 확인하고 스크린샷으로 대신하지 않는다
+- 2단계(바뀐 화면만): `run_all.sh --only N` 으로 바뀐 시나리오만, 레이아웃을 바꿨으면 폰·데스크톱 둘 다
+- 3단계(출시 전): `run_all.sh` 전체
+- 계정은 에이전트끼리 나눠 쓴다(같은 qa 계정으로 동시에 돌리지 않는다). 스크린샷은 `--shots` 로 찍고 디자인을 볼 때만 Read 로 본다
 
 ## 테스트 계정 재생성
 

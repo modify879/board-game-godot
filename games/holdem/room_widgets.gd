@@ -31,7 +31,7 @@ static func badge(occupied: int, max_seats: int) -> PanelContainer:
 	return pill
 
 
-## 게임 중 알약. handInProgress 가 true 일 때만 호출자가 붙인다(키가 없는 옛 서버는 아무것도 안 보인다)
+## 게임 중 알약. handInProgress 가 true 일 때만 호출자가 붙인다
 static func in_progress_pill() -> PanelContainer:
 	var pill := badge(1, 9) # 알약 틀만 빌린다
 	var l: Label = pill.get_child(0)

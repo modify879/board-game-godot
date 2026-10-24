@@ -16,7 +16,7 @@ var seq := 0
 
 func _seat(no: int, user: int, status := "ACTIVE", extra := {}) -> Dictionary:
 	var s := {"seatNo": float(no), "userId": float(user), "stack": 1000.0, "status": status,
-		"presence": "CONNECTED", "totalContributed": 0.0}
+		"presence": "CONNECTED", "totalContributed": 0.0, "leaveReserved": false}
 	s.merge(extra, true)
 	return s
 
@@ -25,7 +25,7 @@ func _view(seats: Array, extra: Dictionary) -> Dictionary:
 	seq += 1
 	var v := {"seq": float(seq), "seats": seats, "board": [], "handInProgress": false,
 		"toActSeatNo": null, "buttonSeatNo": 1.0, "street": "PREFLOP", "result": null,
-		"revealedHands": [], "nextHandInMs": null, "pot": 0.0}
+		"revealedHands": [], "nextHandInMs": null, "turnRemainingMs": null, "pot": 0.0}
 	v.merge(extra, true)
 	return v
 
