@@ -26,12 +26,11 @@ paths: ["core/**"]
 - 서버에 CORS·허용 origin 설정이 없다. Web 빌드는 같은 origin 프록시(`/` = 빌드, `/api`·`/ws` → 8080)로 서빙한다
 - STOMP 는 raw WebSocket `/ws`(SockJS 아님). 인증은 CONNECT 프레임의 `Authorization` 헤더 — 브라우저 WebSocket 은 HTTP 헤더를 못 붙인다
 - Godot `JSON.parse_string` 은 숫자를 전부 `float` 로 만든다(서버는 정수로 보낸다). `==` 는 int 와 맞지만 `in`·`Array.has()`·Dictionary 키는 타입까지 봐서 틀린다 — 비교·키로 쓰기 전에 `int()` 로 바꾼다
-- 토큰 갱신(REST refresh)에 성공하면 옛 토큰의 소켓은 30초 뒤 닫힌다 — `Stomp` 가 `/app/auth/refresh` 로 연장한다, 실패하면 새 소켓을 먼저 연결하고 옛 소켓을 닫는다(대기열 유지)
-- access 토큰은 exp 5분 전에 선제 갱신한다
-- `/user/queue/auth` 는 Stomp 내부 채널이다
+- 토큰 갱신(REST refresh)에 성공하면 옛 토큰의 소켓은 서버 유예(`app.auth.stomp-rotation-grace`, 운영 30초·QA 5초) 뒤 닫힌다 — `Stomp` 가 `/app/auth/refresh` 로 연장하고, 실패하면 새 소켓을 먼저 연결하고 옛 소켓을 닫는다(대기열 유지). 연장 응답 마감 `AUTH_DEADLINE_SEC`(20초)는 서버 유예보다 짧아야 한다 — 같거나 길면 교체보다 서버 종료가 먼저 온다
+- 숨은 탭은 메인 루프가 멈춰 WebSocket 수신 버퍼가 안 비워진다. 버퍼를 1MB(`WS_INBOUND_BUFFER`)로 키운다 — `connect_to_url` 전에 정해야 먹고, 넘치면 최신 프레임부터 버린다. `_process` 사이 실시간 간격이 `RESUME_GAP_MS`(5초)를 넘으면 소켓을 교체해 재구독하고(서버는 SUBSCRIBE 직후 현재 상태를 1회 보낸다) `resumed` 를 emit 한다. 교체는 반드시 새 소켓 CONNECTED 뒤에 옛 소켓을 닫는다 — 옛 소켓이 먼저 끊기면 서버가 대기열 항목을 지운다
 - `/api/auth/login`·`/api/auth/refresh` 에는 `Authorization` 헤더를 싣지 않는다(`Api.sends_bearer`). permitAll 이어도 서버 필터가 Bearer 를 검증해, 만료 토큰이 실리면 refresh 가 401 로 실패하고 로그인 화면으로 튕긴다
 - STOMP heart-beat 는 `0,10000`(서버→클라이언트만)이다. 클라이언트 비트는 Web 가려진 탭에서 메인 루프가 멈춰 끊기고, 그러면 서버가 연결(대기열 자리)을 버린다
 - refresh 실패는 4xx 만 세션 종료다. 네트워크 오류·5xx 는 세션을 두고 5초 뒤 재시도한다
-- 선제 갱신은 `accessTokenExpiresInMs` 를 `Time.get_ticks_msec()` 로 센다(`_refresh_due_ticks`). `create_timer` 는 가려진 탭에서 멈춘 만큼 늦게 울리지만, 틱 비교는 탭 복귀 첫 프레임에 바로 갱신한다
+- access 토큰은 exp 5분 전에 선제 갱신한다. `accessTokenExpiresInMs` 를 `Time.get_ticks_msec()` 로 센다(`_refresh_due_ticks`). `create_timer` 는 가려진 탭에서 멈춘 만큼 늦게 울리지만, 틱 비교는 탭 복귀 첫 프레임에 바로 갱신한다
 - connect 직후 `_last_state` 는 CONNECTING 으로 둔다 — 즉시 거부되면 CLOSED→CLOSED 라 재연결이 멈춘다(실측)
 - 서버는 ERROR 프레임 직후 소켓을 닫는다(1002) — Web 은 close 처리 전에 남은 패킷을 먼저 읽어야 ERROR 를 놓치지 않는다. 데스크톱 엔진(WSLPeer)은 닫힐 때 받은 프레임을 버리므로 1002 종료를 ERROR 와 같게 처리한다(재연결하지 않는다)
