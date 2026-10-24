@@ -393,6 +393,7 @@ def s4(c):
     assert seat_nick(s, me) == nick and nick in v.text(s, "BoardLabel"), f"결과 문구에 {nick!r} 없음: {seat_nick(s, me)!r} / {v.text(s, 'BoardLabel')!r}"
     r = wait_result(host, n0, 5); assert [p["seatNo"] for p in r["payouts"]] == [me], f"서버 결과 {r['payouts']}"
     s = v.wait_state(lambda s: ("다음 판" in v.text(s, "StatusLabel") or s["extra"]["next_hand_seconds"] >= 0) and s, 15, "다음 판 카운트다운", pump=False)
+s4.sizes = ("d",)
 
 
 @scenario("폴드 승리 -> 패 보여주기 버튼", 120)
@@ -405,6 +406,7 @@ def s5(c):
     assert not host.results[-1]["shownHands"], "폴드 종료인데 shownHands 가 비어 있지 않다"
     n = len(host.results); v.press("ShowHandButton")
     qa.wait_for(lambda: any(h["seatNo"] == me for r in host.results[n - 1:] for h in r["shownHands"]), 5, what="shownHands 에 히어로")
+s5.sizes = ("d",)
 
 
 def _in_hand(c, name, n_bots=2):
@@ -436,6 +438,7 @@ def s6(c):
     v.open_game(0); s = v.wait_state(lambda s: s["scene"].endswith("table.tscn") and v.vis(s, "CancelLeaveButton") and s, 20, "재진입 시 예약 취소 버튼")
     assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), f"새로고침 뒤 문구 {v.text(s, 'CancelLeaveButton')!r}"
     ap.fast()
+s6.sizes = ("d",)
 
 
 @scenario("예약 취소 -> 핸드 후에도 착석", 100)
@@ -445,6 +448,7 @@ def s7(c):
     v.press("CancelLeaveButton"); v.wait_state(lambda s: not v.vis(s, "CancelLeaveButton") and v.vis(s, "StandButton"), 10, "예약 취소됨"); ap.fast()
     v.wait_state(lambda s: not s["extra"]["hand_in_progress"], 60, "핸드 종료"); time.sleep(2); s = v.state()
     assert s["extra"]["my_seat_no"] != -1 and s["scene"].endswith("table.tscn"), f"취소했는데 일어섰다 seat={s['extra']['my_seat_no']}"
+s7.sizes = ("d",)
 
 
 @scenario("방이 닫히면 관전자는 목록으로", 90)
@@ -453,6 +457,7 @@ def s8(c):
     v = c.viewer(); v.login(); to_room_list(v); enter(v, tid, do_join=False)
     assert bots[0].stand() in (200, 204), "방장 일어서기 실패"  # 빈 방은 서버가 15초 뒤 닫는다
     v.wait_scene("table_list.tscn", 60)
+s8.sizes = ("d",)
 
 
 @scenario("목록에 게임 중 표시", 90)
@@ -466,6 +471,62 @@ def s9(c):
     assert room["in_progress"], f"UI 목록 데이터에 게임 중 표시가 없다: {room}"
     v.press(room["card_key"])  # 눌러서 입장 패널이 열리는 카드까지 UI 데이터로 찾는다
     v.wait_state(lambda s: v.vis(s, "EntryPanel"), 15, "입장 패널"); ap.fast()
+s9.sizes = ("d",)
+
+
+QA_ROTATION_GRACE_S = 5  # 서버 app.auth.stomp-rotation-grace (qa 프로필 5s, 운영 30s). 숨은 탭 시나리오의 대기 시간은 이 값에 맞춘다
+
+
+def _hidden_tab_setup(c, name):
+    """A(로비) + B(같은 context, 홀덤 테이블 관전 = STOMP 소켓 열림, 소켓 OPEN/CLOSE 기록). UI 로그인. -> a, b, ws_events"""
+    tid, bots, ap = table(c, name, 2)
+    a = c.viewer(); a.login(); a.wait_state(lambda s: a.text(s, "BalanceLabel").strip() and s, 15, "A 잔액 표시")
+    b = c.viewer(share=a); b.wait_scene("lobby.tscn", 30)
+    ev = b.capture_ws_frames()  # 소켓은 테이블 진입 때 열린다 — 그 전에 건다
+    to_room_list(b); enter(b, tid, do_join=False)
+    qa.wait_for(lambda: (b.page.wait_for_timeout(50), any(e["dir"] == "OPEN" for e in ev))[1], 10, what="B STOMP 소켓 OPEN")
+    a.refreshes = a.unauth = b.refreshes = b.unauth = 0
+    return a, b, ev
+
+
+def _hidden_tab_refresh(a, b, ev, hold):
+    """B 정지 -> A refresh -> 정지 중 B 의 JS 토큰 확인 -> hold 초 뒤 재개 -> A 갱신 시점부터 유예+3초(길게 정지했으면 재개 뒤 4초)가 지나도록 소켓이 안 닫혔는지. 관찰을 문자열 목록으로 돌려준다"""
+    tail = lambda v: v.state()["token_tail"]; old = tail(a); notes = []
+    b.pause(); t0 = time.time(); n0 = len(ev)
+    a.page.evaluate("window.godotQa.refresh()")
+    a.wait_state(lambda s: a.refreshes >= 1 and s, 15, "A refresh 응답")
+    # 3) 정지 중에도 B 의 JS 토큰이 새 토큰
+    qa.wait_for(lambda: (b.page.wait_for_timeout(50), a.page.evaluate("window.__auth.token") != "" and b.page.evaluate("window.__auth.token").endswith(tail(a)))[1], 5, what="정지 중 B JS 토큰 갱신")
+    assert tail(a) != old and a.refreshes == 1, f"A 갱신 이상 refresh={a.refreshes}"
+    notes.append(f"정지 중 B __auth.token 새 토큰 OK, B Api.access_token tail={'새' if tail(b) == tail(a) else '옛'}(브리지)")
+    while time.time() - t0 < hold: b.page.wait_for_timeout(200)
+    closed_paused = [round(e["t"] - t0, 1) for e in ev[n0:] if e["dir"] == "CLOSE"]
+    notes.append(f"정지 {round(time.time() - t0, 1)}s 동안 소켓 CLOSE={closed_paused}")
+    b.resume()
+    # 4) 재개 뒤
+    b.wait_state(lambda s: s["token_tail"] == tail(a) and s, 10, "재개 뒤 B 토큰 == A")
+    while time.time() - t0 < max(QA_ROTATION_GRACE_S + 3, hold + 4): b.page.wait_for_timeout(200)
+    sent = [e for e in ev[n0:] if e["dir"] == "SENT" and "/app/auth/refresh" in e["data"]]
+    recv = [e for e in ev[n0:] if e["dir"] == "RECV" and "OK" in e["data"] and "auth" in e["data"]]
+    changes = [(e["dir"], round(e["t"] - t0, 1)) for e in ev[n0:] if e["dir"] in ("OPEN", "CLOSE")]
+    notes.append(f"인밴드 SEND={[round(e['t'] - t0, 1) for e in sent]} 응답={[round(e['t'] - t0, 1) for e in recv]} 소켓 OPEN/CLOSE={changes}")
+    print("   [hidden-tab]", "; ".join(notes), flush=True)
+    assert not changes, "소켓이 바뀌었다/닫혔다: " + "; ".join(notes)
+    back_to_list(b)  # B 의 REST(방 목록) — 소켓 판정 뒤에(나가면 소켓을 의도해 닫는다)
+    assert b.refreshes == 0 and a.refreshes == 1, f"refresh 요청 A={a.refreshes} B={b.refreshes} (A=1, B=0 이어야 한다)"
+    assert tail(b) == tail(a) and b.unauth == 0 and a.unauth == 0, f"B REST 401 A={a.unauth} B={b.unauth} tail A={tail(a)} B={tail(b)}"
+
+
+@scenario("숨은 탭 B: 정지 중 갱신, 3초 뒤 재개, 소켓 유지", 100)
+def hidden_short(c):
+    a, b, ev = _hidden_tab_setup(c, "HS"); _hidden_tab_refresh(a, b, ev, 3)
+hidden_short.sizes = ("d",)
+
+
+@scenario(f"숨은 탭 B: {QA_ROTATION_GRACE_S + 3}초 내내 정지, 소켓 유지", 100)
+def hidden_long(c):
+    a, b, ev = _hidden_tab_setup(c, "HL"); _hidden_tab_refresh(a, b, ev, QA_ROTATION_GRACE_S + 3)
+hidden_long.sizes = ("d",)
 
 
 @scenario("9석 테이블 렌더", 150)

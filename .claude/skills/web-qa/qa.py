@@ -141,7 +141,7 @@ class Viewer:
     def __init__(self, p, user, size="d", name=None, shots=False, speed=None, share=None):
         """share=다른 Viewer 면 그 브라우저 context 에서 페이지(탭)만 더 연다 — 쿠키·BroadcastChannel·locks 를 공유한다"""
         w, h, dpr = SIZES[size]; self.user, self.size, self.shots, self.speed = user, size, shots, speed
-        self.name = name or f"{user}_{size}"
+        self.name = name or f"{user}_{size}" + ("_tab2" if share else "")
         self.share = share
         self.browser = share.browser if share else p.chromium.launch(args=ARGS)
         self.context = share.context if share else self.browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr)
@@ -247,6 +247,16 @@ class Viewer:
     def _count(self, r):
         if "/api/auth/refresh" in r.url: self.refreshes += 1
         if r.status == 401: self.unauth += 1
+    # --- 숨은 탭 흉내: requestAnimationFrame 콜백을 큐에 쌓아 Godot 메인 루프를 세운다(JS 이벤트·BroadcastChannel·브리지 호출은 그대로 돈다) ---
+    _PAUSE_JS = """(() => { if (window.__qaResume) return; const raf = window.requestAnimationFrame.bind(window); let q = [];
+        window.requestAnimationFrame = cb => { if (window.__qaPause) { q.push(cb); return 0; } return raf(cb); };
+        window.__qaQueued = () => q.length;
+        window.__qaResume = () => { window.__qaPause = false; const x = q; q = []; x.forEach(cb => raf(cb)); }; })()"""
+    def pause(self):
+        """메인 루프를 세운다(큐에 콜백이 쌓일 때까지 확인)"""
+        self.page.evaluate(self._PAUSE_JS); self.page.evaluate("window.__qaPause = true")
+        wait_for(lambda: self.page.evaluate("window.__qaQueued()") > 0, 5, 0.1, "rAF 정지(큐 적재)")
+    def resume(self): self.page.evaluate("window.__qaResume()")
     def close(self): self.page.close() if self.share else self.browser.close()
 
 
@@ -289,6 +299,7 @@ class Ctx:
 def print_table(rows, label, total):
     print(f"\n{'#':>2}  {'결과':<5}{'초':>6}  시나리오 [{label}]")
     for r in rows: print(f"{r['n']:>2}  {r['result']:<5}{r['seconds']:>6}  {r['name']}" + (f"\n        -> {r['reason']}" if r["reason"] else ""))
-    print(f"합계 {sum(r['result'] == 'PASS' for r in rows)}/{len(rows)} 통과, {total}s")
+    skip = sum(r["result"] == "SKIP" for r in rows)
+    print(f"합계 {sum(r['result'] == 'PASS' for r in rows)}/{len(rows) - skip} 통과" + (f", {skip} SKIP" if skip else "") + f", {total}s")
 
 
