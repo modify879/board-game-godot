@@ -16,6 +16,7 @@ const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 
 const SeatScene := preload("res://games/holdem/seat.tscn")
 const SeatScript := preload("res://games/holdem/seat.gd")
 const Marker := preload("res://games/holdem/marker.gd")
+const PublicView := preload("res://games/holdem/public_view.gd")
 const Motion := preload("res://games/holdem/motion.gd") # 연출 오버레이 + 연출 시간 상수
 const FELT_COLOR := Color("1B5E3A")
 const FELT_RIM_COLOR := Color("0F3D26")
@@ -680,12 +681,7 @@ func _play_motion(prev: Dictionary) -> void:
 func _plan_deal() -> void:
 	deal_plan = {}
 	deal_plan_ticks = Time.get_ticks_msec()
-	var dealer := int(public_view.get("buttonSeatNo", 0))
-	var order: Array = []
-	for seat in public_view.get("seats", []):
-		if seat.status == "ACTIVE" or seat.status == "ALL_IN":
-			order.append(int(seat.seatNo))
-	order.sort_custom(func(a: int, b: int) -> bool: return posmod(a - dealer - 1, 9) < posmod(b - dealer - 1, 9))
+	var order := PublicView.deal_order(public_view)
 	for k in order.size():
 		deal_plan[order[k]] = [k * Motion.DEAL_STAGGER, (order.size() + k) * Motion.DEAL_STAGGER]
 
@@ -752,24 +748,15 @@ func _is_seated() -> bool:
 
 
 func _find_seat(seat_no: int) -> Variant:
-	for seat in public_view.get("seats", []):
-		if seat.seatNo == seat_no:
-			return seat
-	return null
+	return PublicView.find_seat(public_view, seat_no)
 
 
 func _seat_held_by(seat_no: int, user_id) -> bool:
-	# 결과는 다음 핸드 전까지 남는다 — 그 사이 같은 좌석에 다른 사람이 앉으면 물려받지 못하게 막는다.
-	# 좌석이 비었다면 결과 주인이 나간 것(정산 때 나가기 예약 등)이라 결과를 그대로 보인다
-	var seat: Variant = _find_seat(seat_no)
-	return user_id != null and (seat == null or int(seat.userId) == int(user_id))
+	return PublicView.seat_held_by(public_view, seat_no, user_id)
 
 
 func _find_seat_by_user(user_id: int) -> Variant:
-	for seat in public_view.get("seats", []):
-		if seat.userId == user_id:
-			return seat
-	return null
+	return PublicView.find_seat_by_user(public_view, user_id)
 
 
 func _my_seat_no() -> int:
@@ -778,36 +765,19 @@ func _my_seat_no() -> int:
 
 
 func _to_act_seat_no() -> int:
-	# 아무도 차례가 아니면 서버가 null 을 보낸다 — get() 기본값은 키가 없을 때만 쓰이고, int(null) 은 오류다
-	var to_act = public_view.get("toActSeatNo")
-	return -1 if to_act == null else int(to_act)
+	return PublicView.to_act_seat_no(public_view)
 
 
 func _find_shown_hand(seat_no: int) -> Variant:
-	var result = public_view.get("result")
-	if result == null:
-		return null
-	for shown in result.get("shownHands", []):
-		if int(shown.seatNo) == seat_no and _seat_held_by(seat_no, shown.get("userId")):
-			return shown
-	return null
+	return PublicView.find_shown_hand(public_view, seat_no)
 
 
 func _find_revealed_hand(seat_no: int) -> Variant:
-	for revealed in public_view.get("revealedHands", []):
-		if int(revealed.seatNo) == seat_no:
-			return revealed
-	return null
+	return PublicView.find_revealed_hand(public_view, seat_no)
 
 
 func _payout_for(seat_no: int) -> int:
-	var result = public_view.get("result")
-	if result == null:
-		return 0
-	for payout in result.get("payouts", []):
-		if int(payout.seatNo) == seat_no and _seat_held_by(seat_no, payout.get("userId")):
-			return int(payout.amount)
-	return 0
+	return PublicView.payout_for(public_view, seat_no)
 
 
 func _update_status_label() -> void:
@@ -1063,9 +1033,8 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		bet_box.show()
 
 
-## 이 스트리트에 이 좌석이 건 금액. 공개 뷰엔 totalContributed(핸드 누적)만 있어 스트리트 시작 값과의 차로 구한다
 func _street_bet(seat: Dictionary) -> int:
-	return maxi(int(seat.totalContributed) - int(street_base.get(int(seat.seatNo), 0)), 0)
+	return PublicView.street_bet(seat, street_base)
 
 
 func _track_street_base() -> void:
@@ -1073,17 +1042,11 @@ func _track_street_base() -> void:
 	if key == street_base_key:
 		return
 	street_base_key = key
-	street_base = {}
-	if public_view.get("street", "") != "PREFLOP": # 프리플랍은 블라인드부터 베팅이라 0 에서 센다
-		for seat in public_view.get("seats", []):
-			street_base[int(seat.seatNo)] = int(seat.totalContributed)
+	street_base = PublicView.street_base(public_view)
 
 
 func _current_max_bet() -> int:
-	var best := 0
-	for seat in public_view.get("seats", []):
-		best = maxi(best, _street_bet(seat))
-	return best
+	return PublicView.current_max_bet(public_view, street_base)
 
 
 func _update_turn_key() -> void:
@@ -1343,16 +1306,8 @@ func _on_cancel_request_pressed() -> void:
 		_show_error(r.error)
 
 
-## 폴드로 이긴 사람만, 다음 판 전에 한 번 보여 줄 수 있다. 폴드 종료 = 결과가 있고 shownHands 가 비었다(쇼다운이면 채워진다 — 내가 이미 보여 줬어도 채워져 조건이 꺼진다)
 func _can_show_hand() -> bool:
-	var result = public_view.get("result")
-	if result == null or show_denied_hand == hand_counter or public_view.get("handInProgress", false) or not result.get("shownHands", []).is_empty():
-		return false
-	# 좌석이 아니라 userId 로 찾는다 — 나가기 예약이 정산에서 실행돼 자리가 비어도 다음 판 전까지 보여 줄 수 있다
-	for payout in result.get("payouts", []):
-		if int(payout.userId) == Api.user_id and int(payout.amount) > 0:
-			return true
-	return false
+	return show_denied_hand != hand_counter and PublicView.can_show_hand(public_view, Api.user_id)
 
 
 func _on_show_hand_pressed() -> void:
