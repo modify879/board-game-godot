@@ -95,6 +95,10 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 	var bad: Array = []
 	for d: int in dealers:
 		view_extra["buttonSeatNo"] = float(d)
+		var di: int = nos.find(d) # 헤즈업은 버튼 == SB, 그 외엔 버튼 다음 두 좌석
+		var sbi: int = di if n == 2 else (di + 1) % nos.size()
+		view_extra["smallBlindSeatNo"] = float(nos[sbi])
+		view_extra["bigBlindSeatNo"] = float(nos[(sbi + 1) % nos.size()])
 		table.last_public_seq = -1
 		table.last_private_seq = -1
 		table.have_view = false
@@ -153,6 +157,9 @@ func _collect(table: Control, hero: int) -> Dictionary:
 			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
 	if table.dealer_marker.visible:
 		items.append({"o": "dealer", "k": "dealer", "r": table.dealer_marker.get_global_rect()})
+	for pair: Array in [["dealer-sb", table.sb_marker], ["dealer-bb", table.bb_marker]]: # 딜러와 같은 종류(o 가 달라 마커끼리 겹침도 본다)
+		if pair[1].visible:
+			items.append({"o": pair[0], "k": "dealer", "r": pair[1].get_global_rect()})
 	for c: Control in table.board_card_rects:
 		if c.visible:
 			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})

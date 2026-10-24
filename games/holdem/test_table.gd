@@ -429,6 +429,21 @@ func _ready() -> void:
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 4500.0}, 3, 7, false, "qauser2") == "좌석 2 qauser2  -500", "핸드 기록: 타인·닉네임·손실")
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5100.0}, 3, -1, true, "qauser2") == "좌석 2 qauser2 (회원 #8)  +100", "핸드 기록: 관리자 닉네임")
 
+	# 3b. 블라인드 마커 — 핸드 중에만, 해당 좌석 곁(캡슐 중심에서 가까운 곳)에
+	var bl := {"handInProgress": true, "buttonSeatNo": 1.0, "smallBlindSeatNo": 1.0, "bigBlindSeatNo": 2.0}
+	table._handle_public(_view(3000, [_seat(1, 7), _seat(2, 8)], bl))
+	var near_ok := true
+	for pair: Array in [[table.sb_marker, 1], [table.bb_marker, 2]]:
+		var bsn: Control = table.seat_nodes[pair[1] - 1]
+		near_ok = near_ok and pair[0].visible and (pair[0].position + pair[0].size / 2.0).distance_to(bsn.position + bsn.size / 2.0) < 160.0
+	check(near_ok, "SB·BB 마커가 핸드 중 해당 좌석 곁에 보인다")
+	check(not Rect2(table.dealer_marker.position, table.dealer_marker.size).intersects(Rect2(table.sb_marker.position, table.sb_marker.size)), "헤즈업 D·SB 마커가 겹치지 않는다")
+	var qb: Dictionary = table.qa_state()
+	check(qb.sb_seat_no == 1 and qb.bb_seat_no == 2, "qa_state sb_seat_no·bb_seat_no")
+	table._handle_public(_view(3001, [_seat(1, 7), _seat(2, 8)], bl.merged({"handInProgress": false}, true)))
+	qb = table.qa_state()
+	check(not table.sb_marker.visible and not table.bb_marker.visible and qb.sb_seat_no == -1 and qb.bb_seat_no == -1, "핸드 밖에서는 SB·BB 마커 숨김")
+
 	get_tree().quit(1 if failures else 0)
 
 

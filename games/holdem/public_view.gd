@@ -14,6 +14,18 @@ static func action_label(seat: Dictionary, hand_in_progress: bool) -> String:
 	return ""
 
 
+## 이번 핸드에 블라인드를 낸 좌석 {"sb","bb"}(없으면 -1). 서버가 정산 뒤에도 방송에 값을 남기므로 핸드 중일 때만 본다.
+## 헤즈업이면 sb 가 버튼과 같다. 데드 스몰 블라인드면 sb 만 null
+static func blind_seats(view: Dictionary) -> Dictionary:
+	var out := {"sb": -1, "bb": -1}
+	if view.get("handInProgress", false):
+		var sb = view.get("smallBlindSeatNo")
+		var bb = view.get("bigBlindSeatNo")
+		out.sb = -1 if sb == null else int(sb)
+		out.bb = -1 if bb == null else int(bb)
+	return out
+
+
 static func find_seat(view: Dictionary, seat_no: int) -> Variant:
 	for seat in view.get("seats", []):
 		if seat.seatNo == seat_no:

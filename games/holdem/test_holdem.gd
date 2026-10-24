@@ -111,6 +111,13 @@ func _init() -> void:
 	check(pv.deal_order(view) == [7, 1], "deal_order 버튼 왼쪽부터, ACTIVE·ALL_IN 만")
 	check(pv.deal_order({"buttonSeatNo": 7, "seats": seats}) == [1, 7], "deal_order 버튼 바뀌면 회전")
 
+	var bs := {"handInProgress": true, "smallBlindSeatNo": 2.0, "bigBlindSeatNo": 3.0}
+	check(pv.blind_seats(bs) == {"sb": 2, "bb": 3}, "blind_seats 보통")
+	check(pv.blind_seats({"handInProgress": true, "buttonSeatNo": 4.0, "smallBlindSeatNo": 4.0, "bigBlindSeatNo": 7.0}) == {"sb": 4, "bb": 7}, "blind_seats 헤즈업은 SB 가 버튼 좌석")
+	check(pv.blind_seats({"handInProgress": true, "smallBlindSeatNo": null, "bigBlindSeatNo": 3.0}) == {"sb": -1, "bb": 3}, "blind_seats 데드 SB 는 sb 만 -1")
+	check(pv.blind_seats(bs.merged({"handInProgress": false}, true)) == {"sb": -1, "bb": -1}, "blind_seats 핸드 밖은 -1")
+	check(pv.blind_seats({"handInProgress": true}) == {"sb": -1, "bb": -1} and pv.blind_seats({}) == {"sb": -1, "bb": -1}, "blind_seats 필드 없음은 -1")
+
 	quit(1 if failures else 0)
 
 

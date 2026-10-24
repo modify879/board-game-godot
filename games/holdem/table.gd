@@ -71,6 +71,8 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
 var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> HBoxContainer(칩 아이콘 + 금액)
 var dealer_marker: Control
+var sb_marker: Control
+var bb_marker: Control
 var felt_style := StyleBoxFlat.new()
 var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드를 작게
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
@@ -210,6 +212,11 @@ func _build_seats() -> void:
 	dealer_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22))
 	dealer_marker.hide()
 	felt_area.add_child(dealer_marker)
+	sb_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22), "SB", Color(0.62, 0.80, 1.0)) # D 와 구별되게 푸른 기
+	bb_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22), "BB", Color(1.0, 0.72, 0.62))
+	for m: Control in [sb_marker, bb_marker]:
+		m.hide()
+		felt_area.add_child(m)
 	for seat_no in range(1, 10):
 		var seat_node: Control = SeatScene.instantiate()
 		seat_node.name = "Seat%d" % seat_no # QA 브리지 키(Seat3/NameLabel)
@@ -220,10 +227,12 @@ func _build_seats() -> void:
 	_render_seats()
 
 
-func _marker(kind: int, min_size: Vector2) -> Control:
+func _marker(kind: int, min_size: Vector2, label := "D", tint := Color.WHITE) -> Control:
 	var m := Control.new()
 	m.set_script(Marker)
 	m.kind = kind
+	m.label = label
+	m.tint = tint
 	m.custom_minimum_size = min_size
 	m.size = min_size
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -730,6 +739,8 @@ func qa_state() -> Dictionary:
 		"last_public_seq": last_public_seq,
 		"my_seat_no": _my_seat_no(),
 		"hand_in_progress": public_view.get("handInProgress", false),
+		"sb_seat_no": PublicView.blind_seats(public_view).sb,
+		"bb_seat_no": PublicView.blind_seats(public_view).bb,
 		"street": public_view.get("street", ""),
 		"my_hole_cards": my_codes,
 		"to_act_seat": _to_act_seat_no(),
@@ -854,6 +865,12 @@ func _render_seats() -> void:
 	if button_no != null and _find_seat(int(button_no)) != null:
 		dealer_seat = int(button_no)
 	dealer_marker.visible = dealer_seat != -1
+	var blinds := PublicView.blind_seats(public_view)
+	var sb_seat: int = blinds.sb if _find_seat(blinds.sb) != null else -1
+	var bb_seat: int = blinds.bb if _find_seat(blinds.bb) != null else -1
+	sb_marker.visible = sb_seat != -1
+	bb_marker.visible = bb_seat != -1
+	var marks: Array = [[dealer_marker, dealer_seat], [sb_marker, sb_seat], [bb_marker, bb_seat]] # 놓는 순서 = 겹침 우선순위
 	var area := felt_area.size
 	for seat_no in range(1, 10):
 		var sp := _seat_center(seat_no, hero, g)
@@ -863,26 +880,15 @@ func _render_seats() -> void:
 		seat_node.badge_side = 0 if absf(sp.x - g.center.x) < 20.0 else int(signf(sp.x - g.center.x))
 		seat_node.badge_bounds = Vector2(4.0 - seat_node.position.x, area.x - 4.0 - seat_node.position.x)
 		_render_seat(seat_no, seat_node)
-	for seat_no in range(1, 10): # 딜러·베팅은 모든 좌석이 놓인 뒤 — 좌석 사이 충돌을 본다
+	var placed: Array = [] # 이미 놓은 마커 사각 — 다음 마커의 자리 검사에서 막는다
+	for mk: Array in marks:
+		if mk[1] != -1:
+			_place_marker(mk[0], mk[1], hero, g, placed)
+	for seat_no in range(1, 10): # 베팅은 모든 좌석·마커가 놓인 뒤 — 좌석 사이 충돌을 본다
 		var sp := _seat_center(seat_no, hero, g)
 		var seat_node: Control = seat_nodes[seat_no - 1]
 		var to_center: Vector2 = (g.center - sp).normalized()
 		var is_hero := seat_no == hero
-		if seat_no == dealer_seat:
-			var msz := dealer_marker.size
-			var d := _push_clear(sp, sp, msz, to_center, 4.0, g.cap)
-			if is_hero:
-				d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
-			else: # 마커가 이 좌석의 작은 카드·배지를 가리거나 화면 밖이면 캡슐 옆·아래 모서리로 옮긴다
-				var sx := 1.0 if to_center.x >= 0.0 else -1.0
-				var cands: Array = [d, sp + Vector2(sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
-					sp + Vector2(-sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
-					sp + Vector2(sx * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0)]
-				for cd: Vector2 in cands:
-					if _dealer_spot_ok(Rect2(cd - msz / 2.0, msz), seat_node, hero, g):
-						d = cd
-						break
-			dealer_marker.position = d - dealer_marker.size / 2.0
 		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
 		if bet_box.visible:
 			bet_box.reset_size()
@@ -892,15 +898,46 @@ func _render_seats() -> void:
 			if not compact and (rel == 2 or rel == 7): # 아래 옆 좌석의 작은 카드 위로 칩이 걸치지 않게 조금 올린다
 				b.y -= 20.0
 			b = _push_clear(sp, b, bm, to_center, 6.0, g.cap) # 알약 캡슐 가장자리 밖으로(사각이 아니라 알약 기준)
-			if seat_no == dealer_seat and not is_hero: # 딜러 마커와 겹치면 마커 바깥으로 민다
-				var msz := dealer_marker.size
-				var dpos: Vector2 = dealer_marker.position + msz / 2.0
-				if Rect2(b - bm / 2.0, bm).grow(4.0).intersects(Rect2(dpos - msz / 2.0, msz)):
-					b = dpos + to_center * (absf(to_center.x) * (bm.x + msz.x) / 2.0 + absf(to_center.y) * (bm.y + msz.y) / 2.0 + 4.0)
+			if not is_hero: # 이 좌석의 마커(딜러·SB·BB)와 겹치면 마커 바깥으로 민다
+				for mk: Array in marks:
+					if mk[1] != seat_no:
+						continue
+					var msz: Vector2 = mk[0].size
+					var dpos: Vector2 = mk[0].position + msz / 2.0
+					if Rect2(b - bm / 2.0, bm).grow(4.0).intersects(Rect2(dpos - msz / 2.0, msz)):
+						b = dpos + to_center * (absf(to_center.x) * (bm.x + msz.x) / 2.0 + absf(to_center.y) * (bm.y + msz.y) / 2.0 + 4.0)
 			if is_hero: # 내 카드를 가리지 않게: 가로는 카드 왼쪽, 세로는 카드 바로 위
 				b = Vector2(g.center.x, g.hero_top - 12.0) if compact else Vector2(b.x - g.hc.x - 56.0, b.y)
 			bet_box.position = b - bm / 2.0
 	_place_payouts(hero, g)
+
+
+## 마커(딜러·SB·BB)를 seat_no 좌석 곁에 놓는다. 가리는 것이 없는 첫 후보 자리에 두고 placed 에 사각을 보탠다
+func _place_marker(marker: Control, seat_no: int, hero: int, g: Dictionary, placed: Array) -> void:
+	var sp := _seat_center(seat_no, hero, g)
+	var seat_node: Control = seat_nodes[seat_no - 1]
+	var to_center: Vector2 = (g.center - sp).normalized()
+	var msz := marker.size
+	var d := _push_clear(sp, sp, msz, to_center, 4.0, g.cap)
+	if seat_no == hero:
+		d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
+		for r: Rect2 in placed: # 같은 자리에 이미 놓였으면 옆으로 한 칸씩
+			if r.grow(2.0).intersects(Rect2(d - msz / 2.0, msz)):
+				d.x += msz.x + 4.0
+	else: # 마커가 이 좌석의 작은 카드·배지를 가리거나 화면 밖이면 캡슐 옆·아래 모서리로 옮긴다
+		var sx := 1.0 if to_center.x >= 0.0 else -1.0
+		var cands: Array = [d, sp + Vector2(sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
+			sp + Vector2(-sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
+			sp + Vector2(sx * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0),
+			sp + Vector2(-sx * (g.cap.x / 2.0 - 12.0), g.cap.y / 2.0 + 10.0),
+			sp + Vector2(sx * (g.cap.x / 2.0 - 12.0), -g.cap.y / 2.0 - 10.0),
+			sp + Vector2(-sx * (g.cap.x / 2.0 - 12.0), -g.cap.y / 2.0 - 10.0)]
+		for cd: Vector2 in cands:
+			if _dealer_spot_ok(Rect2(cd - msz / 2.0, msz), seat_node, hero, g, placed):
+				d = cd
+				break
+	marker.position = d - msz / 2.0
+	placed.append(Rect2(marker.position, msz))
 
 
 ## r 이 sp 에 있는 알약 캡슐에서 margin 보다 가까우면 true. 캡슐은 양 끝이 반원이라 사각 모서리가 비어 있다
@@ -934,14 +971,14 @@ func _center_blockers() -> Array:
 	return out
 
 
-## 이 좌석의 카드·배지와 겹치지 않고, 펠트 영역 안이고, 다른 좌석 캡슐과 닿지 않으면 딜러 마커 자리로 쓴다
-func _dealer_spot_ok(r: Rect2, seat_node: Control, hero: int, g: Dictionary) -> bool:
+## 이 좌석의 카드·배지·이미 놓은 마커와 겹치지 않고, 펠트 영역 안이고, 다른 좌석 캡슐과 닿지 않으면 마커 자리로 쓴다
+func _dealer_spot_ok(r: Rect2, seat_node: Control, hero: int, g: Dictionary, placed: Array) -> bool:
 	if not Rect2(Vector2.ZERO, felt_area.size).encloses(r):
 		return false
 	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave, seat_node.badge_action]:
 		if cr.visible and _seat_rect(seat_node, cr).grow(2.0).intersects(r):
 			return false
-	for b: Rect2 in _center_blockers():
+	for b: Rect2 in _center_blockers() + placed:
 		if b.grow(2.0).intersects(r):
 			return false
 	for no in range(1, 10):
@@ -961,8 +998,9 @@ func _place_payouts(hero: int, g: Dictionary) -> void:
 				blockers.append(_seat_rect(n, c))
 		if bet_boxes[seat_no - 1].visible:
 			blockers.append(Rect2(bet_boxes[seat_no - 1].position, bet_boxes[seat_no - 1].size))
-	if dealer_marker.visible:
-		blockers.append(Rect2(dealer_marker.position, dealer_marker.size))
+	for m: Control in [dealer_marker, sb_marker, bb_marker]:
+		if m.visible:
+			blockers.append(Rect2(m.position, m.size))
 	blockers.append_array(_center_blockers())
 	for seat_no in range(1, 10):
 		var n: Control = seat_nodes[seat_no - 1]
