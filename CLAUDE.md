@@ -22,6 +22,10 @@ rm -f build/web/index.{wasm,pck,js}.gz && /mnt/c/Users/jsm/.godot/Godot.exe --he
 
 nginx(`deploy`) 컨테이너는 사용자가 계속 띄워 두고 쓴다. 검증이 끝나도 `docker compose down`·`docker rm`·`stop` 하지 않는다 — 내려가 있으면 위 명령으로 다시 띄운다
 
+Godot 인자는 따로 넘긴다 — `"--script res://..."` 처럼 한 문자열로 묶이면 Godot 이 옵션을 무시하고 메인 씬을 띄워 끝나지 않는다
+
+WSL 에서 `timeout`·`kill` 로 끊어도 Windows `Godot.exe` 는 남는다 — 끊었으면 `tasklist.exe | grep -i godot` 로 확인하고 `taskkill.exe /PID <id> /F` 로 끝낸다(run_all.sh 는 시간 초과 때 헤드리스 Godot 을 스스로 정리한다)
+
 서버 코드는 이 저장소에서 고치지 않는다. 띄워야 하면 서버 저장소에서 `./gradlew bootRun`.
 
 ## 구조
