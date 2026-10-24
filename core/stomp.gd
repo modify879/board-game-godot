@@ -9,6 +9,12 @@ signal closed
 const AUTH_SUB_ID := "sub-auth" # 공개 replay 목록(_subs)에 넣지 않는 내부 채널 구독 id
 const AUTH_DEST := "/user/queue/auth"
 const HEART_BEAT_RECV_MS := 10000 # 서버→클라이언트 주기 요청값
+# 숨은 탭은 메인 루프가 멈춰 수신 버퍼가 안 비워진다 — 기본 64KB 는 37초면 테이블 브로드캐스트로 차서 프레임을 버린다(Buffer payload full)
+# ponytail: 숨은 시간이 더 길거나 방이 더 바쁘면 여전히 넘친다. 업그레이드: 탭 복귀 시 테이블 상태 재동기화
+const WS_INBOUND_BUFFER := 1 << 20
+# 인밴드 연장 응답 마감. 서버 유예(운영 30초)보다 짧아야 make-before-break 교체가 서버 종료보다 먼저 일어난다.
+# QA(유예 5초)에서 응답이 늦으면 끊김→재연결 폴백
+const AUTH_DEADLINE_SEC := 20.0
 
 var ws := WebSocketPeer.new()
 var _connected := false
@@ -72,10 +78,16 @@ func connect_ws() -> void:
 	_cancel_rotate() # 교체 중 새로 연결하면 _finish_rotate 가 새 ws 를 덮어 고아로 만든다
 	_intentional_close = false
 	_connected = false # 새 소켓은 CONNECTED 전까지 STOMP 연결이 아니다
-	ws = WebSocketPeer.new()
+	ws = _new_peer()
 	ws.connect_to_url(_ws_url())
 	# 즉시 거부되면 첫 poll 이 바로 CLOSED 다 — CLOSED 로 두면 전이가 안 보여 재연결이 영영 멈춘다
 	_last_state = WebSocketPeer.STATE_CONNECTING
+
+
+func _new_peer() -> WebSocketPeer:
+	var peer := WebSocketPeer.new()
+	peer.inbound_buffer_size = WS_INBOUND_BUFFER # connect_to_url 전에 정해야 먹는다
+	return peer
 
 
 func _ws_url() -> String:
@@ -213,7 +225,7 @@ func _on_token_refreshed() -> void:
 	send("/app/auth/refresh", {"accessToken": api.access_token})
 	_auth_deadline_generation += 1
 	var generation := _auth_deadline_generation
-	get_tree().create_timer(30.0).timeout.connect(_on_auth_deadline.bind(generation))
+	get_tree().create_timer(AUTH_DEADLINE_SEC).timeout.connect(_on_auth_deadline.bind(generation))
 
 
 func _on_auth_deadline(generation: int) -> void:
@@ -234,7 +246,7 @@ func _rotate() -> void:
 	_rotating = true
 	# make-before-break: 새 소켓이 CONNECTED 되고 구독을 옮긴 뒤에야 옛 소켓을 끊는다.
 	# 먼저 끊으면 그 사이 대기열에서 빠질 수 있다(다른 세션이 없으면 서버가 큐를 비운다).
-	_rotate_ws = WebSocketPeer.new()
+	_rotate_ws = _new_peer()
 	_rotate_ws.connect_to_url(_ws_url())
 	# connect_ws 와 같다 — CLOSED 로 두면 실패한 회전 소켓이 정리되지 않고 _rotating 이 영영 true 다
 	_rotate_last_state = WebSocketPeer.STATE_CONNECTING
