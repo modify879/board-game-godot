@@ -23,6 +23,7 @@ const FELT_RIM := 12
 const CARD_ASPECT := 190.0 / 140.0 # 카드 이미지 비율(세로/가로)
 const BET_LERP := 0.38 # 베팅 칩 위치: 좌석 → 펠트 중심 사이 비율
 const TURN_SECONDS := 30.0 # 서버 턴 제한. infrastructure/timer/TurnTimer.kt:132
+const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
 @onready var back_button: Button = %BackButton
@@ -96,6 +97,7 @@ var nickname_fetching := {} # userId -> true while request in flight
 
 var stomp_connected := false
 var waiting := false
+var resume_event_seen := false # 탭 복귀 뒤 join-queue 이벤트를 받았다 — 서버가 아직 대기열에 두고 있다는 뜻
 var leave_room_after_stand := false # 핸드 후 방 나가기 의도. 개인 뷰의 leaveReservation(새 서버)이 있으면 그것을 따라 재접속해도 복원되고, 없으면(옛 서버·핸드 비참가자) 이 메모리 값이 전부다 — 재접속하면 사라져 관전자로 남는다. 일어선 뒤엔 개인 뷰가 안 오므로 마지막 값으로 목록행을 정한다
 var sit_popup_gen := 0 # 착석 팝업을 열 때마다 올린다 — 늦게 온 지갑 응답을 거른다
 var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·SEATED·DROPPED)를 하나라도 받았다 — 방 생성 뒤 착석 확인을 건너뛴다
@@ -166,6 +168,7 @@ func _ready() -> void:
 	Stomp.error.connect(_on_stomp_error)
 	Stomp.connected.connect(_on_stomp_connected)
 	Stomp.closed.connect(_on_stomp_closed)
+	Stomp.resumed.connect(_on_stomp_resumed)
 	if table_id != 0:
 		Stomp.subscribe("/topic/tables/%d" % table_id)
 	Stomp.subscribe("/user/queue/holdem/join-queue")
@@ -179,6 +182,7 @@ func _exit_tree() -> void:
 	Stomp.error.disconnect(_on_stomp_error)
 	Stomp.connected.disconnect(_on_stomp_connected)
 	Stomp.closed.disconnect(_on_stomp_closed)
+	Stomp.resumed.disconnect(_on_stomp_resumed)
 	Stomp.disconnect_ws()
 
 
@@ -381,6 +385,7 @@ func _handle_join_queue(body: Dictionary) -> void:
 	if int(body.tableId) != table_id:
 		return
 	join_event_seen = true
+	resume_event_seen = true
 	match body.type:
 		"POSITION":
 			queue_position = int(body.position)
@@ -536,6 +541,33 @@ func _check_create_seat(id: int) -> void:
 	_show_error(r.error if not r.ok else "CREATE_SEAT_FAILED")
 	_update_status_label()
 	_update_buttons()
+
+
+## 숨은 탭에서 잃었을 수 있는 join-queue SEATED/DROPPED 를 me/seat 로 보충한다.
+## me/seat 는 좌석만 본다(대기열 중이면 204) — 소켓 교체가 끝나 서버가 POSITION·SEATED 스냅샷을 줄 시간을 준 뒤, 안 왔을 때만 묻는다(DROPPED 는 스냅샷으로 안 온다)
+func _on_stomp_resumed() -> void:
+	if not waiting or _is_seated() or table_id == 0:
+		return
+	resume_event_seen = false
+	if not Stomp.connected.is_connected(_start_resume_seat_check): # 교체가 끝나면(connected) 유예를 센다
+		Stomp.connected.connect(_start_resume_seat_check, CONNECT_ONE_SHOT)
+
+
+func _start_resume_seat_check() -> void:
+	get_tree().create_timer(RESUME_SEAT_CHECK_SEC).timeout.connect(_check_resume_seat.bind(table_id)) # await 은 노드가 해제돼도 재개된다 — connect 는 끊긴다
+
+
+func _check_resume_seat(id: int) -> void:
+	if table_id != id or resume_event_seen or not waiting or _is_seated():
+		return
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/me/seat")
+	if table_id != id or resume_event_seen or not waiting or _is_seated() or not r.ok:
+		return
+	if r.status == 200 and r.data is Dictionary:
+		if int(r.data.tableId) == id:
+			_handle_join_queue({"tableId": id, "type": "SEATED"})
+	elif r.status == 204: # 스냅샷도 없고 앉지도 않았다 — DROPPED 를 잃었다
+		_handle_join_queue({"tableId": id, "type": "DROPPED", "errorCode": "CREATE_SEAT_FAILED"})
 
 
 func _on_stomp_closed() -> void:
@@ -701,6 +733,7 @@ func qa_state() -> Dictionary:
 		countdown = maxf((next_hand_due_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
 	return {
 		"table_id": table_id,
+		"last_public_seq": last_public_seq,
 		"my_seat_no": _my_seat_no(),
 		"hand_in_progress": public_view.get("handInProgress", false),
 		"street": public_view.get("street", ""),

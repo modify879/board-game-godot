@@ -5,16 +5,21 @@ signal connected
 signal message(destination: String, body: Variant)
 signal error(code: String)
 signal closed
+## 메인 루프가 RESUME_GAP_MS 넘게 멈췄다 돌아왔다(숨은 탭 복귀). 소켓 교체로 구독 스냅샷을 다시 받는다 — 게임 화면이 REST 로 보충할 때 쓴다
+signal resumed
 
 const AUTH_SUB_ID := "sub-auth" # 공개 replay 목록(_subs)에 넣지 않는 내부 채널 구독 id
 const AUTH_DEST := "/user/queue/auth"
 const HEART_BEAT_RECV_MS := 10000 # 서버→클라이언트 주기 요청값
 # 숨은 탭은 메인 루프가 멈춰 수신 버퍼가 안 비워진다 — 기본 64KB 는 37초면 테이블 브로드캐스트로 차서 프레임을 버린다(Buffer payload full)
-# ponytail: 숨은 시간이 더 길거나 방이 더 바쁘면 여전히 넘친다. 업그레이드: 탭 복귀 시 테이블 상태 재동기화
+# 넘쳐 잃은 프레임(TABLE_CLOSED 같은 1회성 포함)은 RESUME_GAP_MS 재동기화가 복구한다 — _process 의 resumed 처리
+# ponytail: 탭이 숨은 채 소켓이 죽으면 재동기화 없이 평소 재연결 경로(재연결이 구독을 재생)만 탄다
 const WS_INBOUND_BUFFER := 1 << 20
 # 인밴드 연장 응답 마감. 서버 유예(운영 30초)보다 짧아야 make-before-break 교체가 서버 종료보다 먼저 일어난다.
 # QA(유예 5초)에서 응답이 늦으면 끊김→재연결 폴백
 const AUTH_DEADLINE_SEC := 20.0
+# _process 사이 실시간 간격이 이보다 길면 "멈췄다 돌아옴"(버퍼 넘침으로 프레임을 잃었을 수 있다). 하트비트 주기(10초)보다 짧게
+const RESUME_GAP_MS := 5000
 
 var ws := WebSocketPeer.new()
 var _connected := false
@@ -30,13 +35,18 @@ var _rotate_ws: WebSocketPeer = null
 var _rotate_last_state := WebSocketPeer.STATE_CLOSED
 var _rotating := false
 var _auth_deadline_generation := 0
+var _last_process_ticks := 0 # 직전 _process 시각(실시간 — time_scale 영향 없음)
 
 
 func _ready() -> void:
+	_last_process_ticks = Time.get_ticks_msec()
 	get_node("/root/Api").token_refreshed.connect(_on_token_refreshed)
 
 
 func _process(_delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	var resumed_now := is_resume_gap(now - _last_process_ticks)
+	_last_process_ticks = now
 	var peer := ws
 	var state := peer.get_ready_state()
 	if state != WebSocketPeer.STATE_CLOSED:
@@ -70,6 +80,12 @@ func _process(_delta: float) -> void:
 	if _connected and _recv_interval_ms > 0 and Time.get_ticks_msec() - _last_recv_ticks > _recv_interval_ms * 3:
 		ws.close() # 죽은 TCP 는 closing handshake 가 오지 않으니 기다리지 않고 닫힌 피어로 바꿔, 다음 프레임에 평소 재연결 경로를 태운다
 		ws = WebSocketPeer.new()
+	elif resumed_now and _connected and _rotate_ws == null:
+		# 숨은 동안 수신 버퍼가 차 최신 프레임을 버렸을 수 있다. 위에서 쌓인 패킷을 다 비웠는데도 연결이 살아 있으면 소켓을 교체해 서버 스냅샷을 다시 받는다
+		# (소켓 종료가 쌓여 있었다면 _connected 가 이미 꺼져 평소 재연결 경로가 맡는다)
+		_rotate()
+	if resumed_now:
+		resumed.emit()
 	if _rotate_ws != null:
 		_process_rotate()
 
@@ -290,6 +306,10 @@ func _finish_rotate(recv_interval_ms: int) -> void:
 	_send_on(old_ws, build_frame("DISCONNECT", {}, ""))
 	old_ws.close()
 	connected.emit()
+
+
+static func is_resume_gap(gap_ms: int) -> bool:
+	return gap_ms > RESUME_GAP_MS
 
 
 static func receive_interval_ms(server_heart_beat: String) -> int:

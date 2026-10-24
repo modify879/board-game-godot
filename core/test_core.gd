@@ -44,6 +44,8 @@ func _init() -> void:
 	check(stomp.unescape_header("\\\\n") == "\\n" and stomp.unescape_header("\\\\n").length() == 2, "unescape backslash then n, no double decode")
 	check(stomp.parse_frame("ERROR\nmessage:a\\cb\n\n").headers.get("message", "") == "a:b", "parse_frame unescapes header value")
 
+	check(not stomp.is_resume_gap(stomp.RESUME_GAP_MS) and stomp.is_resume_gap(stomp.RESUME_GAP_MS + 1), "resume gap threshold")
+
 	# heartbeat frame
 	var hb := stomp.parse_frame("\n")
 	check(hb.command == "", "heartbeat parses to empty command")
