@@ -11,11 +11,18 @@ if [ ! -x "$PY" ]; then
   uv venv "$(dirname "$(dirname "$PY")")" -q && uv pip install -q -p "$PY" playwright && "$PY" -m playwright install chromium || exit 2
 fi
 
+# WSL 에서 timeout 으로 죽여도 Windows 의 Godot.exe 는 남는다 — 헤드리스만 골라 끝낸다(에디터는 둔다)
+# ponytail: 다른 세션이 동시에 돌리는 헤드리스 Godot 도 끈다. 필요하면 PID 를 추적한다
+kill_headless() {
+  powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='Godot.exe'\" | ? { \$_.CommandLine -match '--headless' } | % { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1
+}
+
 # 헤드리스: 순차 실행, 시간 초과(124)면 한 번 더
 run() {  # 이름 인자...
   local name=$1; shift; local t=$SECONDS rc
   timeout 180 "$GODOT" --headless --path . "$@" >/tmp/qa_headless.log 2>&1; rc=$?
-  if [ $rc -eq 124 ]; then timeout 180 "$GODOT" --headless --path . "$@" >/tmp/qa_headless.log 2>&1; rc=$?; fi
+  if [ $rc -eq 124 ]; then kill_headless; timeout 180 "$GODOT" --headless --path . "$@" >/tmp/qa_headless.log 2>&1; rc=$?; fi
+  [ $rc -eq 124 ] && kill_headless
   if [ $rc -eq 0 ]; then echo "PASS  $name ($((SECONDS - t))s)"; else echo "FAIL  $name (exit $rc)"; tail -15 /tmp/qa_headless.log; FAILED+=("$name"); fi
 }
 GAME=""; prev=""; for a in "$@"; do [ "$prev" = --game ] && GAME=$a; case $a in --game=*) GAME=${a#--game=};; esac; prev=$a; done
