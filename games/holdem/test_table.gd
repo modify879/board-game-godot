@@ -515,6 +515,25 @@ func _ready() -> void:
 	table.plus_button.pressed.emit()
 	check(int(table.raise_slider.value) == 1000, "+ 버튼은 최대 레이즈를 넘지 않는다")
 
+	# 효과음: 음소거 토글과 내 차례 마지막 5초 비프
+	var was_muted: bool = table.sfx.muted
+	table.sound_button.pressed.emit()
+	check(table.sfx.muted != was_muted and table.sound_button.text == ("소리 끔" if table.sfx.muted else "소리 켬"), "소리 버튼은 음소거를 뒤집는다")
+	table.sound_button.pressed.emit()
+	check(table.sfx.muted == was_muted, "소리 버튼을 다시 누르면 돌아온다")
+	var cfg := ConfigFile.new()
+	check(cfg.load("user://holdem_settings.cfg") == OK and bool(cfg.get_value("sound", "muted")) == was_muted, "음소거는 설정 파일에 저장된다")
+	table.sfx.muted = false
+	table.sfx.played.clear()
+	table.last_beep_sec = -1
+	for left in [6.0, 5.0, 4.6, 4.0, 3.5, 3.0, 2.0, 1.0, 0.5, 0.0]:
+		table._beep_tick(left, true)
+	check(table.sfx.played == ["beep", "beep", "beep", "beep", "beep"], "내 차례 5..1초에 한 번씩 비프(5·4·3·2·1)")
+	table.sfx.played.clear()
+	table._beep_tick(3.0, false)
+	table._beep_tick(-1.0, true)
+	check(table.sfx.played.is_empty(), "남의 차례·타이머 없음은 비프 없음")
+
 	get_tree().quit(1 if failures else 0)
 
 

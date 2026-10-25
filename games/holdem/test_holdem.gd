@@ -161,6 +161,23 @@ func _init() -> void:
 	check(pv.chip_breakdown(0) == [], "chip_breakdown 0")
 	check(pv.chip_breakdown(150) == [[100, 1]], "chip_breakdown 150")
 
+	# sound_events
+	var se := func(seat_a: Dictionary, extra := {}) -> Dictionary:
+		return {"handInProgress": true, "board": [], "result": null, "seats": [seat_a]}.merged(extra, true)
+	var s0 := {"seatNo": 1.0, "userId": 7.0, "status": "ACTIVE", "lastAction": null}
+	var prev0: Dictionary = se.call(s0)
+	check(pv.sound_events({}, prev0) == [], "sound_events prev 비면 []")
+	check(pv.sound_events(prev0, se.call(s0, {"board": ["As", "Kd", "2c"]})) == ["board"], "sound_events 보드")
+	check(pv.sound_events(prev0.merged({"handInProgress": false}, true), prev0) == ["shuffle", "deal"], "sound_events 새 판")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL"}, true))) == ["call"], "sound_events 콜")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "RAISE_TO"}, true))) == ["call"], "sound_events 레이즈")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CHECK"}, true))) == ["check"], "sound_events 체크")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "FOLD", "status": "FOLDED"}, true))) == ["fold"], "sound_events 폴드")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL", "status": "ALL_IN"}, true))) == ["allin"], "sound_events 올인은 콜 대신")
+	check(pv.sound_events(prev0, se.call(s0, {"result": {"payouts": []}})) == ["win"], "sound_events 결과")
+	check(pv.sound_events(prev0, se.call(s0.merged({"userId": 8.0, "lastAction": "CALL"}, true))) == [], "sound_events 주인 바뀐 좌석 무시")
+	check(pv.sound_events(se.call(s0.merged({"lastAction": "CALL"}, true)), se.call(s0.merged({"lastAction": "CALL"}, true))) == [], "sound_events 변화 없으면 []")
+
 	quit(1 if failures else 0)
 
 

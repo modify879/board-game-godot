@@ -17,6 +17,7 @@ const SeatScene := preload("res://games/holdem/seat.tscn")
 const SeatScript := preload("res://games/holdem/seat.gd")
 const Marker := preload("res://games/holdem/marker.gd")
 const PublicView := preload("res://games/holdem/public_view.gd")
+const Sfx := preload("res://games/holdem/sfx.gd")
 const Motion := preload("res://games/holdem/motion.gd") # 연출 오버레이 + 연출 시간 상수
 const FELT_COLOR := Color("1B5E3A")
 const FELT_RIM_COLOR := Color("0F3D26")
@@ -96,6 +97,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var bottom_box: VBoxContainer = $VBoxContainer/BottomRegion/Bottom
 @onready var bottom_bar: HFlowContainer = $VBoxContainer/BottomRegion/Bottom/BottomBar
 @onready var info_box: PanelContainer = %InfoBox
+@onready var sound_button: Button = %SoundButton
 @onready var info_label: Label = %InfoLabel
 @onready var total_box: PanelContainer = %TotalBox
 @onready var total_label: Label = %TotalLabel
@@ -174,12 +176,18 @@ var last_hand_in_progress := false
 var last_turn_key := ""
 var raise_turn_key := "" # 레이즈 슬라이더를 초기화한 턴
 var turn_total_ms := 0 # 이번 턴 타이머 전체 길이(서버 turnTimeoutMs). 0 이면 막대를 숨긴다
+var sfx: Node # 효과음(sfx.gd)
+var last_beep_sec := -1 # 내 차례 마지막 5초에 마지막으로 울린 초(5..1). -1 이면 아직
 var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시계 아님). -1 이면 카운트다운 없음
 
 
 func _ready() -> void:
 	title_label.text = "새 방" if creating else "#%d" % table_id
 	back_button.pressed.connect(_leave_closed_table)
+	sfx = Sfx.new()
+	add_child(sfx)
+	sound_button.pressed.connect(_on_sound_pressed)
+	_sync_sound_button()
 	join_button.pressed.connect(_open_sit_popup)
 	stand_button.pressed.connect(_on_stand_pressed)
 	leave_room_button.pressed.connect(_on_stand_pressed.bind(true))
@@ -244,6 +252,36 @@ func _exit_tree() -> void:
 	Stomp.closed.disconnect(_on_stomp_closed)
 	Stomp.resumed.disconnect(_on_stomp_resumed)
 	Stomp.disconnect_ws()
+
+
+func _on_sound_pressed() -> void:
+	sfx.set_muted(not sfx.muted)
+	_sync_sound_button()
+
+
+func _sync_sound_button() -> void:
+	sound_button.text = "소리 끔" if sfx.muted else "소리 켬"
+
+
+## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 딜은 딜 연출(DEAL_STAGGER)에 맞춰 카드 한 장마다 한 번
+func _play_sounds(prev_view: Dictionary) -> void:
+	for e in PublicView.sound_events(prev_view, public_view):
+		if e == "deal":
+			for i in PublicView.deal_order(public_view).size() * 2:
+				get_tree().create_timer(i * Motion.DEAL_STAGGER + Motion.DEAL_FLY).timeout.connect(sfx.play.bind("deal"))
+		else:
+			sfx.play(e)
+
+
+## 내 차례 남은 시간이 5초 이하일 때 올림 초(5..1)가 바뀔 때마다 한 번 울린다
+func _beep_tick(left: float, mine: bool) -> void:
+	if not mine or left < 0.0 or left > 5.0:
+		last_beep_sec = -1
+		return
+	var sec := ceili(left)
+	if sec >= 1 and sec != last_beep_sec:
+		last_beep_sec = sec
+		sfx.play("beep")
 
 
 func _process(_delta: float) -> void:
@@ -673,6 +711,7 @@ func _handle_public(body: Dictionary) -> void:
 		return
 	last_public_seq = int(body.seq)
 	var prev := _motion_snapshot()
+	var prev_view := public_view if have_view else {}
 	public_view = body
 	if _should_leave_room(): # 개인 큐는 미리 끊지 않는다 — 공개 뷰가 미착석을 확인한 지금 씬을 바꿔 정리한다
 		leave_room_after_stand = false
@@ -706,6 +745,7 @@ func _handle_public(body: Dictionary) -> void:
 	_update_action_bar()
 	if have_view and hand_counter - prev.hand <= 1:
 		_play_motion(prev)
+	_play_sounds(prev_view)
 	have_view = true
 
 
@@ -1574,11 +1614,15 @@ func _update_turn_key() -> void:
 func _update_turn_timer() -> void:
 	var to_act := _to_act_seat_no()
 	var hip: bool = public_view.get("handInProgress", false)
+	var hero_left := -1.0
 	for seat_no in range(1, 10):
 		var left := -1.0
 		if hip and seat_no == to_act and turn_deadline_ticks >= 0 and turn_total_ms > 0:
 			left = maxf((turn_deadline_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
+		if seat_no == to_act:
+			hero_left = left if seat_no == _my_seat_no() else -1.0
 		seat_nodes[seat_no - 1].set_timer(left, turn_total_ms / 1000.0)
+	_beep_tick(hero_left, hero_left >= 0.0)
 
 
 func _nickname_for(user_id: int) -> String:

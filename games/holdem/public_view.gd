@@ -124,6 +124,35 @@ static func deal_order(view: Dictionary) -> Array:
 	return order
 
 
+## 연속한 공개 뷰 둘의 차이로 효과음 이름 목록을 만든다. prev 가 비면(첫 뷰·재연결 뒤) []. 좌석은 userId 로 맞추고 주인이 바뀐 좌석은 건너뛴다.
+## 이름: shuffle·deal(새 판), board, call(콜·레이즈), allin, check, fold, win
+static func sound_events(prev: Dictionary, cur: Dictionary) -> Array:
+	var out: Array = []
+	if prev.is_empty():
+		return out
+	if cur.get("handInProgress", false) and not prev.get("handInProgress", false):
+		out.append_array(["shuffle", "deal"])
+	if cur.get("board", []).size() > prev.get("board", []).size():
+		out.append("board")
+	for seat in cur.get("seats", []):
+		var old: Variant = find_seat(prev, int(seat.seatNo))
+		if old == null or int(old.userId) != int(seat.userId):
+			continue
+		var act = seat.get("lastAction")
+		var acted: bool = act != old.get("lastAction")
+		if seat.status == "ALL_IN" and old.status != "ALL_IN":
+			out.append("allin")
+		elif act == "FOLD" and acted or seat.status == "FOLDED" and old.status != "FOLDED":
+			out.append("fold")
+		elif acted and act == "CHECK":
+			out.append("check")
+		elif acted and (act == "CALL" or act == "RAISE_TO"):
+			out.append("call")
+	if prev.get("result") == null and cur.get("result") != null:
+		out.append("win")
+	return out
+
+
 ## 칩 금액 단위(큰 것부터). 서버 칩 단위는 100 이라 100 미만 나머지는 버린다
 const CHIP_DENOMS := [500000, 100000, 50000, 10000, 5000, 1000, 500, 100]
 

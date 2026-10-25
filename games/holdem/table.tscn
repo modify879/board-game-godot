@@ -49,6 +49,11 @@ size_flags_horizontal = 3
 horizontal_alignment = 2
 text = "대기 중 (2명 이상 필요)"
 
+[node name="SoundButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "소리 켬"
+
 [node name="InfoBox" type="PanelContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
