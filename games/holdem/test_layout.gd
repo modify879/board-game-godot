@@ -180,6 +180,8 @@ func _collect(table: Control, hero: int) -> Dictionary:
 				bad_extra.append("%s 토큰 크기 %s" % [o, s.badge_action.size])
 		if s.payout_label.visible:
 			items.append({"o": o, "k": "payout", "r": s.payout_label.get_global_rect()})
+		if table.public_view.get("result") == null and int(table.public_view.get("toActSeatNo", -1)) == no: # 타이머 막대(차례인 좌석만, 결과 화면엔 없다 — 지급액과 같은 자리를 쓴다). 자기 글자·카드와도 안 겹쳐야 한다
+			items.append({"o": o, "k": "timer", "r": Rect2(s.global_position + s.timer_bar_rect().position, s.timer_bar_rect().size)})
 		if table.bet_boxes[no - 1].visible:
 			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
 	if table.dealer_marker.visible:
@@ -359,6 +361,11 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		var sw := sl.get_theme_font("font").get_string_size(sl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, sl.get_theme_font_size("font_size")).x
 		if sw > sl.size.x + 0.5:
 			bad.append("%s 스택 문구 잘림 %s (%.0f > %.0f)" % [o, sl.text, sw, sl.size.x])
+		var tr := Rect2(s.global_position + s.timer_bar_rect().position, s.timer_bar_rect().size) # 타이머 막대는 자기 글자·카드·내 큰 카드와 안 겹치고 다른 것과도 안 겹친다
+		items.append({"o": o, "k": "timer", "r": tr})
+		for it2 in inner:
+			if _in(it2.r).intersects(_in(tr)):
+				bad.append("%s/%s x 타이머 막대 %s %s" % [o, it2.n, _s(it2.r), _s(tr)])
 		for i in inner.size():
 			if not pr.grow(0.5).encloses(inner[i].r):
 				bad.append("%s/%s 패널 밖 %s (패널 %s)" % [o, inner[i].n, _s(inner[i].r), _s(pr)])
@@ -395,6 +402,8 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			var b: Dictionary = items[j]
 			if [a.k, b.k] in [["board", "label"], ["label", "board"]]:
 				continue # 배너는 보드 카드 위에 얹는다
+			if a.o == b.o and [a.k, b.k] in [["panel", "timer"], ["timer", "panel"]]:
+				continue # 막대는 자기 패널 안쪽 띠 — 글자·카드와의 겹침은 위에서 따로 본다
 			if _in(a.r).intersects(_in(b.r)):
 				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
 	# 토큰·베팅·마커는 가장 가까운 패널이 자기 좌석이어야 한다(옆 좌석 것으로 보이지 않게)

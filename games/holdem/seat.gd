@@ -154,7 +154,7 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	var cols := desk_columns(hero, left, kk)
 	var av: Rect2 = cols.avatar
 	var cd: Rect2 = cols.cards
-	var d := (82.0 if hero else 60.0) * kk # 아바타 사진: 둥근 사각, 열을 거의 채운다(닉네임은 그 아래)
+	var d := (76.0 if hero else 54.0) * kk # 아바타 사진: 둥근 사각, 열을 거의 채운다(닉네임은 그 아래)
 	_avatar_r = d / 2.0
 	_avatar_c = Vector2(av.get_center().x, (5.0 if hero else 4.0) * kk + _avatar_r)
 	initial.position = _avatar_c - Vector2(_avatar_r, _avatar_r)
@@ -166,17 +166,17 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if hero:
-		name_label.position = Vector2(av.position.x, 89.0 * kk)
-		name_label.size = Vector2(av.size.x, 24.0 * kk)
-		stack_label.position = Vector2(cd.position.x, 96.0 * kk)
-		stack_label.size = Vector2(cd.size.x, 28.0 * kk)
-		hand_rank.position = Vector2(cd.position.x, 124.0 * kk)
-		hand_rank.size = Vector2(cd.size.x, 20.0 * kk)
-	else:
-		name_label.position = Vector2(av.position.x, 66.0 * kk)
-		name_label.size = Vector2(av.size.x, 20.0 * kk)
-		stack_label.position = Vector2(cd.position.x, 59.0 * kk)
+		name_label.position = Vector2(av.position.x, 82.0 * kk)
+		name_label.size = Vector2(av.size.x, 22.0 * kk)
+		stack_label.position = Vector2(cd.position.x, 93.0 * kk)
 		stack_label.size = Vector2(cd.size.x, 26.0 * kk)
+		hand_rank.position = Vector2(cd.position.x, 119.0 * kk)
+		hand_rank.size = Vector2(cd.size.x, 19.0 * kk)
+	else:
+		name_label.position = Vector2(av.position.x, 59.0 * kk)
+		name_label.size = Vector2(av.size.x, 18.0 * kk)
+		stack_label.position = Vector2(cd.position.x, 58.0 * kk)
+		stack_label.size = Vector2(cd.size.x, 22.0 * kk)
 	hand_rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hand_rank.add_theme_font_size_override("font_size", int(round(16.0 * kk)))
 	var pf := int(round(11.0 * kk))
@@ -263,9 +263,9 @@ func _place_desk_pills() -> void:
 			list.append(l)
 	var av: Rect2 = desk_columns(hero_slot, avatar_left, k).avatar
 	if hero_slot: # 아바타 열 닉네임 아래로 세로로 쌓는다
-		var y := 114.0 * k
+		var y := 108.0 * k
 		for l: Label in list:
-			if y + l.size.y > size.y - 8.0 * k:
+			if y + l.size.y > timer_bar_rect().position.y - 2.0 * k:
 				l.hide() # 아래로 넘치면 낮은 우선순위부터 숨긴다
 				continue
 			l.position = Vector2(av.get_center().x - l.size.x / 2.0, y)
@@ -400,6 +400,14 @@ func _turn_border() -> Color:
 	return ACCENT.lerp(DANGER, _pulse) if _pulse > 0.0 else ACCENT
 
 
+## 타이머 막대 자리(로컬 좌표). 데스크톱은 패널 아래 가장자리 안쪽 띠(테두리 위 4k) — 이름·스택·족보 칸은 set_desktop 이 그 위에 끝나게 놓는다. 폰은 캡슐 바로 아래 바깥
+func timer_bar_rect() -> Rect2:
+	if desk:
+		var th := (7.0 if hero_slot else 5.0) * k
+		return Rect2(10.0 * k, size.y - 4.0 * k - th, size.x - 20.0 * k, th)
+	return Rect2(10, size.y + (12.0 if _badge_count > 0 else 4.0), size.x - 20.0, 5.0)
+
+
 ## 타이머 막대: 어두운 트랙 위에 남은 비율만큼 둥근 막대. 5초 미만이면 빨강
 func _draw_timer_bar(track: Rect2) -> void:
 	var sb := StyleBoxFlat.new()
@@ -517,7 +525,7 @@ func _draw() -> void:
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(Vector2(size.y / 2.0, size.y / 2.0), (size.y - 14.0) / 2.0, _avatar_color, 1.0)
 	if timer_left >= 0.0:
-		_draw_timer_bar(Rect2(10, size.y + (12.0 if _badge_count > 0 else 4.0), size.x - 20.0, 5.0))
+		_draw_timer_bar(timer_bar_rect())
 
 
 ## 기본 프로필: 파스텔 바탕 + 흰 머리·어깨 실루엣. square 면 둥근 사각(어깨는 아래 변에 닿고 사각 안으로 잘린다), 아니면 원
@@ -564,5 +572,4 @@ func _draw_desk() -> void:
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a, true)
 	if timer_left >= 0.0:
-		var th := (8.0 if hero_slot else 6.0) * k
-		_draw_timer_bar(Rect2(10.0 * k, size.y - th - 5.0 * k, size.x - 20.0 * k, th))
+		_draw_timer_bar(timer_bar_rect())
