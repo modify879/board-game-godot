@@ -68,7 +68,7 @@ func _ready() -> void:
 	table.nickname_cache[8] = "qauser8" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(9, [_seat(1, 7), _seat(2, 8)], {"result": result}))
 	check(table._payout_for(2) == 500, "payout for seat 2 held by same user")
-	check(table.board_label.text == "승리: qauser8 +500", "board_label shows winner nickname: '%s'" % table.board_label.text)
+	check(table.board_label.text == "qauser8 +500", "board_label shows winner nickname: '%s'" % table.board_label.text)
 	table._handle_public(_view(10, [_seat(1, 7), _seat(2, 9)], {"result": result}))
 	check(table._payout_for(2) == 0, "payout ignored when seat taken by another user")
 	check(table.board_label.text == "", "board_label empty when winner left: '%s'" % table.board_label.text)
@@ -265,6 +265,17 @@ func _ready() -> void:
 	var null_cat := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": null}]}
 	table._handle_public(_view(105, [_seat(1, 7), _seat(2, 8)], {"result": null_cat}))
 	check(not table.show_hand_button.visible and table._find_shown_hand(1) != null, "null category shown hand renders")
+	# 앞면 카드(공개 패)·내 큰 카드가 있는 좌석은 행동 글자를 숨기고, 뒷면 카드 좌석은 보인다
+	var fx_seats := [_seat(1, 7), _seat(2, 8)]
+	fx_seats[0]["lastAction"] = "CHECK"
+	fx_seats[1]["lastAction"] = "CHECK"
+	var showdown2 := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 2.0, "userId": 8.0, "holeCards": ["Qh", "Jh"], "category": "PAIR"}]}
+	table._handle_public(_view(105.5, fx_seats, {"result": showdown2}))
+	check(not table.seat_nodes[1].badge_action.visible and not table.seat_nodes[0].badge_action.visible, "result: 공개 패·내 좌석의 행동 글자 숨김")
+	table._handle_public(_view(105.6, fx_seats, {"handInProgress": true, "toActSeatNo": 1.0}))
+	check(table.seat_nodes[1].badge_action.visible, "핸드 중 뒷면 카드 좌석은 행동 글자 보임")
+	table._handle_public(_view(105.7, fx_seats, {"result": showdown2}))
+	check(table.banner_bg.visible and table.banner_bg.size.x > 0.0, "결과 배너 뒤판이 보임")
 	table._handle_public(_view(106, [_seat(1, 7)]))
 	# SHOW_NOT_ALLOWED 로 거부되면 그 판 동안 다른 뷰가 와도 숨기고, 새 판의 폴드 승리에서는 다시 보인다
 	table._handle_public(_view(107, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
@@ -372,7 +383,7 @@ func _ready() -> void:
 		"shownHands": [{"seatNo": 2.0, "userId": 99.0, "holeCards": ["As", "Kd"], "category": null}]}
 	table.nickname_cache[99] = "winner99" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(200, [_seat(1, 7)], {"result": left_result}))
-	check(table.board_label.text == "승리: winner99 +300", "빈 자리 승자 닉네임·지급액 표시: '%s'" % table.board_label.text)
+	check(table.board_label.text == "winner99 +300", "빈 자리 승자 닉네임·지급액 표시: '%s'" % table.board_label.text)
 	check(table._find_shown_hand(2) != null, "빈 자리 승자 패 찾음")
 	check(table.seat_nodes[1].shown_codes.size() == 2, "빈 자리에 보여 준 패 카드 그림")
 	table._handle_public(_view(201, [_seat(1, 7), _seat(2, 77)], {"result": left_result}))

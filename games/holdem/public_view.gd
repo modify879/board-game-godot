@@ -1,4 +1,6 @@
 extends RefCounted
+
+const Cards := preload("res://games/holdem/cards.gd")
 ## 공개 뷰(public_view) 순수 조회·계산. 노드·Api·시계에 기대지 않고 전부 인자로 받는다(헤드리스 점검용).
 
 
@@ -136,3 +138,35 @@ static func chip_breakdown(amount: int) -> Array:
 			out.append([d, n])
 			left -= n * d
 	return out
+
+
+## 핸드 끝 결과 배너 {"title": 큰 글자, "sub": [[좌석, userId, 금액], ...]} — 이길 사람이 없으면 {}. 닉네임은 호출 쪽이 userId 로 찾는다.
+## 쇼다운 단독 = 족보, 스플릿(승자 2명 이상) = "스플릿 · 족보"(족보가 다르면 "스플릿"), 패 공개 없이 끝나면 "폴드 승리", 족보를 모르면 "승리"
+static func result_banner(view: Dictionary) -> Dictionary:
+	var result = view.get("result")
+	if result == null:
+		return {}
+	var sub := []
+	for payout in result.get("payouts", []):
+		var seat_no := int(payout.seatNo)
+		var uid = payout.get("userId")
+		if uid == null and find_seat(view, seat_no) != null:
+			uid = find_seat(view, seat_no).userId
+		if payout.amount > 0 and uid != null and seat_held_by(view, seat_no, uid):
+			sub.append([seat_no, int(uid), int(payout.amount)])
+	if sub.is_empty():
+		return {}
+	if result.get("shownHands", []).is_empty():
+		return {"title": "폴드 승리", "sub": sub}
+	var cats := []
+	for w: Array in sub:
+		var shown: Variant = find_shown_hand(view, w[0])
+		cats.append(shown.get("category") if shown != null else null)
+	var cat = cats[0]
+	for c in cats:
+		if c != cat:
+			cat = null
+	var text: String = Cards.category_text(cat) if cat is String else ""
+	if sub.size() >= 2:
+		return {"title": "스플릿 · " + text if text != "" else "스플릿", "sub": sub}
+	return {"title": text if text != "" else "승리", "sub": sub}

@@ -123,6 +123,8 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 			table.motion.kill_real()
 			if hero > 0:
 				table._handle_private({"seq": float(seq), "holeCards": hole, "currentHand": HAND, "availableActions": table.my_available_actions})
+		if table.banner_tween != null and table.banner_tween.is_valid():
+			table.banner_tween.custom_step(1.0) # 팝인 끝난 크기로 잰다
 		var r := _collect(table, hero)
 		min_gap = minf(min_gap, r.gap)
 		for b: String in r.bad:
@@ -181,8 +183,8 @@ func _collect(table: Control, hero: int) -> Dictionary:
 	if table.pot_row.modulate.a > 0.0: # 칩 아이콘 + 글자만(줄 자체는 중앙 박스 너비 전체)
 		var pr: Rect2 = table.pot_row.get_child(0).get_global_rect().merge(table.pot_label.get_global_rect())
 		items.append({"o": "center", "k": "pot", "r": pr})
-	if table.board_label.text != "": # 줄바꿈된 실제 라벨 사각(글자 너비보다 넓어도 그 폭 안에서만 그린다)
-		items.append({"o": "center", "k": "label", "r": table.board_label.get_global_rect()})
+	if table.board_label.text != "": # 결과 배너(큰 글자+작은 줄) — 보드 카드와는 겹쳐도 된다(위에 얹는다)
+		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
 	if hero > 0 and not table.hand_text_pill.visible:
 		bad_extra.append("폰 족보 알약이 보이지 않음")
 	elif hero > 0:
@@ -192,6 +194,7 @@ func _collect(table: Control, hero: int) -> Dictionary:
 			if c.visible:
 				items.append({"o": "seat%d" % hero, "k": "hero", "r": c.get_global_rect()})
 	var bad: Array = bad_extra
+	bad.append_array(_face_up_actions(table))
 	for it in items:
 		if not area.grow(0.5).encloses(it.r):
 			bad.append("%s/%s 화면 밖 %s (area %s)" % [it.o, it.k, _s(it.r), _s(area)])
@@ -199,7 +202,7 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		for j in range(i + 1, items.size()):
 			var a: Dictionary = items[i]
 			var b: Dictionary = items[j]
-			if not _overlap(a, b):
+			if not _overlap(a, b) or [a.k, b.k] in [["board", "label"], ["label", "board"]]: # 배너는 보드 카드 위에 얹는다
 				continue
 			if a.o == b.o and (ALLOWED.has([a.k, b.k]) or ALLOWED.has([b.k, a.k])):
 				# 알약은 자기 카드 가장자리에 걸치되 자기 높이의 절반까지만(그 이상은 카드를 가린다)
@@ -284,6 +287,18 @@ func _gap(a: Rect2, b: Rect2) -> float:
 	return Vector2(gx, gy).length() if gx > 0.0 and gy > 0.0 else maxf(gx, gy)
 
 
+## 결과 화면에서 앞면 카드(공개 패·내 큰 카드)를 가진 좌석은 행동 글자·토큰이 보이면 안 된다
+func _face_up_actions(table: Control) -> Array:
+	var out: Array = []
+	if table.public_view.get("result") == null:
+		return out
+	for no in range(1, 10):
+		var s: Control = table.seat_nodes[no - 1]
+		if not s.empty and s.badge_action.visible and (table._find_shown_hand(no) != null or no == table._my_seat_no()):
+			out.append("seat%d 앞면 카드 위에 행동 글자가 보임" % no)
+	return out
+
+
 func check(cond: bool, label: String) -> void:
 	if cond:
 		print("ok: ", label)
@@ -301,6 +316,7 @@ func _s(r: Rect2) -> String:
 func _collect_desktop(table: Control, hero: int) -> Dictionary:
 	var area: Rect2 = table.get_global_rect()
 	var bad: Array = []
+	bad.append_array(_face_up_actions(table))
 	var items: Array = [] # {o, k, r}
 	var panels := {}
 	for no in range(1, 10):
@@ -350,7 +366,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 	if table.total_box.visible:
 		items.append({"o": "center", "k": "total", "r": table.total_box.get_global_rect()})
 	if table.board_label.text != "":
-		items.append({"o": "center", "k": "label", "r": table.board_label.get_global_rect()})
+		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
 	items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
 	items.append({"o": "ui", "k": "bar", "r": table.bottom_bar.get_global_rect()})
 	items.append({"o": "ui", "k": "topbar", "r": table.top_bar.get_global_rect()})
@@ -367,8 +383,8 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		for j in range(i + 1, items.size()):
 			var a: Dictionary = items[i]
 			var b: Dictionary = items[j]
-			if [a.k, b.k] in [["total", "label"], ["label", "total"]]:
-				continue # 핸드 중엔 상자, 끝나면 문구 — 같은 자리를 번갈아 쓴다
+			if [a.k, b.k] in [["board", "label"], ["label", "board"]]:
+				continue # 배너는 보드 카드 위에 얹는다
 			if _in(a.r).intersects(_in(b.r)):
 				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
 	# 토큰·베팅·마커는 가장 가까운 패널이 자기 좌석이어야 한다(옆 좌석 것으로 보이지 않게)

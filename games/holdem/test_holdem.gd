@@ -97,6 +97,23 @@ func _init() -> void:
 	check(pv.find_shown_hand(view, 1) == null and pv.payout_for(view, 1) == 0, "결과 없으면 null·0")
 	var taken := {"seats": [{"seatNo": 1, "userId": 99}], "result": res}
 	check(pv.find_shown_hand(taken, 1) == null and pv.payout_for(taken, 1) == 0, "다른 사람이 앉으면 shown·payout 무시")
+	# result_banner
+	var bseats := [{"seatNo": 1, "userId": 10}, {"seatNo": 4, "userId": 11}]
+	var bn := func(shown_hands: Array, payouts: Array, s: Array = bseats) -> Dictionary: return pv.result_banner({"seats": s, "result": {"shownHands": shown_hands, "payouts": payouts}})
+	var p1 := {"seatNo": 1.0, "userId": 10.0, "amount": 700.0}
+	var p4 := {"seatNo": 4.0, "userId": 11.0, "amount": 700.0}
+	var sh1 := {"seatNo": 1.0, "userId": 10.0, "category": "FULL_HOUSE"}
+	var sh4 := {"seatNo": 4.0, "userId": 11.0, "category": "FULL_HOUSE"}
+	var b1: Dictionary = bn.call([sh1, sh4], [p1, {"seatNo": 4.0, "userId": 11.0, "amount": 0.0}])
+	check(b1.title == "풀하우스" and b1.sub == [[1, 10, 700]], "result_banner 쇼다운 단독 승자")
+	var b2: Dictionary = bn.call([sh1, sh4], [p1, p4])
+	check(b2.title == "스플릿 · 풀하우스" and b2.sub.size() == 2, "result_banner 스플릿 같은 족보")
+	var b3: Dictionary = bn.call([sh1, {"seatNo": 4.0, "userId": 11.0, "category": "FLUSH"}], [p1, p4])
+	check(b3.title == "스플릿", "result_banner 스플릿 족보 다름")
+	check(bn.call([], [p1]).title == "폴드 승리", "result_banner 폴드 승리")
+	check(bn.call([{"seatNo": 1.0, "userId": 10.0, "category": null}], [p1]).title == "승리", "result_banner 족보 null")
+	check(bn.call([sh1], [p1], [{"seatNo": 1, "userId": 99}, {"seatNo": 4, "userId": 11}]).is_empty(), "result_banner 다른 사람이 앉은 좌석 무시")
+	check(pv.result_banner({"result": null}).is_empty() and pv.result_banner({}).is_empty(), "result_banner 결과 없음")
 	var emptied := {"seats": [], "result": res}
 	check(pv.find_shown_hand(emptied, 1) == shown and pv.payout_for(emptied, 1) == 700, "좌석이 비면 shown·payout 유지")
 	var revealed := {"seatNo": 7, "cards": ["As", "Kd"]}

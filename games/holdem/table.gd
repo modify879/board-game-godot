@@ -118,8 +118,9 @@ var board_card_rects: Array = []
 var my_card_rects: Array = []
 var public_view: Dictionary = {}
 var motion: Control # FeltArea 위 연출 오버레이(motion.gd)
-var label_w := 0.0 # 결과 문구 폭(_layout 이 정한다)
-var label_bottom := 0.0 # 결과 문구 아래 끝 y — 팟 줄 아래쪽
+var banner_title: Label # 결과 배너 큰 글자(작은 줄은 BoardLabel)
+var banner_tween: Tween
+var banner_bg: Panel # 결과 배너 글자 뒤 반투명 어두운 판
 var geo := {} # 마지막 _layout() 결과
 var have_view := false # 첫 뷰·재연결 뒤 첫 뷰는 연출 없이 그린다
 var my_hand_text := "" # 개인 뷰 currentHand 의 화면 문구("K 원페어"). 없으면 ""
@@ -298,6 +299,21 @@ func _build_seats() -> void:
 	hand_text_pill.hide()
 	felt_area.add_child(hand_text_pill)
 	motion = Motion.new()
+	banner_title = Label.new()
+	banner_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner_title.add_theme_color_override("font_color", Color("ffd54a"))
+	banner_title.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.0, 0.95))
+	banner_title.add_theme_constant_override("outline_size", 10)
+	banner_bg = Panel.new()
+	banner_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner_bg.hide()
+	felt_area.add_child(banner_bg)
+	felt_area.add_child(banner_title)
+	board_label.add_theme_color_override("font_color", Color("fff4d0"))
+	board_label.add_theme_color_override("font_outline_color", Color(0.05, 0.03, 0.0, 0.95))
+	board_label.add_theme_constant_override("outline_size", 6)
+	felt_area.move_child(board_label, -1)
 	felt_area.add_child(motion) # 마지막 자식 = 맨 위
 	_render_seats()
 
@@ -469,8 +485,6 @@ func _layout_desktop() -> Dictionary:
 	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
 	total_box.reset_size()
 	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
-	label_w = 360.0 * k
-	label_bottom = off.y + (D_TOTAL_TOP + 66.0) * k
 	_place_board_label()
 	# 행동 패널·버튼 줄
 	bottom_region.custom_minimum_size = Vector2.ZERO
@@ -587,7 +601,6 @@ func _layout() -> Dictionary:
 	var c := rect.get_center()
 	var hero_top := rect.end.y - cap.y / 2.0 - 2.0 - hc.y
 	# 가운데 묶음(팟·보드·결과 문구): 내 카드 위에 붙이되 펠트 안에 둔다
-	# 결과 문구(BoardLabel)는 블록 밖 — 핸드가 끝나면 비는 팟 줄 자리에 겹쳐 그려 보드가 더 커질 수 있다
 	var clear := 26.0 if compact else 16.0 # 내 카드와의 간격
 	var avail_h := hero_top - clear - (rect.position.y + FELT_RIM + 8.0)
 	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 36.0) / CARD_ASPECT), 36.0, 72.0)
@@ -610,16 +623,6 @@ func _layout() -> Dictionary:
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
 	my_cards_box.position = Vector2(c.x - my_cards_box.size.x / 2.0, hero_top)
 	var g := {"center": c, "rx": rect.size.x / 2.0, "ry": rect.size.y / 2.0, "cap": cap, "hc": hc, "hero_top": hero_top}
-	# 결과 문구는 팟 줄 자리 아래쪽 끝에 맞추고 위로 줄바꿈한다. 그 높이가 위쪽 두 좌석(내가 1번이면 5·6번)에 닿으면 둘 사이 폭으로 줄인다
-	label_w = center_box.size.x
-	label_bottom = block_top + 28.0
-	var s4 := _seat_center(5, 1, g)
-	var s5 := _seat_center(6, 1, g)
-	var reach_top := s4.y - cap.y / 2.0 - oc.y - 4.0
-	var reach_bottom := s4.y + cap.y / 2.0 + 40.0
-	var inner := s5.x - s4.x - cap.x - 12.0
-	if inner >= 120.0 and label_bottom > reach_top and label_bottom - 60.0 < reach_bottom:
-		label_w = minf(label_w, inner)
 	_place_board_label()
 	return g
 
@@ -1166,29 +1169,61 @@ func _update_pot() -> void:
 
 
 func _update_board_label() -> void:
-	var result = public_view.get("result")
-	var text := ""
-	if result != null:
-		var wins := []
-		for payout in result.get("payouts", []):
-			var uid = payout.get("userId")
-			if uid == null and _find_seat(int(payout.seatNo)) != null:
-				uid = _find_seat(int(payout.seatNo)).userId
-			if payout.amount > 0 and uid != null and _seat_held_by(int(payout.seatNo), uid):
-				wins.append("%s +%s" % [_nickname_for(int(uid)), Format.comma(int(payout.amount))])
-		if not wins.is_empty():
-			text = "승리: " + ", ".join(wins)
-	board_label.text = text
+	var banner := PublicView.result_banner(public_view)
+	var title: String = banner.get("title", "")
+	var wins := []
+	for w: Array in banner.get("sub", []):
+		wins.append("%s +%s" % [_nickname_for(w[1]), Format.comma(w[2])])
+	var sub := "  ".join(wins)
+	var appear := banner_title.text == "" and title != ""
+	banner_title.text = title
+	board_label.text = sub
 	_place_board_label()
+	if appear:
+		if banner_tween != null:
+			banner_tween.kill()
+		banner_tween = create_tween().set_parallel(true)
+		for l: Control in [banner_bg, banner_title, board_label]:
+			l.scale = Vector2(0.6, 0.6)
+			banner_tween.tween_property(l, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## 결과 배너: 보드 카드 가운데에 큰 글자, 그 아래 작은 줄. 보드 위에 겹쳐 그린다(카드는 가려도 된다)
 func _place_board_label() -> void:
-	board_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	board_label.add_theme_font_size_override("font_size", 20 if label_w >= 360.0 else 16)
-	board_label.custom_minimum_size = Vector2(label_w, 0)
-	board_label.reset_size()
-	board_label.size.x = label_w
-	board_label.position = Vector2(center_box.position.x + (center_box.size.x - label_w) / 2.0, label_bottom - board_label.size.y)
+	var tk := k if desktop else 0.7
+	var w := center_box.size.x
+	var sizes := {banner_title: int(round(40.0 * tk)), board_label: int(round(18.0 * k)) if desktop else 15}
+	for l: Label in sizes:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.add_theme_font_size_override("font_size", sizes[l])
+		l.custom_minimum_size = Vector2(w, 0)
+		l.reset_size()
+		l.size.x = w
+		l.pivot_offset = l.size / 2.0
+	var cy := center_box.position.y + center_box.size.y - board_box.custom_minimum_size.y / 2.0
+	var gap := 8.0 * tk # 큰 글자 외곽선과 작은 줄 사이
+	var top := cy - (banner_title.size.y + gap + board_label.size.y) / 2.0
+	banner_title.position = Vector2(center_box.position.x + (center_box.size.x - w) / 2.0, top)
+	board_label.position = banner_title.position + Vector2(0, banner_title.size.y + gap)
+	# 글자 뒤 판: 두 줄의 실제 글자 너비에 맞춰 가운데에 둔다
+	var f := banner_title.get_theme_font("font")
+	var tw := f.get_string_size(banner_title.text, HORIZONTAL_ALIGNMENT_LEFT, -1, sizes[banner_title]).x
+	var sw := 0.0
+	var text_rect := Rect2(banner_title.position, banner_title.size)
+	if board_label.text != "":
+		sw = f.get_string_size(board_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, sizes[board_label]).x
+		text_rect = text_rect.merge(Rect2(board_label.position, board_label.size))
+	var pad := 12.0 * tk
+	var bw := minf(maxf(tw, sw), w) + pad * 2.0
+	var bh := text_rect.size.y + pad * 2.0
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0.6)
+	sb.set_corner_radius_all(int(round(10.0 * tk)))
+	banner_bg.add_theme_stylebox_override("panel", sb)
+	banner_bg.size = Vector2(bw, bh)
+	banner_bg.position = text_rect.get_center() - banner_bg.size / 2.0
+	banner_bg.pivot_offset = banner_bg.size / 2.0
+	banner_bg.visible = banner_title.text != ""
 
 
 func _render_seats() -> void:
@@ -1377,7 +1412,7 @@ func _seat_rect(n: Control, c: Control) -> Rect2:
 func _center_blockers() -> Array:
 	var out: Array = [Rect2(center_box.position, center_box.size)]
 	if board_label.text != "":
-		out.append(Rect2(board_label.position, board_label.size))
+		out.append(Rect2(banner_title.position, banner_title.size).merge(Rect2(board_label.position, board_label.size)))
 	if _my_seat_no() != -1:
 		out.append(Rect2(my_cards_box.position, my_cards_box.size))
 	if hand_text_pill.visible:
@@ -1466,6 +1501,8 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		cards = revealed_hand.holeCards
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
 		cards = ["back", "back"]
+	# 앞면 카드(쇼다운 공개·런아웃 공개)나 결과 화면의 내 큰 카드 위에는 행동 글자·토큰을 그리지 않는다
+	var face_up: bool = (is_me and public_view.get("result") != null) or (not cards.is_empty() and cards[0] != "back")
 	if is_me and hand_text_pill.visible: # 폰: 내 족보는 카드 위 알약이 보이므로 캡슐 알약은 숨긴다
 		category = ""
 	seat_node.show_player({
@@ -1475,7 +1512,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"to_act": _to_act_seat_no() == seat_no,
 		"folded": seat.status == "FOLDED",
 		"all_in": seat.status == "ALL_IN",
-		"action": PublicView.action_label(seat),
+		"action": "" if face_up else PublicView.action_label(seat),
 		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
 		"leave_reserved": seat.leaveReserved,
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
