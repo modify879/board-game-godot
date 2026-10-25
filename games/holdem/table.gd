@@ -25,20 +25,28 @@ const CARD_ASPECT := 190.0 / 140.0 # 카드 이미지 비율(세로/가로)
 const BET_GAP := 8.0 # 베팅 칩과 자기 좌석 캡슐 사이 간격
 const BET_ANGLES := [0.0, 35.0, -35.0, 70.0, -70.0, 105.0, -105.0, 140.0, -140.0, 180.0] # 기본(펠트 중심 쪽)이 막히면 캡슐 둘레를 따라 돌려 보는 각도
 const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
-# 데스크톱(가로) 배치는 1280x672(FeltArea) 설계 좌표에서 정하고 k = min(w/1280, h/672) 배로 키운다. 좌석 = 고정 슬롯(타원 아님)
+# 데스크톱(가로) 배치는 1280x672(FeltArea) 설계 좌표에서 정하고 k = min(w/1280, h/672) 배로 키운다.
+# 같은 중심(D_CENTER)의 타원 네 겹: 펠트(스타디움) ⊂ 바깥(좌석 패널 중심) / 가운데(행동 토큰·마커) / 안쪽(베팅 더미)
+# 토큰·베팅은 좌석 패널 중심에서 펠트 중심으로 그은 선 위에서 각 타원과 만나는 점에 놓는다 — 그래서 한 바퀴 타원 띠를 이룬다
 const D_W := 1280.0
 const D_H := 672.0
-const D_FELT := Rect2(51, 30, 1178, 498)
-## 슬롯 중심. v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 시계 방향으로 왼쪽 아래 모서리·왼쪽 가운데·위 4곳·오른쪽 가운데·오른쪽 아래 모서리
-## v8 은 행동 패널(D_ACTION, y 474~)이 막아 v1 보다 높다 — 패널 아래변이 474 를 넘지 않는 가장 낮은 자리(위 v7 아래변 335 와 마커 줄 사이)
-const D_SLOTS := [Vector2(640, 597), Vector2(140, 480), Vector2(125, 290), Vector2(292, 62), Vector2(524, 62), Vector2(756, 62), Vector2(988, 62), Vector2(1155, 290), Vector2(1140, 427)]
+const D_CENTER := Vector2(640, 321)
+const D_FELT_R := Vector2(446, 235) # 펠트 반지름(가로:세로 ≈ 1.9:1). 모서리 반지름 = 세로 반지름이라 양 끝이 반원
+const D_OUTER := Vector2(479.4, 276) # 좌석 패널 중심이 놓이는 타원
+const D_MID := Vector2(335, 150.9) # 행동 토큰·D/SB/BB 마커
+const D_INNER := Vector2(262.3, 93.5) # 베팅 더미 + 금액
+## 좌석 패널 중심의 매개 각도(°, 아래 = 90, 시계 방향). v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 왼쪽 아래·왼쪽·위 4곳·오른쪽·오른쪽 아래
+## 내 자리 오른쪽엔 행동 패널(D_ACTION)이 있어 오른쪽 아래(v8)는 23°(행동 패널 위쪽 바깥)로 올렸다. 위 네 곳은 패널 폭(220)이 겹치지 않게 v4·v5 는 가운데에서 ±14.3° 이상, v3 은 v4 와 닿지 않게 벌렸다. 설계는 scratchpad 의 탐색으로 정했다
+const D_ANGLES := [90.0, 155.0, 189.7, 221.0, 255.7, 284.3, 318.5, 349.0, 383.0]
+## 마커가 토큰 곁 어느 쪽(타원 접선, +1 = 각도 증가 방향)으로 먼저 놓일지. 막히면 반대쪽·더 먼 쪽으로 간다(_place_desktop)
+const D_MARK_SIDE := [1, -1, 1, 1, 1, -1, -1, -1, 1]
 const D_TOKEN := 56.0 # 행동 토큰 지름
 const D_MARKER := 42.0 # D·SB·BB 칩
-const D_BET_W := 84.0 # 베팅 칸(더미 + 금액) 폭
-const D_BET_H := 68.0
-const D_BOARD_CARD := Vector2(72, 98)
-const D_TOTAL_TOP := 356.0 # Total 상자 윗변(보드 아래)
-const D_ACTION := Rect2(836, 474, 374, 198) # 행동 패널(내 패널 오른쪽)
+const D_BET_W := 64.0 # 베팅 칸(더미 + 금액) 폭
+const D_BOARD_CARD := Vector2(64, 88)
+const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
+const D_TOTAL_TOP := 371.0 # Total 상자 윗변(보드 아래)
+const D_ACTION := Rect2(836, 476, 374, 196) # 행동 패널(내 패널 오른쪽)
 const D_BAR := Rect2(16, 534, 394, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
 const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")]
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
@@ -196,6 +204,7 @@ func _ready() -> void:
 	felt_style.bg_color = FELT_COLOR
 	felt_style.border_color = FELT_RIM_COLOR
 	felt_style.set_border_width_all(FELT_RIM)
+	felt_style.corner_detail = 32  # 큰 모서리가 각져 보이지 않게
 	felt_area.resized.connect(func() -> void:
 		motion.kill_real()
 		_render_seats())
@@ -393,45 +402,48 @@ func _sync_action_bg() -> void:
 	action_bg.size = bottom_region.size
 
 
-## 데스크톱 배치. 슬롯 좌표(D_SLOTS)·토큰·베팅·마커 자리는 설계 좌표 × k + 가운데 정렬 오프셋.
-## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, token, bet, markers[D, SB, BB]}(FeltArea 좌표)
+## 중심 c 에서 점 p 로 그은 선이 반지름 r 타원과 만나는 점
+static func ring_point(p: Vector2, c: Vector2, r: Vector2) -> Vector2:
+	var d := p - c
+	return c + d / sqrt(pow(d.x / r.x, 2.0) + pow(d.y / r.y, 2.0))
+
+
+## 데스크톱 배치. 타원 매개변수(D_*)·각도표(D_ANGLES)에서 슬롯을 계산한다. 설계 좌표 × k + 가운데 정렬 오프셋.
+## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, token, bet, cands[마커 후보 자리, 우선순위 순]}(FeltArea 좌표)
 func _layout_desktop() -> Dictionary:
 	var area := felt_area.size
 	k = maxf(minf(area.x / D_W, area.y / D_H), 0.3)
 	var off := (area - Vector2(D_W, D_H) * k) / 2.0
-	felt.position = off + D_FELT.position * k
-	felt.size = D_FELT.size * k
-	felt_style.set_corner_radius_all(int(170.0 * k))
+	felt.position = off + (D_CENTER - D_FELT_R) * k
+	felt.size = D_FELT_R * 2.0 * k
+	felt_style.set_corner_radius_all(int(D_FELT_R.y * k))
 	felt_style.set_border_width_all(maxi(int(FELT_RIM * k), 4))
 	var slots: Array = []
 	for v in 9:
-		var pc: Vector2 = D_SLOTS[v]
+		var a := deg_to_rad(D_ANGLES[v])
+		var pc := D_CENTER + D_OUTER * Vector2(cos(a), sin(a))
 		var half: Vector2 = (SeatScript.panel_size(v == 0, 1.0)) / 2.0
-		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k)}
-		var markers: Array
-		var mg := D_MARKER + 4.0 # 마커 간격
-		if v == 0: # 내 패널 위에 토큰·베팅, 왼쪽에 마커 세로 줄
-			sl.token = pc + Vector2(-50, -half.y - 4 - D_TOKEN / 2.0)
-			sl.bet = pc + Vector2(60, -half.y - 4 - D_BET_H / 2.0)
-			var mx := -half.x - 4 - D_MARKER / 2.0
-			markers = [pc + Vector2(mx, -mg), pc + Vector2(mx, 0), pc + Vector2(mx, mg)]
-		elif v >= 3 and v <= 6: # 위 네 곳: 패널 아래에 토큰 → 베팅, 마커는 토큰 양옆
-			var by := half.y + 4 + D_MARKER / 2.0
-			var mx := D_TOKEN / 2.0 + 4 + D_MARKER / 2.0
-			sl.token = pc + Vector2(0, half.y + 4 + D_TOKEN / 2.0)
-			sl.bet = pc + Vector2(0, half.y + 4 + D_TOKEN + 4 + D_BET_H / 2.0)
-			markers = [pc + Vector2(-mx, by), pc + Vector2(mx, by), pc + Vector2(mx + mg, by)]
-		else: # 양옆·아래 모서리: 패널 바로 안쪽에 토큰 → 그 안쪽에 베팅, 마커는 패널 윗변 위 가로 줄(바깥 끝부터)
-			var sx := 1.0 if v <= 2 else -1.0
-			sl.token = pc + Vector2(sx * (half.x + 4 + D_TOKEN / 2.0), 0)
-			sl.bet = (sl.token as Vector2) + Vector2(sx * (D_TOKEN / 2.0 + 4 + D_BET_W / 2.0), 0)
-			var my := -half.y - 4 - D_MARKER / 2.0
-			markers = []
+		var token: Vector2
+		var bet: Vector2
+		var cands: Array = []
+		if v == 0: # 내 패널은 넓어 위로 곧게 올리면 Total 상자와 닿는다 — 패널 윗변 위 왼쪽에 토큰, 오른쪽에 베팅, 마커는 토큰 왼쪽 줄
+			token = pc + Vector2(-62, -111)
+			bet = pc + Vector2(50, -117)
 			for i in 3:
-				markers.append(pc + Vector2(-sx * (half.x - D_MARKER / 2.0 - i * mg), my))
-		sl.token = off + (sl.token as Vector2) * k
-		sl.bet = off + (sl.bet as Vector2) * k
-		sl.markers = markers.map(func(m: Vector2) -> Vector2: return off + m * k)
+				cands.append(pc + Vector2(-115.0 - i * (D_MARKER + 4.0), -111))
+		else:
+			token = ring_point(pc, D_CENTER, D_MID)
+			bet = ring_point(pc, D_CENTER, D_INNER)
+			var d := token - D_CENTER # 가운데 타원의 접선(토큰 곁으로 타원을 따라 간다)
+			var t: Vector2 = Vector2(-d.y / (D_MID.y * D_MID.y), d.x / (D_MID.x * D_MID.x)).normalized() * D_MARK_SIDE[v]
+			var along := 1.0 / maxf(absf(t.x), absf(t.y)) # 대각선이어도 사각 경계가 닿지 않게 한 축으로 충분히 띄운다
+			var s1 := (D_TOKEN / 2.0 + 4.0 + D_MARKER / 2.0) * along
+			var s2 := s1 + (D_MARKER + 4.0) * along
+			cands = [token + t * s1, token - t * s1, token + t * s2, token - t * s2]
+		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k)}
+		sl.token = off + token * k
+		sl.bet = off + bet * k
+		sl.cands = cands.map(func(m: Vector2) -> Vector2: return off + m * k)
 		slots.append(sl)
 	var hc := SeatScript.desk_card_size(true, k)
 	var board_size := Vector2(D_BOARD_CARD.x * 5.0 + 24.0, D_BOARD_CARD.y) * k # 카드 사이 6(HBox 간격)
@@ -439,7 +451,7 @@ func _layout_desktop() -> Dictionary:
 		r.custom_minimum_size = D_BOARD_CARD * k
 	board_box.custom_minimum_size = board_size
 	center_box.size = board_size
-	center_box.position = off + Vector2(D_W / 2.0 * k - board_size.x / 2.0, 248.0 * k)
+	center_box.position = off + Vector2(D_CENTER.x * k - board_size.x / 2.0, D_BOARD_TOP * k)
 	for r: TextureRect in my_card_rects:
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0 * k, hc.y)
@@ -452,7 +464,7 @@ func _layout_desktop() -> Dictionary:
 		l.add_theme_font_size_override("font_size", int(round(18.0 * k)))
 	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
 	total_box.reset_size()
-	total_box.position = off + Vector2(D_W / 2.0 * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
+	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
 	label_w = 360.0 * k
 	label_bottom = off.y + (D_TOTAL_TOP + 66.0) * k
 	_place_board_label()
@@ -471,10 +483,10 @@ func _layout_desktop() -> Dictionary:
 		b.custom_minimum_size.y = 44.0 * k
 		b.add_theme_font_size_override("font_size", int(round(17.0 * k)))
 	_sync_action_bg()
-	return {"center": off + D_FELT.get_center() * k, "hc": hc, "slots": slots}
+	return {"center": off + D_CENTER * k, "hc": hc, "slots": slots}
 
 
-## 데스크톱: 슬롯에 좌석·토큰·베팅·마커를 놓는다(겹침 검사 없이 고정 자리 — 겹치지 않게 슬롯을 짰다. test_layout 이 확인한다)
+## 데스크톱: 슬롯에 좌석·토큰·베팅을 고정 자리로 놓고(겹치지 않게 타원을 짰다. test_layout 이 확인한다), 마커는 후보 중 빈 자리를 고른다
 func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 	for seat_no in range(1, 10):
 		var v := posmod(seat_no - hero, 9)
@@ -496,14 +508,62 @@ func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 			var bm := Vector2(D_BET_W * k, chip.custom_minimum_size.y + 4.0 + amount.get_combined_minimum_size().y)
 			box.size = bm
 			box.position = (sl.bet as Vector2) - bm / 2.0
-	for mk: Array in marks: # [마커, 좌석, 슬롯 안 번호(D 0·SB 1·BB 2)]
+	# 마커: 자기 좌석 토큰 곁 후보 중 처음으로 아무것(패널·보이는 토큰·베팅·보드·Total·행동 패널·앞선 마커)과도 안 닿는 자리
+	var blocks: Array = []
+	for sl: Dictionary in g.slots:
+		blocks.append(sl.panel)
+	blocks.append_array([center_box.get_rect(), total_box.get_rect(), bottom_region.get_rect(), bottom_bar.get_rect()])
+	for seat_no in range(1, 10):
+		var sl: Dictionary = g.slots[posmod(seat_no - hero, 9)]
+		if seat_nodes[seat_no - 1].badge_action.visible:
+			blocks.append(Rect2((sl.token as Vector2) - Vector2(D_TOKEN, D_TOKEN) * k / 2.0, Vector2(D_TOKEN, D_TOKEN) * k))
+		if bet_boxes[seat_no - 1].visible:
+			blocks.append(bet_boxes[seat_no - 1].get_rect())
+	for mk: Array in marks: # [마커, 좌석, 종류(D 0·SB 1·BB 2)] — 놓는 순서 = 우선순위
 		var m: Control = mk[0]
 		m.custom_minimum_size = Vector2(D_MARKER, D_MARKER) * k
 		m.size = m.custom_minimum_size
 		m.texture = MARKER_TEXTURES[mk[2]]
 		m.queue_redraw()
-		if mk[1] != -1:
-			m.position = (g.slots[posmod(mk[1] - hero, 9)].markers[mk[2]] as Vector2) - m.size / 2.0
+		if mk[1] == -1:
+			continue
+		var own := posmod(mk[1] - hero, 9)
+		var cands: Array = g.slots[own].cands
+		var pos: Vector2 = cands[0]
+		var fallback := -1
+		for ci in cands.size():
+			var r := Rect2((cands[ci] as Vector2) - m.size / 2.0, m.size)
+			var free := true
+			for bi in blocks.size():
+				if r.grow(0.0 if bi < 9 else 2.0).intersects(blocks[bi]): # 앞 아홉은 패널 — 살짝 닿는 것까지는 둔다
+					free = false
+					break
+			if not free:
+				continue
+			if fallback == -1:
+				fallback = ci
+			if _nearest_slot(r, g.slots, own) == own: # 옆 좌석 것으로 보이면 건너뛴다
+				fallback = ci
+				break
+		if fallback != -1:
+			pos = cands[fallback]
+		m.position = pos - m.size / 2.0
+		blocks.append(m.get_rect())
+
+
+## r 에서 가장 가까운(사각 사이 거리) 슬롯 패널의 번호
+func _nearest_slot(r: Rect2, slots: Array, own: int) -> int: # 동률은 남에게 진 것으로 센다(own 거리 +1)
+	var best := INF
+	var nearest := -1
+	for v in slots.size():
+		var p: Rect2 = slots[v].panel
+		var d := Vector2(maxf(maxf(r.position.x - p.end.x, p.position.x - r.end.x), 0.0), maxf(maxf(r.position.y - p.end.y, p.position.y - r.end.y), 0.0)).length()
+		if v == own:
+			d += 1.0
+		if d < best:
+			best = d
+			nearest = v
+	return nearest
 
 
 ## 펠트·좌석·보드·내 카드를 절대 좌표로 놓는다. 세로·가로 모두 같은 코드다.

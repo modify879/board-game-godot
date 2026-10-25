@@ -7,6 +7,7 @@ extends Node
 const SIZES := [Vector2(1280, 720), Vector2(1600, 900), Vector2(1920, 1080), Vector2(488, 1056)]
 const HAND := {"category": "STRAIGHT_FLUSH", "tiebreakers": [14.0, 13.0, 12.0, 11.0, 10.0]} # 가장 긴 문구("로열 스트레이트 플러시")
 const MIN_GAP := 8.0
+const PublicView := preload("res://games/holdem/public_view.gd")
 const TOL := 2.0 # 겹침 허용 깊이(px) — 테두리가 살짝 닿는 정도는 겹침으로 세지 않는다
 # 같은 주인 안에서 겹쳐도 되는 (종류, 종류) — 캡슐 모서리의 배지, 캡슐·카드 모서리에 걸치는 족보 알약, 보드 줄 위에 겹쳐 그리는 결과 문구
 const ALLOWED := [["cap", "badge"], ["cap", "pill"], ["cards", "pill"], ["hero", "pill"], ["pot", "label"]]
@@ -266,6 +267,17 @@ func _stadium_hit(cap: Rect2, r: Rect2, round_r: bool) -> bool:
 	return _gap(r, spine) < rad - TOL
 
 
+func _nearest_panel(r: Rect2, panels: Dictionary) -> int:
+	var best := INF
+	var nearest := -1
+	for no: int in panels:
+		var d := _gap(r, panels[no])
+		if d < best:
+			best = d
+			nearest = no
+	return nearest
+
+
 func _gap(a: Rect2, b: Rect2) -> float:
 	var gx := maxf(a.position.x - b.end.x, b.position.x - a.end.x)
 	var gy := maxf(a.position.y - b.end.y, b.position.y - a.end.y)
@@ -354,6 +366,30 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 				continue # 핸드 중엔 상자, 끝나면 문구 — 같은 자리를 번갈아 쓴다
 			if _in(a.r).intersects(_in(b.r)):
 				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
+	# 토큰·베팅·마커는 가장 가까운 패널이 자기 좌석이어야 한다(옆 좌석 것으로 보이지 않게)
+	var hero_no := hero if hero > 0 else 1
+	for it in items:
+		if it.k in ["token", "bet"]:
+			var own := int(str(it.o).substr(4))
+			if _nearest_panel(it.r, panels) != own:
+				bad.append("%s/%s 가장 가까운 패널이 seat%d" % [it.o, it.k, _nearest_panel(it.r, panels)])
+			if it.k == "bet": # 타원 느슨 검사: 중심이 펠트 중심→패널 중심 선 위 안쪽 타원 반지름 ±15% 안
+				var c: Vector2 = (it.r as Rect2).get_center() - table.felt_area.get_global_position()
+				var fc: Vector2 = table.geo.center
+				var pcn: Vector2 = (panels[own] as Rect2).get_center() - table.felt_area.get_global_position()
+				if own != hero_no:
+					var want: Vector2 = table.ring_point(pcn, fc, table.D_INNER * table.k)
+					var got: Vector2 = c - fc
+					var tw: Vector2 = want - fc
+					if got.length() < tw.length() * 0.85 or got.length() > tw.length() * 1.15 or got.normalized().dot(tw.normalized()) < 0.98:
+						bad.append("%s/bet 안쪽 타원에서 벗어남 %s (기대 %s)" % [it.o, c, want])
+	for pair: Array in [["dealer", table.dealer_marker, 0], ["dealer-sb", table.sb_marker, 1], ["dealer-bb", table.bb_marker, 2]]:
+		if not pair[1].visible:
+			continue
+		var seat_no: int = int(table.public_view.get("buttonSeatNo")) if pair[2] == 0 else int(PublicView.blind_seats(table.public_view)["sb" if pair[2] == 1 else "bb"])
+		var near := _nearest_panel((pair[1] as Control).get_global_rect(), panels)
+		if near != seat_no:
+			bad.append("%s 마커의 가장 가까운 패널이 seat%d (주인 seat%d)" % [pair[0], near, seat_no])
 	if table.pot_row.visible:
 		bad.append("데스크톱에서 PotRow 가 보임")
 	if table.action_bg.get_index() > table.bottom_region.get_index() or table.my_cards_box.get_index() < table.seat_nodes[8].get_index():
