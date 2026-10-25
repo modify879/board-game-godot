@@ -136,6 +136,14 @@ func _init() -> void:
 	check(pv.blind_seats(bs.merged({"handInProgress": false}, true)) == {"sb": -1, "bb": -1}, "blind_seats 핸드 밖은 -1")
 	check(pv.blind_seats({"handInProgress": true}) == {"sb": -1, "bb": -1} and pv.blind_seats({}) == {"sb": -1, "bb": -1}, "blind_seats 필드 없음은 -1")
 
+	check(pv.chip_breakdown(2800) == [[1000, 2], [500, 1], [100, 3]], "chip_breakdown 2800")
+	check(pv.chip_breakdown(100) == [[100, 1]], "chip_breakdown 100")
+	check(pv.chip_breakdown(600) == [[500, 1], [100, 1]], "chip_breakdown 600")
+	check(pv.chip_breakdown(15300) == [[10000, 1], [5000, 1], [100, 3]], "chip_breakdown 15300")
+	check(pv.chip_breakdown(1000000) == [[500000, 2]], "chip_breakdown 1000000")
+	check(pv.chip_breakdown(0) == [], "chip_breakdown 0")
+	check(pv.chip_breakdown(150) == [[100, 1]], "chip_breakdown 150")
+
 	quit(1 if failures else 0)
 
 

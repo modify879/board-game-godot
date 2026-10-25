@@ -372,7 +372,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		if it.k in ["token", "bet"]:
 			var own := int(str(it.o).substr(4))
 			if _nearest_panel(it.r, panels) != own:
-				bad.append("%s/%s 가장 가까운 패널이 seat%d" % [it.o, it.k, _nearest_panel(it.r, panels)])
+				bad.append("%s/%s 가장 가까운 패널이 seat%d %s own %s near %s" % [it.o, it.k, _nearest_panel(it.r, panels), _s(it.r), _s(panels[own]), _s(panels[_nearest_panel(it.r, panels)])])
 			if it.k == "bet": # 타원 느슨 검사: 중심이 펠트 중심→패널 중심 선 위 안쪽 타원 반지름 ±15% 안
 				var c: Vector2 = (it.r as Rect2).get_center() - table.felt_area.get_global_position()
 				var fc: Vector2 = table.geo.center
@@ -399,7 +399,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 	if table.hand_text_pill.visible:
 		bad.append("데스크톱에서 폰 족보 알약이 보임")
 	for m: Control in [table.dealer_marker, table.sb_marker, table.bb_marker]:
-		if m.visible and m.size.x < 36.0 * table.k:
+		if m.visible and m.size.x < 24.0 * table.k:
 			bad.append("마커가 너무 작음 %s" % m.size)
 	var gap := INF
 	var keys := panels.keys()

@@ -41,8 +41,8 @@ const D_ANGLES := [90.0, 155.0, 189.7, 221.0, 255.7, 284.3, 318.5, 349.0, 383.0]
 ## 마커가 토큰 곁 어느 쪽(타원 접선, +1 = 각도 증가 방향)으로 먼저 놓일지. 막히면 반대쪽·더 먼 쪽으로 간다(_place_desktop)
 const D_MARK_SIDE := [1, -1, 1, 1, 1, -1, -1, -1, 1]
 const D_TOKEN := 56.0 # 행동 토큰 지름
-const D_MARKER := 42.0 # D·SB·BB 칩
-const D_BET_W := 64.0 # 베팅 칸(더미 + 금액) 폭
+const D_BET_W := 64.0 # 베팅 칸 최소 폭(기둥·금액이 더 넓으면 그만큼 넓어진다)
+const D_MARKER := 26.0 # D·SB·BB 칩(모두 같은 크기)
 const D_BOARD_CARD := Vector2(64, 88)
 const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
 const D_TOTAL_TOP := 371.0 # Total 상자 윗변(보드 아래)
@@ -440,7 +440,7 @@ func _layout_desktop() -> Dictionary:
 			var s1 := (D_TOKEN / 2.0 + 4.0 + D_MARKER / 2.0) * along
 			var s2 := s1 + (D_MARKER + 4.0) * along
 			cands = [token + t * s1, token - t * s1, token + t * s2, token - t * s2]
-		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k)}
+		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k), "left": pc.x <= D_CENTER.x} # left: 아바타 열이 왼쪽
 		sl.token = off + token * k
 		sl.bet = off + bet * k
 		sl.cands = cands.map(func(m: Vector2) -> Vector2: return off + m * k)
@@ -455,7 +455,8 @@ func _layout_desktop() -> Dictionary:
 	for r: TextureRect in my_card_rects:
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0 * k, hc.y)
-	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(((slots[0].panel as Rect2).size.x - my_cards_box.size.x) / 2.0, 8.0 * k)
+	var hero_cd: Rect2 = SeatScript.desk_columns(true, true, k).cards # 내 큰 카드는 안쪽(카드) 열 가운데
+	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, 8.0 * k)
 	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
 	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
 	for l: Label in [total_label, call_label]:
@@ -492,7 +493,7 @@ func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 		var v := posmod(seat_no - hero, 9)
 		var sl: Dictionary = g.slots[v]
 		var seat_node: Control = seat_nodes[seat_no - 1]
-		seat_node.set_desktop(k, v == 0)
+		seat_node.set_desktop(k, v == 0, sl.left)
 		seat_node.position = (sl.panel as Rect2).position
 		seat_node.token_center = (sl.token as Vector2) - seat_node.position
 		_render_seat(seat_no, seat_node)
@@ -500,12 +501,15 @@ func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 		box.vertical = true
 		var chip: Control = box.get_child(0)
 		var amount: Label = box.get_child(1)
-		chip.custom_minimum_size = Vector2(D_BET_W, Marker.pile_height(D_BET_W)) * k
+		chip.unit = k
 		amount.add_theme_font_size_override("font_size", int(round(16.0 * k)))
 		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount.custom_minimum_size = Vector2(D_BET_W * k, 0)
-		if box.visible: # 최소 크기는 다음 프레임에야 갱신되므로 직접 계산한다(더미 + 간격 4 + 금액)
-			var bm := Vector2(D_BET_W * k, chip.custom_minimum_size.y + 4.0 + amount.get_combined_minimum_size().y)
+		if box.visible: # 최소 크기는 다음 프레임에야 갱신되므로 직접 계산한다(더미 + 간격 4 + 금액). 폭은 기둥 수·금액 글자 중 넓은 쪽
+			var ps := Marker.pile_size(chip.pile, k)
+			var bw := maxf(maxf(ps.x, amount.get_combined_minimum_size().x), D_BET_W * k)
+			chip.custom_minimum_size = Vector2(bw, ps.y)
+			amount.custom_minimum_size = Vector2(bw, 0)
+			var bm := Vector2(bw, ps.y + 4.0 + amount.get_combined_minimum_size().y)
 			box.size = bm
 			box.position = (sl.bet as Vector2) - bm / 2.0
 	# 마커: 자기 좌석 토큰 곁 후보 중 처음으로 아무것(패널·보이는 토큰·베팅·보드·Total·행동 패널·앞선 마커)과도 안 닿는 자리

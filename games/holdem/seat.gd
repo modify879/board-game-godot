@@ -19,6 +19,7 @@ const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
 
 var compact := false
 var desk := false # 데스크톱 패널 모양(table.gd 가 set_desktop 으로 켠다). false 면 폰 캡슐
+var avatar_left := true # desk 일 때 아바타 열이 왼쪽(바깥쪽이 왼쪽인 좌석)인지
 var hero_slot := false # desk 일 때 아래 가운데 큰 패널
 var k := 1.0 # desk 크기 배율
 var token_center := Vector2.ZERO # 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다(데스크톱·폰 모두)
@@ -31,6 +32,8 @@ var timer_left := -1.0 # 남은 초. 음수면 숨김
 var timer_total := 0.0 # 이번 턴 타이머 전체 길이(초) — 서버 turnTimeoutMs
 var shown_codes: Array = [] # 좌석 위에 그린 카드(테스트가 본다)
 var _avatar_color: Color = AVATAR_COLORS[0]
+var _avatar_c := Vector2.ZERO # desk 아바타 원 중심·반지름(로컬)
+var _avatar_r := 0.0
 var _badge_count := 0
 var _style := StyleBoxFlat.new()
 var _dim := Color.WHITE # desk 에서 폴드·끊김 어둡게(패널 바탕·글자). 폰은 노드 modulate 를 쓴다
@@ -73,6 +76,16 @@ static func panel_size(hero: bool, kk: float) -> Vector2:
 ## 데스크톱 좌석 카드 한 장 크기. 내 자리는 큰 카드(내 홀카드 MyCards 와 같다)
 static func desk_card_size(hero: bool, kk: float) -> Vector2:
 	return (Vector2(62, 84) if hero else Vector2(40, 54)) * kk
+
+
+## 데스크톱 패널 안의 두 열(로컬 좌표, 배율 적용 전 설계 크기 × kk): avatar(아바타·닉네임) / cards(카드·스택). 아바타는 바깥쪽
+static func desk_columns(hero: bool, left: bool, kk: float) -> Dictionary:
+	var w := panel_size(hero, 1.0)
+	var aw := 90.0 if hero else 80.0
+	var m := 8.0 if hero else 6.0
+	var av := Rect2(m if left else w.x - m - aw, 0, aw, w.y)
+	var cd := Rect2(m + aw + 4.0 if left else m, 0, w.x - 2.0 * m - aw - 4.0, w.y)
+	return {"avatar": Rect2(av.position * kk, av.size * kk), "cards": Rect2(cd.position * kk, cd.size * kk)}
 
 
 func _ready() -> void:
@@ -130,33 +143,42 @@ func set_compact(is_compact: bool) -> void:
 	queue_redraw()
 
 
-## 데스크톱 패널 모양으로 바꾸고 안쪽을 배치한다. 좌석 하나 = 닉네임·스택(왼쪽) + 작은 카드(오른쪽) + 아래 줄 알약. 내 자리(hero)는 큰 카드가 위 가운데,
-## 닉네임·스택이 그 아래 한 줄, 족보 칸(HandRank)이 맨 아래다
-func set_desktop(kk: float, hero: bool) -> void:
+## 데스크톱 패널 모양으로 바꾸고 안쪽을 배치한다. 바깥쪽 열 = 아바타 원 + 아래 닉네임, 안쪽 열 = 작은 카드 + 아래 스택(left 면 아바타가 왼쪽).
+## 내 자리(hero)는 큰 카드가 위, 스택·족보 칸(HandRank)이 그 아래다. 알약(지급액·족보·예약·끊김)은 아바타 열 닉네임 아래
+func set_desktop(kk: float, hero: bool, left := true) -> void:
 	desk = true
 	compact = false
 	k = kk
 	hero_slot = hero
+	avatar_left = left
 	_style_desk(true)
 	size = panel_size(hero, kk)
-	initial.hide()
-	var f := 17.0 if hero else 15.0
-	name_label.add_theme_font_size_override("font_size", int(round(f * kk)))
-	_stack_fs = int(round((22.0 if hero else 20.0) * kk))
+	var cols := desk_columns(hero, left, kk)
+	var av: Rect2 = cols.avatar
+	var cd: Rect2 = cols.cards
+	var d := (56.0 if hero else 40.0) * kk
+	_avatar_r = d / 2.0
+	_avatar_c = Vector2(av.get_center().x, (10.0 if hero else 5.0) * kk + _avatar_r)
+	initial.position = _avatar_c - Vector2(_avatar_r, _avatar_r)
+	initial.size = Vector2(d, d)
+	initial.add_theme_font_size_override("font_size", int(round((24.0 if hero else 18.0) * kk)))
+	name_label.add_theme_font_size_override("font_size", int(round((17.0 if hero else 14.0) * kk)))
+	_stack_fs = int(round((22.0 if hero else 18.0) * kk))
 	stack_label.add_theme_font_size_override("font_size", _stack_fs)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if hero:
-		name_label.position = Vector2(14, 98) * kk
-		name_label.size = Vector2(170, 24) * kk
-		stack_label.position = Vector2(190, 96) * kk
-		stack_label.size = Vector2(156, 28) * kk
-		hand_rank.position = Vector2(14, 122) * kk
-		hand_rank.size = Vector2(332, 20) * kk
+		name_label.position = Vector2(av.position.x, 70.0 * kk)
+		name_label.size = Vector2(av.size.x, 24.0 * kk)
+		stack_label.position = Vector2(cd.position.x, 96.0 * kk)
+		stack_label.size = Vector2(cd.size.x, 28.0 * kk)
+		hand_rank.position = Vector2(cd.position.x, 124.0 * kk)
+		hand_rank.size = Vector2(cd.size.x, 20.0 * kk)
 	else:
-		name_label.position = Vector2(10, 6) * kk
-		name_label.size = Vector2(112, 22) * kk
-		stack_label.position = Vector2(10, 30) * kk
-		stack_label.size = Vector2(112, 28) * kk
-	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if hero else HORIZONTAL_ALIGNMENT_LEFT
+		name_label.position = Vector2(av.position.x, 46.0 * kk)
+		name_label.size = Vector2(av.size.x, 20.0 * kk)
+		stack_label.position = Vector2(cd.position.x, 59.0 * kk)
+		stack_label.size = Vector2(cd.size.x, 26.0 * kk)
 	hand_rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hand_rank.add_theme_font_size_override("font_size", int(round(16.0 * kk)))
 	var pf := int(round(11.0 * kk))
@@ -199,6 +221,7 @@ func _style_desk(on: bool) -> void:
 	else:
 		badge_all_in.remove_theme_constant_override("outline_size")
 		stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		for l: Label in [fold_label, timer_label, hand_rank]:
 			l.hide()
 	modulate = Color.WHITE
@@ -208,15 +231,14 @@ func _style_desk(on: bool) -> void:
 ## desk: 패널 바탕·글자만 어둡게 한다(폴드 글자·타이머 숫자·행동 토큰은 그대로)
 func _set_dim(c: Color) -> void:
 	_dim = c
-	for n: CanvasItem in [name_label, stack_label, hand_pill, payout_label, badge_presence, badge_leave, hand_rank]:
+	for n: CanvasItem in [initial, name_label, stack_label, hand_pill, payout_label, badge_presence, badge_leave, hand_rank]:
 		n.modulate = c if desk else Color.WHITE
 
 
-## 카드 칸 중심(오버레이·ALLIN·타이머 숫자 자리). 내 자리는 카드를 가리지 않게 오른쪽 칸
+## 카드 칸 중심(오버레이·ALLIN·타이머 숫자 자리)
 func _zone_center() -> Vector2:
-	if hero_slot:
-		return Vector2(size.x - 54.0 * k, 82.0 * k)
-	return Vector2(170.0 * k, 34.0 * k)
+	var cd: Rect2 = desk_columns(hero_slot, avatar_left, k).cards
+	return Vector2(cd.get_center().x, (50.0 if hero_slot else 31.0) * k)
 
 
 func _center_label(l: Label) -> void:
@@ -231,24 +253,23 @@ func _place_desk_pills() -> void:
 		if l.visible:
 			l.reset_size()
 			list.append(l)
-	if hero_slot:
-		var left_y := 10.0 * k
-		var right_y := 10.0 * k
+	var av: Rect2 = desk_columns(hero_slot, avatar_left, k).avatar
+	if hero_slot: # 아바타 열 닉네임 아래로 세로로 쌓는다
+		var y := 98.0 * k
 		for l: Label in list:
-			if l == payout_label or l == hand_pill:
-				l.position = Vector2(size.x - 8.0 * k - l.size.x, right_y)
-				right_y += l.size.y + 4.0 * k
-			else:
-				l.position = Vector2(8.0 * k, left_y)
-				left_y += l.size.y + 4.0 * k
+			if y + l.size.y > size.y - 2.0 * k:
+				l.hide() # 아래로 넘치면 낮은 우선순위부터 숨긴다
+				continue
+			l.position = Vector2(av.get_center().x - l.size.x / 2.0, y)
+			y += l.size.y + 3.0 * k
 		return
-	var x := 8.0 * k
+	var x := av.position.x
 	for l: Label in list:
-		if x + l.size.x > size.x - 8.0 * k:
-			l.hide() # 아래 줄에 다 못 담으면 낮은 우선순위부터 숨긴다
+		if x + l.size.x > av.end.x:
+			l.hide() # 아바타 열 한 줄에 다 못 담으면 낮은 우선순위부터 숨긴다
 			continue
-		l.position = Vector2(x, 62.0 * k)
-		x += l.size.x + 4.0 * k
+		l.position = Vector2(x, 68.0 * k)
+		x += l.size.x + 3.0 * k
 
 
 ## 스택 문구가 라벨 폭보다 넓으면(세로 폰의 6자리 이상) 글자를 1px 씩 줄여 잘리지 않게 한다
@@ -314,7 +335,6 @@ func show_player(info: Dictionary) -> void:
 	_fit_stack()
 	for l: Control in [initial, name_label, stack_label]:
 		l.show()
-	initial.visible = not desk
 	var disconnected: bool = info.presence_text != ""
 	var dim := Color(1, 1, 1, 0.45) if info.folded else (Color(0.72, 0.72, 0.72) if disconnected else Color.WHITE)
 	if desk: # 폴드 글자·타이머·토큰이 흐려지지 않게 노드 전체가 아니라 패널 바탕·글자만 어둡게 한다
@@ -378,8 +398,8 @@ func _set_cards(codes: Array) -> void:
 	if desk: # 패널 안: 일반은 오른쪽, 내 자리는 위 가운데
 		cs = desk_card_size(hero_slot, k)
 		gap = (8.0 if hero_slot else 4.0) * k
-		x0 = (size.x - (2.0 * cs.x + gap)) / 2.0 if hero_slot else size.x - 8.0 * k - 2.0 * cs.x - gap
-		y0 = 8.0 * k
+		x0 = (desk_columns(hero_slot, avatar_left, k).cards as Rect2).get_center().x - (2.0 * cs.x + gap) / 2.0
+		y0 = 8.0 * k if hero_slot else 4.0 * k
 	for i in 2:
 		var r: TextureRect = card_rects[i]
 		if i < codes.size():
@@ -480,6 +500,7 @@ func _draw_desk() -> void:
 	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(radius)
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
+	draw_circle(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a))
 	if timer_left >= 0.0:
 		var bar := Rect2(10.0 * k, size.y - 8.0 * k, size.x - 20.0 * k, 4.0 * k)
 		draw_rect(bar, BORDER)

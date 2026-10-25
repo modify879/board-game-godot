@@ -11,36 +11,30 @@ const ACCENT := Color(0.9020, 0.7255, 0.2902)
 @export var texture: Texture2D # 있으면 DEALER·CHIP 모양 대신 이 칩 그림을 크기에 맞춰 그린다(데스크톱 D·SB·BB)
 @export var pile := 0 # CHIP 모양에서 0 보다 크면 이 금액만큼 옆면 칩을 쌓아 그린다(데스크톱 베팅 더미)
 
+const PublicView := preload("res://games/holdem/public_view.gd")
 const SIDE_CHIPS := {
-	"white": preload("res://games/holdem/assets/chips/sideChip_white.png"),
-	"red": preload("res://games/holdem/assets/chips/sideChip_red.png"),
-	"green": preload("res://games/holdem/assets/chips/sideChip_green.png"),
-	"blue": preload("res://games/holdem/assets/chips/sideChip_blue.png"),
-	"black": preload("res://games/holdem/assets/chips/sideChip_black.png"),
-	"purple": preload("res://games/holdem/assets/chips/sideChip_purple.png"),
+	100: preload("res://games/holdem/assets/chips/sideChip_white.png"),
+	500: preload("res://games/holdem/assets/chips/sideChip_red.png"),
+	1000: preload("res://games/holdem/assets/chips/sideChip_blue.png"),
+	5000: preload("res://games/holdem/assets/chips/sideChip_green.png"),
+	10000: preload("res://games/holdem/assets/chips/sideChip_black.png"),
+	50000: preload("res://games/holdem/assets/chips/sideChip_purple.png"),
+	100000: preload("res://games/holdem/assets/chips/sideChip_yellow.png"),
+	500000: preload("res://games/holdem/assets/chips/sideChip_orange.png"),
 }
-const CHIP_W := 40.0 # 옆면 칩 한 장 폭(size.x 가 76 일 때 기준 — 크기에 비례해 키운다)
+const CHIP_W := 22.0 # 옆면 칩 한 장 폭(설계 좌표, unit 배)
+const CHIP_H := CHIP_W * 64.0 / 123.0
 const CHIP_STEP := 4.0 # 칩 사이 세로 간격
-const MAX_CHIPS := 6
+const COL_GAP := 3.0 # 단위별 기둥 사이 간격
+const MAX_CHIPS := 6 # 한 기둥에 그리는 최대 장수
+
+@export var unit := 1.0 # pile 크기 배율(데스크톱 k)
 
 
-## 금액 → 쌓는 장수(100 → 1, 200 → 2, 400 → 3 … 최대 6). 높이가 금액을 가늠하게 한다
-static func pile_count(amount: int) -> int:
-	return clampi(1 + int(floor(log(maxf(amount, 1.0) / 100.0) / log(2.0))), 1, MAX_CHIPS)
-
-
-## 금액대별 칩 색
-static func pile_color(amount: int) -> String:
-	for t: Array in [[500, "white"], [1000, "red"], [5000, "green"], [20000, "blue"], [100000, "black"]]:
-		if amount < t[0]:
-			return t[1]
-	return "purple"
-
-
-## 더미 한 줄 높이(칩 한 장 높이 + 간격 × 5) — 크기 계산용. w 는 더미 폭
-static func pile_height(w: float) -> float:
-	var s := w / 76.0
-	return (CHIP_W * 64.0 / 123.0 + CHIP_STEP * (MAX_CHIPS - 1)) * s
+## 더미 크기: 폭은 기둥 수에 비례, 높이는 최대 장수 기준 고정
+static func pile_size(amount: int, u: float) -> Vector2:
+	var n := PublicView.chip_breakdown(amount).size()
+	return Vector2(n * CHIP_W + maxi(n - 1, 0) * COL_GAP, CHIP_H + CHIP_STEP * (MAX_CHIPS - 1)) * u
 
 
 func _draw() -> void:
@@ -48,13 +42,14 @@ func _draw() -> void:
 		draw_texture_rect(texture, Rect2(Vector2.ZERO, size), false)
 		return
 	if kind == Kind.CHIP and pile > 0:
-		var tex: Texture2D = SIDE_CHIPS[pile_color(pile)]
-		var s := size.x / 76.0
-		var cw := CHIP_W * s
-		var ch := cw * 64.0 / 123.0
-		var n := pile_count(pile)
-		for i in n: # 아래부터 쌓는다 — 맨 아래 칩이 영역 바닥에 닿는다
-			draw_texture_rect(tex, Rect2((size.x - cw) / 2.0, size.y - ch - i * CHIP_STEP * s, cw, ch), false)
+		var cols := PublicView.chip_breakdown(pile)
+		var cw := CHIP_W * unit
+		var ch := CHIP_H * unit
+		var x := (size.x - pile_size(pile, unit).x) / 2.0
+		for col: Array in cols: # 왼쪽이 큰 단위. 아래부터 쌓아 맨 아래 칩이 영역 바닥에 닿는다
+			for i in mini(col[1], MAX_CHIPS):
+				draw_texture_rect(SIDE_CHIPS[col[0]], Rect2(x, size.y - ch - i * CHIP_STEP * unit, cw, ch), false)
+			x += cw + COL_GAP * unit
 		return
 	var c := size / 2.0
 	var r := minf(size.x, size.y) / 2.0

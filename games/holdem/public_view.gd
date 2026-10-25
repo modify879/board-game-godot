@@ -120,3 +120,19 @@ static func deal_order(view: Dictionary) -> Array:
 			order.append(int(seat.seatNo))
 	order.sort_custom(func(a: int, b: int) -> bool: return posmod(a - dealer - 1, 9) < posmod(b - dealer - 1, 9))
 	return order
+
+
+## 칩 금액 단위(큰 것부터). 서버 칩 단위는 100 이라 100 미만 나머지는 버린다
+const CHIP_DENOMS := [500000, 100000, 50000, 10000, 5000, 1000, 500, 100]
+
+
+## 금액을 큰 단위부터 욕심내어 나눈다 → [[단위, 장수], ...](장수 0 은 뺀다). 예: 2800 → [[1000,2],[500,1],[100,3]]
+static func chip_breakdown(amount: int) -> Array:
+	var out: Array = []
+	var left := amount
+	for d: int in CHIP_DENOMS:
+		var n := left / d
+		if n > 0:
+			out.append([d, n])
+			left -= n * d
+	return out
