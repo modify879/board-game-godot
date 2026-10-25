@@ -4,7 +4,7 @@ extends Node
 ## 크기: Table 을 정확한 크기의 Control 아래에 둔다(루트 창 크기와 무관). 글꼴은 헤드리스에서도 로드돼 라벨 크기가 실제와 같다.
 ## 연출: 매 뷰를 have_view=false 로 먹여 고스트·트윈 없이 최종 위치로 그린다(첫 뷰/재연결과 같은 경로).
 
-const SIZES := [Vector2(1280, 720), Vector2(488, 1056)]
+const SIZES := [Vector2(1280, 720), Vector2(1600, 900), Vector2(1920, 1080), Vector2(488, 1056)]
 const MIN_GAP := 8.0
 const TOL := 2.0 # 겹침 허용 깊이(px) — 테두리가 살짝 닿는 정도는 겹침으로 세지 않는다
 # 같은 주인 안에서 겹쳐도 되는 (종류, 종류) — 캡슐 모서리의 배지, 캡슐·카드 모서리에 걸치는 족보 알약, 보드 줄 위에 겹쳐 그리는 결과 문구
@@ -45,6 +45,7 @@ func _ready() -> void:
 		Stomp.disconnect_ws() # 실서버 메시지가 주입한 뷰와 섞이지 않게 소켓을 끊는다
 		await get_tree().process_frame
 		await get_tree().process_frame
+		await get_tree().process_frame # 모드 전환(노드 이동) 뒤 컨테이너가 다시 정렬되는 프레임
 		check(is_equal_approx(table.felt_area.size.x, sz.x) and table.felt_area.size.y > 300.0, "%dx%d: felt_area %s" % [sz.x, sz.y, table.felt_area.size])
 		for n in [2, 9]:
 			for hero in [1, 5, 0]: # 0 = 관전
@@ -133,6 +134,8 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 
 ## {"gap": 좌석 캡슐 사이 최소 간격, "bad": 위반 목록}
 func _collect(table: Control, hero: int) -> Dictionary:
+	if table.desktop:
+		return _collect_desktop(table, hero)
 	var area: Rect2 = table.felt_area.get_global_rect()
 	var bad_extra: Array = []
 	var items: Array = [] # {o: 주인, k: 종류, r: Rect2}
@@ -257,3 +260,83 @@ func check(cond: bool, label: String) -> void:
 
 func _s(r: Rect2) -> String:
 	return "(%d,%d %dx%d)" % [r.position.x, r.position.y, r.size.x, r.size.y]
+
+
+## 데스크톱 배치 점검. 좌석 패널·행동 토큰·베팅 칸·마커·보드·Total 상자·결과 문구·행동 패널·버튼 줄·위 막대가 서로 겹치지 않고 화면 안이어야 한다.
+## 패널 안쪽(카드·이름·스택·알약·내 큰 카드)은 패널 안이고 서로 겹치지 않아야 한다(오버레이 ALLIN·폴드·타이머는 카드 위가 의도라 제외)
+func _collect_desktop(table: Control, hero: int) -> Dictionary:
+	var area: Rect2 = table.get_global_rect()
+	var bad: Array = []
+	var items: Array = [] # {o, k, r}
+	var panels := {}
+	for no in range(1, 10):
+		var s: Control = table.seat_nodes[no - 1]
+		var o := "seat%d" % no
+		var pr := Rect2(s.global_position, s.size)
+		panels[no] = pr
+		items.append({"o": o, "k": "panel", "r": pr})
+		if s.empty:
+			continue
+		var inner: Array = []
+		for c: Control in s.card_rects:
+			if c.visible:
+				inner.append({"n": "cards", "r": c.get_global_rect()})
+		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label]]:
+			if (pair[1] as Control).visible:
+				inner.append({"n": pair[0], "r": (pair[1] as Control).get_global_rect()})
+		if hero > 0 and no == hero and table.my_cards_box.visible:
+			for c: Control in table.my_card_rects:
+				if c.visible:
+					inner.append({"n": "herocards", "r": c.get_global_rect()})
+		var sl: Label = s.stack_label
+		var sw := sl.get_theme_font("font").get_string_size(sl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, sl.get_theme_font_size("font_size")).x
+		if sw > sl.size.x + 0.5:
+			bad.append("%s 스택 문구 잘림 %s (%.0f > %.0f)" % [o, sl.text, sw, sl.size.x])
+		for i in inner.size():
+			if not pr.grow(0.5).encloses(inner[i].r):
+				bad.append("%s/%s 패널 밖 %s (패널 %s)" % [o, inner[i].n, _s(inner[i].r), _s(pr)])
+			for j in range(i + 1, inner.size()):
+				if _in(inner[i].r).intersects(_in(inner[j].r)):
+					bad.append("%s/%s x %s %s %s" % [o, inner[i].n, inner[j].n, _s(inner[i].r), _s(inner[j].r)])
+		if s.badge_action.visible: # 토큰은 패널 밖이다
+			items.append({"o": o, "k": "token", "r": Rect2(s.global_position + s.badge_action.position, s.badge_action.size)}) # 팝 연출 scale 은 제외
+		if table.bet_boxes[no - 1].visible:
+			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
+	for pair: Array in [["dealer", table.dealer_marker], ["dealer-sb", table.sb_marker], ["dealer-bb", table.bb_marker]]:
+		if pair[1].visible:
+			items.append({"o": pair[0], "k": "marker", "r": pair[1].get_global_rect()})
+	for c: Control in table.board_card_rects:
+		if c.visible:
+			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})
+	if table.total_box.visible:
+		items.append({"o": "center", "k": "total", "r": table.total_box.get_global_rect()})
+	if table.board_label.text != "":
+		items.append({"o": "center", "k": "label", "r": table.board_label.get_global_rect()})
+	items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
+	items.append({"o": "ui", "k": "bar", "r": table.bottom_bar.get_global_rect()})
+	items.append({"o": "ui", "k": "topbar", "r": table.top_bar.get_global_rect()})
+	if table.action_bg.visible:
+		var bg: Rect2 = table.action_bg.get_global_rect()
+		if not bg.grow(1.0).encloses(table.bottom_region.get_global_rect()):
+			bad.append("행동 패널 바탕이 내용보다 작다")
+	if not table.info_box.visible or not table.top_bar.get_global_rect().encloses(table.info_box.get_global_rect()):
+		bad.append("SB/BB 정보 상자 보이지 않음·막대 밖")
+	for it in items:
+		if not area.grow(0.5).encloses(it.r):
+			bad.append("%s/%s 화면 밖 %s (area %s)" % [it.o, it.k, _s(it.r), _s(area)])
+	for i in items.size():
+		for j in range(i + 1, items.size()):
+			var a: Dictionary = items[i]
+			var b: Dictionary = items[j]
+			if [a.k, b.k] in [["total", "label"], ["label", "total"]]:
+				continue # 핸드 중엔 상자, 끝나면 문구 — 같은 자리를 번갈아 쓴다
+			if _in(a.r).intersects(_in(b.r)):
+				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
+	if table.pot_row.visible:
+		bad.append("데스크톱에서 PotRow 가 보임")
+	var gap := INF
+	var keys := panels.keys()
+	for i in keys.size():
+		for j in range(i + 1, keys.size()):
+			gap = minf(gap, _gap(panels[keys[i]], panels[keys[j]]))
+	return {"gap": gap, "bad": bad}

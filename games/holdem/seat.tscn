@@ -70,3 +70,23 @@ mouse_filter = 2
 [node name="Payout" type="Label" parent="."]
 unique_name_in_owner = true
 mouse_filter = 2
+
+[node name="FoldLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "폴드"
+
+[node name="TimerLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HandRank" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+mouse_filter = 2

@@ -25,6 +25,21 @@ const CARD_ASPECT := 190.0 / 140.0 # 카드 이미지 비율(세로/가로)
 const BET_GAP := 8.0 # 베팅 칩과 자기 좌석 캡슐 사이 간격
 const BET_ANGLES := [0.0, 35.0, -35.0, 70.0, -70.0, 105.0, -105.0, 140.0, -140.0, 180.0] # 기본(펠트 중심 쪽)이 막히면 캡슐 둘레를 따라 돌려 보는 각도
 const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
+# 데스크톱(가로) 배치는 1280x672(FeltArea) 설계 좌표에서 정하고 k = min(w/1280, h/672) 배로 키운다. 좌석 = 고정 슬롯(타원 아님)
+const D_W := 1280.0
+const D_H := 672.0
+const D_FELT := Rect2(51, 30, 1178, 498)
+## 슬롯 중심. v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 시계 방향으로 왼쪽 아래 모서리·왼쪽 가운데·위 4곳·오른쪽 가운데·오른쪽 아래 모서리
+const D_SLOTS := [Vector2(640, 597), Vector2(140, 400), Vector2(125, 290), Vector2(292, 62), Vector2(524, 62), Vector2(756, 62), Vector2(988, 62), Vector2(1155, 290), Vector2(1140, 400)]
+const D_TOKEN := 56.0 # 행동 토큰 지름
+const D_MARKER := 30.0 # D·SB·BB 칩
+const D_BET_W := 84.0 # 베팅 칸(더미 + 금액) 폭
+const D_BET_H := 68.0
+const D_BOARD_CARD := Vector2(72, 98)
+const D_TOTAL_TOP := 356.0 # Total 상자 윗변(보드 아래)
+const D_ACTION := Rect2(836, 474, 374, 198) # 행동 패널(내 패널 오른쪽)
+const D_BAR := Rect2(16, 534, 400, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
+const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")]
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
 @onready var back_button: Button = %BackButton
@@ -68,14 +83,29 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var raise_slider: HSlider = %RaiseSlider
 @onready var raise_spin: SpinBox = %RaiseSpin
 @onready var raise_button: Button = %RaiseButton
+@onready var vbox: VBoxContainer = $VBoxContainer
+@onready var top_bar: MarginContainer = $VBoxContainer/TopBar
+@onready var bottom_box: VBoxContainer = $VBoxContainer/BottomRegion/Bottom
+@onready var bottom_bar: HFlowContainer = $VBoxContainer/BottomRegion/Bottom/BottomBar
+@onready var info_box: PanelContainer = %InfoBox
+@onready var info_label: Label = %InfoLabel
+@onready var total_box: PanelContainer = %TotalBox
+@onready var total_label: Label = %TotalLabel
+@onready var call_key: Label = %CallKey
+@onready var call_label: Label = %CallLabel
+@onready var call_spacer: Control = %CallSpacer
 
 var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
-var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> HBoxContainer(칩 아이콘 + 금액)
+var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> BoxContainer(폰 가로·데스크톱 세로)(칩 아이콘 + 금액)
 var dealer_marker: Control
 var sb_marker: Control
 var bb_marker: Control
 var felt_style := StyleBoxFlat.new()
 var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드를 작게
+var desktop := false # 데스크톱 배치가 적용돼 있다(_apply_mode). compact 의 반대 — 노드를 옮겨 둔 상태
+var k := 1.0 # 데스크톱 배율
+var preset_row: HBoxContainer # 데스크톱 행동 패널의 ½팟·팟·올인 줄(폰에서는 RaiseBox 안)
+var action_bg: Panel # 데스크톱 행동 패널 바탕
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
 var street_base_key := ""
 var board_card_rects: Array = []
@@ -167,6 +197,14 @@ func _ready() -> void:
 		motion.kill_real()
 		_render_seats())
 	bottom_region.resized.connect(_fit_bottom_width)
+	preset_row = HBoxContainer.new()
+	preset_row.name = "PresetRow"
+	preset_row.add_theme_constant_override("separation", 8)
+	preset_row.hide()
+	action_bar.add_child(preset_row)
+	action_bar.move_child(preset_row, 0)
+	raise_box.visibility_changed.connect(_sync_preset_row)
+	info_label.text = "SB %s / BB %s" % [Format.comma(Rules.BIG_BLIND / 2), Format.comma(Rules.BIG_BLIND)]
 	_build_seats()
 	Stomp.message.connect(_on_stomp_message)
 	Stomp.error.connect(_on_stomp_error)
@@ -198,7 +236,7 @@ func _process(_delta: float) -> void:
 
 func _build_seats() -> void:
 	for seat_no in range(1, 10):
-		var box := HBoxContainer.new()
+		var box := BoxContainer.new()
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_theme_constant_override("separation", 4)
 		var chip := _marker(Marker.Kind.CHIP, Vector2(18, 18))
@@ -211,6 +249,16 @@ func _build_seats() -> void:
 		box.hide()
 		felt_area.add_child(box)
 		bet_boxes.append(box)
+	action_bg = Panel.new()
+	action_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(SeatScript.SURFACE, 0.85)
+	bg_style.border_color = SeatScript.BORDER
+	bg_style.set_border_width_all(2)
+	bg_style.set_corner_radius_all(12)
+	action_bg.add_theme_stylebox_override("panel", bg_style)
+	action_bg.hide()
+	felt_area.add_child(action_bg)
 	dealer_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22))
 	dealer_marker.hide()
 	felt_area.add_child(dealer_marker)
@@ -243,9 +291,193 @@ func _marker(kind: int, min_size: Vector2, label := "D", tint := Color.WHITE) ->
 
 
 func _fit_bottom_width() -> void: # 아래 영역 내용은 최대 640 너비로 가운데
+	if desktop: # 데스크톱은 _layout_desktop 이 자리·여백을 정한다
+		_sync_action_bg()
+		return
 	var side := maxi(16, int((bottom_region.size.x - 640) / 2.0))
 	bottom_region.add_theme_constant_override("margin_left", side)
 	bottom_region.add_theme_constant_override("margin_right", side)
+
+
+## 폰(세로)과 데스크톱(가로) 사이에서 노드를 옮긴다. 데스크톱: 아래 영역(행동 패널)·버튼 줄을 FeltArea 안으로 띄우고 ½팟·팟·올인을 별도 줄로 뺀다. 폰은 원래 자리로 되돌린다
+func _apply_mode() -> void:
+	var want := not compact
+	if want == desktop:
+		return
+	desktop = want
+	var presets: Array = [half_pot_button, pot_button, all_in_button]
+	if want:
+		bottom_region.reparent(felt_area, false)
+		bottom_bar.reparent(felt_area, false)
+		felt_area.move_child(action_bg, bottom_region.get_index())
+		for b: Button in presets:
+			b.reparent(preset_row, false)
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		top_bar.add_theme_constant_override("margin_top", 8)
+		top_bar.add_theme_constant_override("margin_bottom", 4)
+		pot_row.hide() # 팟은 Total 상자가 보인다
+	else:
+		bottom_region.reparent(vbox, false)
+		vbox.move_child(bottom_region, -1)
+		bottom_bar.reparent(bottom_box, false)
+		bottom_box.move_child(bottom_bar, -1)
+		for i in presets.size():
+			var b: Button = presets[i]
+			b.reparent(raise_box, false)
+			raise_box.move_child(b, i)
+			b.size_flags_horizontal = Control.SIZE_FILL
+			b.custom_minimum_size.y = 36
+			b.remove_theme_font_size_override("font_size")
+		for b: Button in [fold_button, check_call_button, raise_button]:
+			b.custom_minimum_size.y = 52
+			b.remove_theme_font_size_override("font_size")
+		bottom_region.custom_minimum_size = Vector2(0, 206)
+		bottom_region.add_theme_constant_override("margin_top", 6)
+		bottom_region.add_theme_constant_override("margin_bottom", 12)
+		top_bar.add_theme_constant_override("margin_top", 16)
+		top_bar.add_theme_constant_override("margin_bottom", 8)
+		pot_row.show()
+		total_box.hide()
+		bottom_bar.custom_minimum_size = Vector2.ZERO
+		felt_style.set_border_width_all(FELT_RIM)
+		for box: BoxContainer in bet_boxes:
+			box.vertical = false
+			var chip: Control = box.get_child(0)
+			chip.pile = 0
+			chip.custom_minimum_size = Vector2(18, 18)
+			chip.size = Vector2(18, 18)
+			var amount: Label = box.get_child(1)
+			amount.add_theme_font_size_override("font_size", 15)
+			amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			amount.custom_minimum_size = Vector2.ZERO
+		for m: Control in [dealer_marker, sb_marker, bb_marker]:
+			m.texture = null
+			m.custom_minimum_size = Vector2(22, 22)
+			m.size = Vector2(22, 22)
+			m.queue_redraw()
+	info_box.visible = want
+	_sync_preset_row()
+	_sync_action_bg()
+
+
+func _sync_preset_row() -> void:
+	if preset_row != null:
+		preset_row.visible = desktop and raise_box.visible
+
+
+func _sync_action_bg() -> void:
+	if action_bg == null:
+		return
+	action_bg.visible = desktop and action_bar.visible
+	action_bg.position = bottom_region.position
+	action_bg.size = bottom_region.size
+
+
+## 데스크톱 배치. 슬롯 좌표(D_SLOTS)·토큰·베팅·마커 자리는 설계 좌표 × k + 가운데 정렬 오프셋.
+## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, token, bet, markers[D, SB, BB]}(FeltArea 좌표)
+func _layout_desktop() -> Dictionary:
+	var area := felt_area.size
+	k = maxf(minf(area.x / D_W, area.y / D_H), 0.3)
+	var off := (area - Vector2(D_W, D_H) * k) / 2.0
+	felt.position = off + D_FELT.position * k
+	felt.size = D_FELT.size * k
+	felt_style.set_corner_radius_all(int(170.0 * k))
+	felt_style.set_border_width_all(maxi(int(FELT_RIM * k), 4))
+	var slots: Array = []
+	for v in 9:
+		var pc: Vector2 = D_SLOTS[v]
+		var half: Vector2 = (SeatScript.panel_size(v == 0, 1.0)) / 2.0
+		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k)}
+		var markers: Array
+		if v == 0: # 내 패널 위에 토큰·베팅, 왼쪽에 마커 세로 줄
+			sl.token = pc + Vector2(-50, -half.y - 4 - D_TOKEN / 2.0)
+			sl.bet = pc + Vector2(60, -half.y - 4 - D_BET_H / 2.0)
+			markers = [pc + Vector2(-half.x - 19, -32), pc + Vector2(-half.x - 19, 0), pc + Vector2(-half.x - 19, 32)]
+		elif v >= 3 and v <= 6: # 위 네 곳: 패널 아래에 토큰 → 베팅, 마커는 토큰 양옆
+			var by := half.y + 4 + D_MARKER / 2.0
+			sl.token = pc + Vector2(0, half.y + 4 + D_TOKEN / 2.0)
+			sl.bet = pc + Vector2(0, half.y + 4 + D_TOKEN + 4 + D_BET_H / 2.0)
+			markers = [pc + Vector2(-64, by), pc + Vector2(64, by), pc + Vector2(98, by)]
+		else: # 양옆·아래 모서리: 가운데 쪽으로 마커 세로 줄 → 토큰 → 베팅
+			var sx := 1.0 if v <= 2 else -1.0
+			sl.token = pc + Vector2(sx * (half.x + 68), 0)
+			sl.bet = pc + Vector2(sx * (half.x + 144), 0)
+			markers = [pc + Vector2(sx * (half.x + 19), -32), pc + Vector2(sx * (half.x + 19), 0), pc + Vector2(sx * (half.x + 19), 32)]
+		sl.token = off + (sl.token as Vector2) * k
+		sl.bet = off + (sl.bet as Vector2) * k
+		sl.markers = markers.map(func(m: Vector2) -> Vector2: return off + m * k)
+		slots.append(sl)
+	var hc := SeatScript.desk_card_size(true, k)
+	var board_size := Vector2(D_BOARD_CARD.x * 5.0 + 24.0, D_BOARD_CARD.y) * k # 카드 사이 6(HBox 간격)
+	for r: TextureRect in board_card_rects:
+		r.custom_minimum_size = D_BOARD_CARD * k
+	board_box.custom_minimum_size = board_size
+	center_box.size = board_size
+	center_box.position = off + Vector2(D_W / 2.0 * k - board_size.x / 2.0, 248.0 * k)
+	for r: TextureRect in my_card_rects:
+		r.custom_minimum_size = hc
+	my_cards_box.size = Vector2(2.0 * hc.x + 8.0 * k, hc.y)
+	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(((slots[0].panel as Rect2).size.x - my_cards_box.size.x) / 2.0, 8.0 * k)
+	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
+	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
+	for l: Label in [total_label, call_label]:
+		l.add_theme_font_size_override("font_size", int(round(22.0 * k)))
+	for l: Label in [call_key, %TotalKey]:
+		l.add_theme_font_size_override("font_size", int(round(18.0 * k)))
+	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
+	total_box.reset_size()
+	total_box.position = off + Vector2(D_W / 2.0 * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
+	label_w = 360.0 * k
+	label_bottom = off.y + (D_TOTAL_TOP + 66.0) * k
+	_place_board_label()
+	# 행동 패널·버튼 줄
+	bottom_region.custom_minimum_size = Vector2.ZERO
+	for side in ["left", "right", "top", "bottom"]:
+		bottom_region.add_theme_constant_override("margin_" + side, int(8.0 * k))
+	bottom_region.position = off + D_ACTION.position * k
+	bottom_region.size = D_ACTION.size * k
+	bottom_bar.position = off + D_BAR.position * k
+	bottom_bar.size = D_BAR.size * k
+	for b: Button in [half_pot_button, pot_button, all_in_button]:
+		b.custom_minimum_size.y = 30.0 * k
+		b.add_theme_font_size_override("font_size", int(round(16.0 * k)))
+	for b: Button in [fold_button, check_call_button, raise_button]:
+		b.custom_minimum_size.y = 44.0 * k
+		b.add_theme_font_size_override("font_size", int(round(17.0 * k)))
+	_sync_action_bg()
+	return {"center": off + D_FELT.get_center() * k, "hc": hc, "slots": slots}
+
+
+## 데스크톱: 슬롯에 좌석·토큰·베팅·마커를 놓는다(겹침 검사 없이 고정 자리 — 겹치지 않게 슬롯을 짰다. test_layout 이 확인한다)
+func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
+	for seat_no in range(1, 10):
+		var v := posmod(seat_no - hero, 9)
+		var sl: Dictionary = g.slots[v]
+		var seat_node: Control = seat_nodes[seat_no - 1]
+		seat_node.set_desktop(k, v == 0)
+		seat_node.position = (sl.panel as Rect2).position
+		seat_node.token_center = (sl.token as Vector2) - seat_node.position
+		_render_seat(seat_no, seat_node)
+		var box: BoxContainer = bet_boxes[seat_no - 1]
+		box.vertical = true
+		var chip: Control = box.get_child(0)
+		var amount: Label = box.get_child(1)
+		chip.custom_minimum_size = Vector2(D_BET_W, Marker.pile_height(D_BET_W)) * k
+		amount.add_theme_font_size_override("font_size", int(round(16.0 * k)))
+		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		amount.custom_minimum_size = Vector2(D_BET_W * k, 0)
+		if box.visible: # 최소 크기는 다음 프레임에야 갱신되므로 직접 계산한다(더미 + 간격 4 + 금액)
+			var bm := Vector2(D_BET_W * k, chip.custom_minimum_size.y + 4.0 + amount.get_combined_minimum_size().y)
+			box.size = bm
+			box.position = (sl.bet as Vector2) - bm / 2.0
+	for mk: Array in marks: # [마커, 좌석, 슬롯 안 번호(D 0·SB 1·BB 2)]
+		var m: Control = mk[0]
+		m.custom_minimum_size = Vector2(D_MARKER, D_MARKER) * k
+		m.size = m.custom_minimum_size
+		m.texture = MARKER_TEXTURES[mk[2]]
+		m.queue_redraw()
+		if mk[1] != -1:
+			m.position = (g.slots[posmod(mk[1] - hero, 9)].markers[mk[2]] as Vector2) - m.size / 2.0
 
 
 ## 펠트·좌석·보드·내 카드를 절대 좌표로 놓는다. 세로·가로 모두 같은 코드다.
@@ -384,6 +616,7 @@ func _handle_private(body: Dictionary) -> void:
 		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
 	leave_room_after_stand = body.get("leaveReservation") == "LEAVE" # null | "SPECTATE" | "LEAVE"
+	_update_pot()
 	_update_buttons()
 	_render_seats()
 	_update_action_bar()
@@ -621,11 +854,13 @@ func _seat_card_rect(seat_no: int, i: int) -> Rect2:
 
 
 func _pot_center() -> Vector2:
+	if desktop:
+		return total_box.position + total_box.size / 2.0
 	return center_box.position + Vector2(center_box.size.x / 2.0, 14.0)
 
 
 func _chip_ghost(text: String) -> Control:
-	var g: HBoxContainer = bet_boxes[0].duplicate()
+	var g: BoxContainer = bet_boxes[0].duplicate()
 	(g.get_child(1) as Label).text = text
 	g.show()
 	g.size = g.get_combined_minimum_size()
@@ -828,6 +1063,13 @@ func _update_pot() -> void:
 	var show_pot: bool = public_view.get("handInProgress", false) and pot > 0
 	pot_row.modulate.a = 1.0 if show_pot else 0.0 # 숨겨도 자리는 유지 — 보드가 움직이지 않게
 	pot_label.text = "팟 %s" % Format.comma(pot)
+	var hip: bool = public_view.get("handInProgress", false)
+	total_box.visible = desktop and hip
+	total_label.text = Format.comma(pot)
+	var my_turn: bool = hip and my_available_actions != null and _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no()
+	call_label.text = Format.comma(int(my_available_actions.get("callAmount", 0))) if my_turn else ""
+	for n: Control in [call_spacer, call_key, call_label]:
+		n.visible = my_turn
 
 
 func _update_board_label() -> void:
@@ -859,7 +1101,9 @@ func _place_board_label() -> void:
 func _render_seats() -> void:
 	if seat_nodes.size() < 9:
 		return
-	var g := _layout()
+	compact = size.x < 700.0
+	_apply_mode()
+	var g := _layout() if compact else _layout_desktop()
 	geo = g
 	var hero := _my_seat_no()
 	if hero == -1:
@@ -874,6 +1118,9 @@ func _render_seats() -> void:
 	var bb_seat: int = blinds.bb if _find_seat(blinds.bb) != null else -1
 	sb_marker.visible = sb_seat != -1
 	bb_marker.visible = bb_seat != -1
+	if desktop:
+		_place_desktop(g, hero, [[dealer_marker, dealer_seat, 0], [sb_marker, sb_seat, 1], [bb_marker, bb_seat, 2]])
+		return
 	var marks: Array = [[dealer_marker, dealer_seat], [sb_marker, sb_seat], [bb_marker, bb_seat]] # 놓는 순서 = 겹침 우선순위
 	var area := felt_area.size
 	for seat_no in range(1, 10):
@@ -892,7 +1139,7 @@ func _render_seats() -> void:
 	for seat_no in range(1, 10): # 베팅은 모든 좌석·마커가 놓인 뒤 — 좌석 사이 충돌을 본다
 		var sp := _seat_center(seat_no, hero, g)
 		var to_center: Vector2 = (g.center - sp).normalized()
-		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
+		var bet_box: BoxContainer = bet_boxes[seat_no - 1]
 		if bet_box.visible:
 			bet_box.reset_size()
 			var bm := bet_box.get_combined_minimum_size()
@@ -1047,7 +1294,7 @@ func _place_payouts(hero: int, g: Dictionary) -> void:
 
 
 func _render_seat(seat_no: int, seat_node: Control) -> void:
-	var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
+	var bet_box: BoxContainer = bet_boxes[seat_no - 1]
 	bet_box.hide()
 	var seat: Variant = _find_seat(seat_no)
 	if seat == null:
@@ -1091,6 +1338,9 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 	var street_bet := _street_bet(seat)
 	if hand_in_progress and street_bet > 0:
 		(bet_box.get_child(1) as Label).text = Format.comma(street_bet)
+		var chip: Control = bet_box.get_child(0)
+		chip.pile = street_bet if desktop else 0
+		chip.queue_redraw()
 		bet_box.show()
 
 
@@ -1184,6 +1434,7 @@ func _update_action_bar() -> void:
 	var to_act := _to_act_seat_no()
 	var show_bar: bool = my_available_actions != null and seat_no != -1 and to_act == seat_no and public_view.get("handInProgress", false)
 	action_bar.visible = show_bar
+	_sync_action_bg()
 	if not show_bar:
 		return
 	var actions: Dictionary = my_available_actions
