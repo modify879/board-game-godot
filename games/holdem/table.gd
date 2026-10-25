@@ -263,14 +263,25 @@ func _sync_sound_button() -> void:
 	sound_button.text = "소리 끔" if sfx.muted else "소리 켬"
 
 
-## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 딜은 딜 연출(DEAL_STAGGER)에 맞춰 카드 한 장마다 한 번
+## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 딜은 좌석 하나(첫 바퀴)마다 한 번씩 DEAL_SOUND_GAP 간격으로.
+## 행동 목소리는 한 번에 가장 중요한 것 하나만(겹쳐 말하지 않게)
+const DEAL_SOUND_GAP := 0.1
+const DEAL_SOUND_VOLUME := 0.4
+const VOICE_PRIORITY := ["allin", "raise", "call", "check", "fold"]
+
+
 func _play_sounds(prev_view: Dictionary) -> void:
-	for e in PublicView.sound_events(prev_view, public_view):
+	var events := PublicView.sound_events(prev_view, public_view)
+	for e: String in events:
 		if e == "deal":
-			for i in PublicView.deal_order(public_view).size() * 2:
-				get_tree().create_timer(i * Motion.DEAL_STAGGER + Motion.DEAL_FLY).timeout.connect(sfx.play.bind("deal"))
+			for i in PublicView.deal_order(public_view).size():
+				get_tree().create_timer(i * DEAL_SOUND_GAP + Motion.DEAL_FLY).timeout.connect(sfx.play.bind("deal", DEAL_SOUND_VOLUME))
 		else:
 			sfx.play(e)
+	for v: String in VOICE_PRIORITY:
+		if v in events:
+			sfx.play("voice_" + v)
+			break
 
 
 ## 내 차례 남은 시간이 5초 이하일 때 올림 초(5..1)가 바뀔 때마다 한 번 울린다

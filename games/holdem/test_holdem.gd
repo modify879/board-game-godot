@@ -170,7 +170,7 @@ func _init() -> void:
 	check(pv.sound_events(prev0, se.call(s0, {"board": ["As", "Kd", "2c"]})) == ["board"], "sound_events 보드")
 	check(pv.sound_events(prev0.merged({"handInProgress": false}, true), prev0) == ["shuffle", "deal"], "sound_events 새 판")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL"}, true))) == ["call"], "sound_events 콜")
-	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "RAISE_TO"}, true))) == ["call"], "sound_events 레이즈")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "RAISE_TO"}, true))) == ["raise"], "sound_events 레이즈")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CHECK"}, true))) == ["check"], "sound_events 체크")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "FOLD", "status": "FOLDED"}, true))) == ["fold"], "sound_events 폴드")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL", "status": "ALL_IN"}, true))) == ["allin"], "sound_events 올인은 콜 대신")
