@@ -489,6 +489,32 @@ func _ready() -> void:
 	if table.desktop: # 바탕은 행동 패널 아래, 내 큰 카드는 좌석 패널 위(거꾸로면 흐려 보인다)
 		check(table.action_bg.get_index() < table.bottom_region.get_index() and table.my_cards_box.get_index() > table.seat_nodes[8].get_index(), "데스크톱 그리기 순서: 행동 바탕 < 행동 패널, 좌석 < 내 카드")
 
+	# 폴드 확인·± 스텝: 공짜 체크 가능이면 첫 누름은 보내지 않고, 두 번째가 보낸다
+	table._handle_public(_view(3300, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
+	table._handle_private({"seq": 920100.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}})
+	table.action_pending = false
+	table.fold_button.pressed.emit()
+	check(not table.action_pending and table.fold_button.text == "정말 폴드?", "폴드 확인: canCheck 면 첫 누름은 보내지 않고 문구가 바뀐다")
+	table.fold_button.pressed.emit()
+	check(table.action_pending and table.fold_button.text == "폴드", "폴드 확인: 두 번째 누름은 보낸다")
+	table.action_pending = false
+	table._handle_private({"seq": 920101.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}})
+	table.fold_button.pressed.emit()
+	check(table.action_pending, "폴드 확인: canCheck 가 아니면 바로 보낸다")
+	table.action_pending = false
+	table._update_action_bar()
+	table.raise_slider.value = 400
+	table.plus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 500 and int(table.raise_spin.value) == 500, "+ 버튼은 100 올린다")
+	table.minus_button.pressed.emit()
+	table.minus_button.pressed.emit()
+	table.minus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 400, "− 버튼은 최소 레이즈 밑으로 내려가지 않는다")
+	table.raise_slider.value = 950
+	table.plus_button.pressed.emit()
+	table.plus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 1000, "+ 버튼은 최대 레이즈를 넘지 않는다")
+
 	get_tree().quit(1 if failures else 0)
 
 

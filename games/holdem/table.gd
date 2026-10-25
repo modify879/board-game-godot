@@ -88,6 +88,8 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var raise_box: HBoxContainer = %RaiseBox
 @onready var raise_slider: HSlider = %RaiseSlider
 @onready var raise_spin: SpinBox = %RaiseSpin
+@onready var minus_button: Button = %MinusButton
+@onready var plus_button: Button = %PlusButton
 @onready var raise_button: Button = %RaiseButton
 @onready var vbox: VBoxContainer = $VBoxContainer
 @onready var top_bar: MarginContainer = $VBoxContainer/TopBar
@@ -110,6 +112,7 @@ var felt_style := StyleBoxFlat.new()
 var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드를 작게
 var desktop := false # 데스크톱 배치가 적용돼 있다(_apply_mode). compact 의 반대 — 노드를 옮겨 둔 상태
 var k := 1.0 # 데스크톱 배율
+var _fold_armed := false # 공짜 체크가 가능할 때 폴드를 한 번 눌러 "정말 폴드?" 로 바뀐 상태
 var preset_row: HBoxContainer # 데스크톱 행동 패널의 ½팟·팟·올인 줄(폰에서는 RaiseBox 안)
 var action_bg: Panel # 데스크톱 행동 패널 바탕
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
@@ -188,7 +191,12 @@ func _ready() -> void:
 	add_chips_cancel.pressed.connect(func() -> void: add_chips_box.hide())
 	sit_popup_ok.pressed.connect(_on_sit_popup_ok)
 	sit_popup_cancel.pressed.connect(func() -> void: sit_popup.hide())
-	fold_button.pressed.connect(_send_play_action.bind("FOLD"))
+	fold_button.pressed.connect(_on_fold_pressed)
+	minus_button.pressed.connect(_step_raise.bind(-1))
+	plus_button.pressed.connect(_step_raise.bind(1))
+	var blank := Image.create(1, 1, false, Image.FORMAT_RGBA8) # 투명 1px — 작은 위아래 화살표 대신 − / + 버튼을 쓴다
+	raise_spin.add_theme_icon_override("updown", ImageTexture.create_from_image(blank))
+	raise_spin.custom_minimum_size.x = 72
 	check_call_button.pressed.connect(_on_check_call_pressed)
 	raise_button.pressed.connect(_on_raise_pressed)
 	raise_slider.value_changed.connect(_on_raise_slider_changed)
@@ -370,6 +378,9 @@ func _apply_mode() -> void:
 			b.size_flags_horizontal = Control.SIZE_FILL
 			b.custom_minimum_size.y = 36
 			b.remove_theme_font_size_override("font_size")
+		for b: Button in [minus_button, plus_button]:
+			b.custom_minimum_size = Vector2(44, 48)
+			b.add_theme_font_size_override("font_size", 24)
 		for b: Button in [fold_button, check_call_button, raise_button]:
 			b.custom_minimum_size.y = 52
 			b.remove_theme_font_size_override("font_size")
@@ -497,6 +508,9 @@ func _layout_desktop() -> Dictionary:
 	for b: Button in [half_pot_button, pot_button, all_in_button]:
 		b.custom_minimum_size.y = 30.0 * k
 		b.add_theme_font_size_override("font_size", int(round(16.0 * k)))
+	for b: Button in [minus_button, plus_button]:
+		b.custom_minimum_size = Vector2(30.0, 30.0) * k
+		b.add_theme_font_size_override("font_size", int(round(18.0 * k)))
 	for b: Button in [fold_button, check_call_button, raise_button]:
 		b.custom_minimum_size.y = 44.0 * k
 		b.add_theme_font_size_override("font_size", int(round(17.0 * k)))
@@ -1670,6 +1684,8 @@ func _set_action_bar_disabled(disabled: bool) -> void:
 	pot_button.disabled = disabled
 	all_in_button.disabled = disabled
 	raise_spin.editable = not disabled
+	minus_button.disabled = disabled
+	plus_button.disabled = disabled
 
 
 func _on_raise_slider_changed(value: float) -> void:
@@ -1680,6 +1696,29 @@ func _on_raise_slider_changed(value: float) -> void:
 func _on_raise_spin_changed(value: float) -> void:
 	raise_slider.value = value
 	_update_raise_button_label()
+
+
+## 레이즈 금액을 칩 단위(Rules.CHIP_UNIT)만큼 올리거나 내린다 — 슬라이더 min/max 로 잘린다
+func _step_raise(dir: int) -> void:
+	raise_slider.value = clampf(raise_slider.value + dir * Rules.CHIP_UNIT, raise_slider.min_value, raise_slider.max_value)
+
+
+## 공짜로 체크할 수 있는데 폴드를 누르면 바로 보내지 않는다 — 버튼이 2초간 "정말 폴드?" 가 되고 그 안에 한 번 더 눌러야 보낸다.
+## QA 브리지가 켜졌으면(Web QA) 확인 없이 보낸다 — 시나리오가 한 번 눌러 폴드한다
+func _on_fold_pressed() -> void:
+	var free_check: bool = my_available_actions != null and my_available_actions.get("canCheck", false)
+	if free_check and not _fold_armed and not QaBridge.is_active():
+		_fold_armed = true
+		fold_button.text = "정말 폴드?"
+		get_tree().create_timer(2.0).timeout.connect(_disarm_fold)
+		return
+	_disarm_fold()
+	_send_play_action("FOLD")
+
+
+func _disarm_fold() -> void:
+	_fold_armed = false
+	fold_button.text = "폴드"
 
 
 func _on_check_call_pressed() -> void:

@@ -39,6 +39,7 @@ var _style := StyleBoxFlat.new()
 var _dim := Color.WHITE # desk 에서 폴드·끊김 어둡게(패널 바탕·글자). 폰은 노드 modulate 를 쓴다
 var _stack_fs := 17
 var _all_in_style: StyleBox
+var _pulse := 0.0 # 경고 구간(남은 초 < WARN_SECONDS)에서 차례 테두리가 금색↔빨강으로 오가는 0~1 값
 
 @onready var card_rects: Array = [%CardA, %CardB]
 @onready var initial: Label = %Initial
@@ -385,6 +386,33 @@ func show_player(info: Dictionary) -> void:
 	queue_redraw()
 
 
+func _process(_delta: float) -> void:
+	if to_act and timer_left >= 0.0 and timer_left < WARN_SECONDS:
+		_pulse = 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * TAU * 1.2)
+		queue_redraw()
+	elif _pulse != 0.0:
+		_pulse = 0.0
+		queue_redraw()
+
+
+## 차례 테두리 색: 경고 구간이면 금색과 빨강 사이를 천천히 오간다
+func _turn_border() -> Color:
+	return ACCENT.lerp(DANGER, _pulse) if _pulse > 0.0 else ACCENT
+
+
+## 타이머 막대: 어두운 트랙 위에 남은 비율만큼 둥근 막대. 5초 미만이면 빨강
+func _draw_timer_bar(track: Rect2) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(int(track.size.y / 2.0))
+	sb.bg_color = Color(0.03, 0.04, 0.06, 0.85)
+	sb.draw(get_canvas_item(), track)
+	var fill := track
+	fill.size.x = maxf(track.size.y, track.size.x * clampf(timer_left / timer_total, 0.0, 1.0)) if timer_left > 0.0 else 0.0
+	if fill.size.x > 0.0:
+		sb.bg_color = DANGER if timer_left < WARN_SECONDS else ACCENT
+		sb.draw(get_canvas_item(), fill)
+
+
 func set_timer(left: float, total: float) -> void:
 	if not is_equal_approx(left, timer_left) or not is_equal_approx(total, timer_total):
 		timer_left = left
@@ -484,16 +512,12 @@ func _draw() -> void:
 		return
 	_style.bg_color = SURFACE
 	_style.set_border_width_all(3 if to_act else 2)
-	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
+	_style.border_color = _turn_border() if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(int(size.y / 2.0))
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(Vector2(size.y / 2.0, size.y / 2.0), (size.y - 14.0) / 2.0, _avatar_color, 1.0)
 	if timer_left >= 0.0:
-		var w := size.x - 20.0
-		var y := size.y + (12.0 if _badge_count > 0 else 4.0)
-		draw_rect(Rect2(10, y, w, 4), BORDER)
-		var frac := clampf(timer_left / timer_total, 0.0, 1.0)
-		draw_rect(Rect2(10, y, w * frac, 4), DANGER if timer_left < WARN_SECONDS else ACCENT)
+		_draw_timer_bar(Rect2(10, size.y + (12.0 if _badge_count > 0 else 4.0), size.x - 20.0, 5.0))
 
 
 ## 기본 프로필: 파스텔 바탕 + 흰 머리·어깨 실루엣. square 면 둥근 사각(어깨는 아래 변에 닿고 사각 안으로 잘린다), 아니면 원
@@ -535,12 +559,10 @@ func _draw_desk() -> void:
 		return
 	_style.bg_color = Color(SURFACE.r, SURFACE.g, SURFACE.b, SURFACE.a * _dim.a)
 	_style.set_border_width_all(int(ceil((4.0 if to_act else 2.0) * k)))
-	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
+	_style.border_color = _turn_border() if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(radius)
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a, true)
 	if timer_left >= 0.0:
-		var bar := Rect2(10.0 * k, size.y - 8.0 * k, size.x - 20.0 * k, 4.0 * k)
-		draw_rect(bar, BORDER)
-		bar.size.x *= clampf(timer_left / timer_total, 0.0, 1.0)
-		draw_rect(bar, DANGER if timer_left < WARN_SECONDS else ACCENT)
+		var th := (8.0 if hero_slot else 6.0) * k
+		_draw_timer_bar(Rect2(10.0 * k, size.y - th - 5.0 * k, size.x - 20.0 * k, th))
