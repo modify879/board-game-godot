@@ -494,7 +494,7 @@ static func ring_point(p: Vector2, c: Vector2, r: Vector2) -> Vector2:
 
 ## 데스크톱 배치. 타원 매개변수(D_*)·각도표(D_ANGLES)에서 슬롯을 계산한다. 설계 좌표 × k + 가운데 정렬 오프셋.
 ## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, bet, cands[마커 후보 자리, 우선순위 순]}(FeltArea 좌표)
-func _layout_desktop() -> Dictionary:
+func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있을 때만 v=0 이 큰 내 패널(관전은 일반 패널)
 	var area := felt_area.size
 	k = maxf(minf(area.x / D_W, area.y / D_H), 0.3)
 	var off := (area - Vector2(D_W, D_H) * k) / 2.0
@@ -506,11 +506,11 @@ func _layout_desktop() -> Dictionary:
 	for v in 9:
 		var a := deg_to_rad(D_ANGLES[v])
 		var pc := D_CENTER + D_OUTER * Vector2(cos(a), sin(a))
-		var half: Vector2 = (SeatScript.panel_size(v == 0, 1.0)) / 2.0
+		var half: Vector2 = (SeatScript.panel_size(v == 0 and hero_render, 1.0)) / 2.0
 		var bet: Vector2
 		var cands: Array = []
 		var mg := D_MARKER / 2.0 + 3.0 # 마커 중심이 패널 가장자리에서 떨어지는 거리(마커 반 + 틈 3)
-		if v == 0: # 내 패널은 넓어 베팅이 윗변 오른쪽 위에 있다 — 마커는 윗변 위 왼쪽부터 한 줄
+		if v == 0 and hero_render: # 내 패널은 넓어 베팅이 윗변 오른쪽 위에 있다 — 마커는 윗변 위 왼쪽부터 한 줄
 			bet = pc + Vector2(50, -117)
 			for i in 3:
 				cands.append(pc + Vector2(-half.x + D_MARKER / 2.0 + 4.0 + i * (D_MARKER + 4.0), -half.y - mg))
@@ -522,6 +522,8 @@ func _layout_desktop() -> Dictionary:
 				t += 1.0
 			bet = pc + dir * t
 			var sx := signf(D_CENTER.x - pc.x)
+			if sx == 0.0: # 관전 때 아래 가운데 일반 패널: 정중앙이라 방향이 없다 — 오른쪽 모서리부터
+				sx = 1.0
 			var sy := signf(D_CENTER.y - pc.y)
 			var cx := pc.x + sx * half.x
 			var cy := pc.y + sy * half.y
@@ -580,11 +582,12 @@ func _layout_desktop() -> Dictionary:
 
 ## 데스크톱: 슬롯에 좌석·베팅을 고정 자리로 놓고(겹치지 않게 타원을 짰다. test_layout 이 확인한다), 마커는 후보 중 빈 자리를 고른다
 func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
+	var hero_render := _my_seat_no() != -1
 	for seat_no in range(1, 10):
 		var v := posmod(seat_no - hero, 9)
 		var sl: Dictionary = g.slots[v]
 		var seat_node: Control = seat_nodes[seat_no - 1]
-		seat_node.set_desktop(k, v == 0, sl.left)
+		seat_node.set_desktop(k, v == 0 and hero_render, sl.left)
 		seat_node.position = (sl.panel as Rect2).position
 		_render_seat(seat_no, seat_node)
 		var box: BoxContainer = bet_boxes[seat_no - 1]
@@ -1307,16 +1310,14 @@ func _render_seats() -> void:
 		return
 	compact = size.x < 700.0
 	_apply_mode()
-	var g := _layout() if compact else _layout_desktop()
+	var g := _layout() if compact else _layout_desktop(_my_seat_no() != -1)
 	geo = g
 	hand_text_pill.visible = compact and my_hand_text != "" and my_cards_box.visible
 	if hand_text_pill.visible: # 내 큰 카드 바로 위 가운데
 		hand_text_pill.text = my_hand_text
 		hand_text_pill.reset_size()
 		hand_text_pill.position = Vector2(my_cards_box.position.x + (my_cards_box.size.x - hand_text_pill.size.x) / 2.0, my_cards_box.position.y - hand_text_pill.size.y - 3.0)
-	var hero := _my_seat_no()
-	if hero == -1:
-		hero = 1
+	var hero := _my_seat_no() if _my_seat_no() != -1 else 1 # 회전 기준(관전은 1번 좌석이 아래 가운데, 일반 패널)
 	var dealer_seat := -1
 	var button_no = public_view.get("buttonSeatNo")
 	if button_no != null and _find_seat(int(button_no)) != null:
@@ -1441,7 +1442,7 @@ func _place_marker(marker: Control, seat_no: int, hero: int, g: Dictionary, plac
 	var to_center: Vector2 = (g.center - sp).normalized()
 	var msz := marker.size
 	var d := _push_clear(sp, sp, msz, to_center, 4.0, g.cap)
-	if seat_no == hero:
+	if seat_no == hero and _my_seat_no() != -1:
 		d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
 		for _i in 6: # 같은 자리에 이미 놓였으면(마커·토큰) 옆으로 한 칸씩
 			for r: Rect2 in placed:

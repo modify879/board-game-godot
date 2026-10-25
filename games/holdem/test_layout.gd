@@ -147,7 +147,21 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 
 
 ## {"gap": 좌석 캡슐 사이 최소 간격, "bad": 위반 목록}
+## 관전이면 아래 가운데(1번 좌석)는 일반 패널이고 내 카드·족보는 없다
 func _collect(table: Control, hero: int) -> Dictionary:
+	var r := _collect_view(table, hero)
+	if hero == 0:
+		var s1: Control = table.seat_nodes[0]
+		if s1.hero_slot:
+			r.bad.append("관전: 1번 좌석이 큰 내 패널로 그려짐")
+		if table.desktop and not s1.size.is_equal_approx(s1.panel_size(false, table.k)):
+			r.bad.append("관전: 1번 좌석 패널 크기가 일반이 아님 %s" % s1.size)
+		if table.my_cards_box.visible or table.hand_text_pill.visible or s1.hand_rank.visible:
+			r.bad.append("관전: 내 카드·족보가 보임")
+	return r
+
+
+func _collect_view(table: Control, hero: int) -> Dictionary:
 	if table.desktop:
 		return _collect_desktop(table, hero)
 	var area: Rect2 = table.felt_area.get_global_rect()
@@ -407,7 +421,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			if _in(a.r).intersects(_in(b.r)):
 				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
 	# 토큰·베팅·마커는 가장 가까운 패널이 자기 좌석이어야 한다(옆 좌석 것으로 보이지 않게)
-	var hero_no := hero if hero > 0 else 1
+	var hero_no := hero if hero > 0 else -1 # 관전은 아무도 큰 패널이 아니다
 	for it in items:
 		if it.k == "bet":
 			var own := int(str(it.o).substr(4))

@@ -309,6 +309,15 @@ func _ready() -> void:
 	check(table.add_chips_button.disabled, "add chips disabled while request pending")
 	table.add_chips_pending = false
 
+	# 14b2. 관전 → 착석: 1번 좌석 패널이 일반에서 큰 내 패널로 바뀐다(데스크톱만 크기가 있다)
+	table._handle_public(_view(2006, [_seat(1, 100), _seat(2, 8)]))
+	check(not table.seat_nodes[0].hero_slot and not table.my_cards_box.visible, "spectator: seat 1 normal panel")
+	table._handle_public(_view(2007, [my_seat, _seat(2, 8)]))
+	check(table.seat_nodes[0].hero_slot == table.desktop, "seated at seat 1: hero panel (desktop)")
+	table._handle_public(_view(2008, [_seat(1, 100), _seat(2, 8)]))
+	check(not table.seat_nodes[0].hero_slot, "unseated: back to normal panel")
+	table._handle_public(_view(2009, [my_seat]))
+
 	# 14c. 나가기 예약: 핸드 중에도 일어서기가 켜져 있고(예약 문구), 예약되면 취소 버튼으로 바뀐다
 	table._handle_public(_view(2010, [my_seat], {"handInProgress": true}))
 	check(table.stand_button.visible and not table.stand_button.disabled, "stand enabled during hand")
