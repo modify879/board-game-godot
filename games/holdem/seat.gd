@@ -52,7 +52,6 @@ var _all_in_style: StyleBox
 @onready var hand_pill: Label = %HandPill
 @onready var payout_label: Label = %Payout
 @onready var fold_label: Label = %FoldLabel
-@onready var timer_label: Label = %TimerLabel
 @onready var hand_rank: Label = %HandRank
 
 
@@ -103,11 +102,9 @@ func _ready() -> void:
 	fold_label.add_theme_color_override("font_color", TEXT)
 	fold_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	fold_label.add_theme_constant_override("outline_size", 8)
-	timer_label.add_theme_constant_override("outline_size", 6)
-	timer_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	hand_rank.add_theme_color_override("font_color", ACCENT)
 	_all_in_style = badge_all_in.get_theme_stylebox("normal")
-	for l: Label in [fold_label, timer_label, hand_rank]:
+	for l: Label in [fold_label, hand_rank]:
 		l.hide()
 	set_compact(false)
 	show_empty(0)
@@ -191,7 +188,6 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	for l: Label in [badge_action, fold_label, badge_all_in]: # 내 큰 카드(table.gd 의 MyCards)가 좌석보다 위에 그려진다 — 오버레이는 그 위로
 		l.z_index = 1 if hero else 0
 	badge_all_in.add_theme_font_size_override("font_size", int(round(26.0 * kk)))
-	timer_label.add_theme_font_size_override("font_size", int(round((32.0 if hero else 38.0) * kk)))
 	var er := _empty_rect()
 	empty_label.position = er.position
 	empty_label.size = er.size
@@ -233,13 +229,13 @@ func _style_desk(on: bool) -> void:
 		badge_all_in.remove_theme_constant_override("outline_size")
 		stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		for l: Label in [fold_label, timer_label, hand_rank]:
+		for l: Label in [fold_label, hand_rank]:
 			l.hide()
 	modulate = Color.WHITE
 	_set_dim(Color.WHITE)
 
 
-## desk: 패널 바탕·글자만 어둡게 한다(폴드 글자·타이머 숫자·행동 토큰은 그대로)
+## desk: 패널 바탕·글자만 어둡게 한다(폴드 글자·행동 토큰은 그대로)
 func _set_dim(c: Color) -> void:
 	_dim = c
 	for n: CanvasItem in [initial, name_label, stack_label, hand_pill, payout_label, badge_presence, badge_leave, hand_rank]:
@@ -320,7 +316,7 @@ func show_empty(seat_no: int, cards: Array = [], category := "") -> void:
 	to_act = false
 	modulate = Color.WHITE
 	_set_dim(Color.WHITE)
-	for l: Control in [initial, name_label, stack_label, badge_all_in, badge_presence, badge_leave, badge_action, payout_label, fold_label, timer_label, hand_rank]:
+	for l: Control in [initial, name_label, stack_label, badge_all_in, badge_presence, badge_leave, badge_action, payout_label, fold_label, hand_rank]:
 		l.hide()
 	_badge_count = 0
 	empty_label.text = "빈 자리 %d" % seat_no
@@ -393,14 +389,7 @@ func set_timer(left: float, total: float) -> void:
 	if not is_equal_approx(left, timer_left) or not is_equal_approx(total, timer_total):
 		timer_left = left
 		timer_total = total
-		if desk:
-			timer_label.visible = left >= 0.0 and not empty
-			timer_label.text = str(int(ceil(left)))
-			timer_label.add_theme_color_override("font_color", DANGER if left < WARN_SECONDS else ACCENT)
-			_center_label(timer_label)
-			if hero_slot: # 내 자리는 두 카드 사이가 아니라 아바타 위에 숫자를 놓는다
-				timer_label.position = _avatar_c - timer_label.size / 2.0
-		else:
+		if not desk: # 시간은 막대로만 보인다(숫자 없음). 데스크톱은 막대를 직접 그린다
 			_place_badges()
 		queue_redraw()
 
