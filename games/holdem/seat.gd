@@ -89,10 +89,16 @@ static func desk_card_size(hero: bool, kk: float) -> Vector2:
 	return (Vector2(62, 84) if hero else Vector2(40, 54)) * kk
 
 
+## 데스크톱 아바타 한 변(설계 좌표): 닉네임 줄 아래 ~ 타이머 막대 띠 위까지, 위아래 여백 4px 씩만 남기고 꽉 채운다
+static func avatar_side(hero: bool) -> float:
+	var strip := 4.0 + (7.0 if hero else 5.0) # timer_bar_rect 의 아래 여백 + 막대 두께
+	return panel_size(hero, 1.0).y - name_row(hero) - strip - 8.0
+
+
 ## 데스크톱 패널 안의 두 열(로컬 좌표, 배율 적용 전 설계 크기 × kk): avatar(아바타·닉네임) / cards(카드·스택). 아바타는 바깥쪽
 static func desk_columns(hero: bool, left: bool, kk: float) -> Dictionary:
 	var w := panel_size(hero, 1.0)
-	var aw := 90.0 if hero else 80.0
+	var aw := maxf(90.0 if hero else 80.0, avatar_side(hero))
 	var m := 8.0 if hero else 6.0
 	var av := Rect2(m if left else w.x - m - aw, 0, aw, w.y)
 	var cd := Rect2(m + aw + 4.0 if left else m, 0, w.x - 2.0 * m - aw - 4.0, w.y)
@@ -169,10 +175,10 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	var cols := desk_columns(hero, left, kk)
 	var av: Rect2 = cols.avatar
 	var cd: Rect2 = cols.cards
-	var d := (76.0 if hero else 54.0) * kk # 아바타 사진: 둥근 사각, 열을 거의 채운다(닉네임은 그 아래)
+	var d := avatar_side(hero) * kk # 아바타 사진: 둥근 사각, 닉네임 줄 아래부터 타이머 띠 위까지 꽉 채운다
 	_avatar_r = d / 2.0
 	var dy := name_row(hero)
-	_avatar_c = Vector2(av.get_center().x, (dy + (5.0 if hero else 4.0)) * kk + _avatar_r)
+	_avatar_c = Vector2(av.get_center().x, (dy + 4.0) * kk + _avatar_r)
 	initial.position = _avatar_c - Vector2(_avatar_r, _avatar_r)
 	initial.size = Vector2(d, d)
 	initial.add_theme_font_size_override("font_size", int(round((24.0 if hero else 18.0) * kk)))
@@ -280,14 +286,15 @@ func _place_desk_pills() -> void:
 			l.reset_size()
 			list.append(l)
 	var av: Rect2 = desk_columns(hero_slot, avatar_left, k).avatar
-	if hero_slot: # 아바타 열 닉네임 아래로 세로로 쌓는다
-		var y := (108.0 + name_row(true)) * k
+	if hero_slot: # 아바타 아랫부분에 걸쳐 아래에서 위로 쌓는다(넘치면 낮은 우선순위부터 숨긴다)
+		var y := _avatar_c.y + _avatar_r - 3.0 * k
 		for l: Label in list:
-			if y + l.size.y > timer_bar_rect().position.y - 2.0 * k:
-				l.hide() # 아래로 넘치면 낮은 우선순위부터 숨긴다
+			y -= l.size.y
+			if y < _avatar_c.y - _avatar_r:
+				l.hide()
 				continue
 			l.position = Vector2(av.get_center().x - l.size.x / 2.0, y)
-			y += l.size.y + 3.0 * k
+			y -= 3.0 * k
 		return
 	var x := av.position.x
 	for l: Label in list:

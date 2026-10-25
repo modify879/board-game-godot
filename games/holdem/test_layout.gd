@@ -425,6 +425,11 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			bad.append("%s 스택 문구 잘림 %s (%.0f > %.0f)" % [o, sl.text, sw, sl.size.x])
 		var tr := Rect2(s.global_position + s.timer_bar_rect().position, s.timer_bar_rect().size) # 타이머 막대는 자기 글자·카드·내 큰 카드와 안 겹치고 다른 것과도 안 겹친다
 		items.append({"o": o, "k": "timer", "r": tr})
+		if s.desk: # 데스크톱 아바타는 닉네임 줄 아래 ~ 타이머 띠 위의 높이를 꽉 채운다(여백 합 10·k 이내)
+			var side: float = s._avatar_r * 2.0
+			var content_h: float = s.timer_bar_rect().position.y - s.name_row(s.hero_slot) * table.k
+			if side < content_h - 10.0 * table.k - 0.01:
+				bad.append("%s 아바타가 작음 %.1f < %.1f" % [o, side, content_h - 10.0 * table.k])
 		for it2 in inner:
 			if _in(it2.r).intersects(_in(tr)):
 				bad.append("%s/%s x 타이머 막대 %s %s" % [o, it2.n, _s(it2.r), _s(tr)])
