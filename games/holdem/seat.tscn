@@ -31,8 +31,6 @@ vertical_alignment = 1
 [node name="NameLabel" type="Label" parent="."]
 unique_name_in_owner = true
 mouse_filter = 2
-clip_text = true
-text_overrun_behavior = 3
 
 [node name="StackLabel" type="Label" parent="."]
 unique_name_in_owner = true

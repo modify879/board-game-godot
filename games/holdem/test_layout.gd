@@ -12,6 +12,11 @@ const TOL := 2.0 # 겹침 허용 깊이(px) — 테두리가 살짝 닿는 정�
 # 같은 주인 안에서 겹쳐도 되는 (종류, 종류) — 캡슐 모서리의 배지, 캡슐·카드 모서리에 걸치는 족보 알약, 보드 줄 위에 겹쳐 그리는 결과 문구
 const ALLOWED := [["cap", "badge"], ["cap", "pill"], ["cards", "pill"], ["hero", "pill"], ["pot", "label"]]
 
+# 닉네임 최악(12자): 한글 2종·넓은 W·섞인 것. 좌석마다 돌려 쓴다
+const WORST := ["가나다라마바사아자차카타", "뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁", "WWWWWWWWWWWW", "QA유저WWWW가나다라"]
+
+var worst := false
+var min_name_fs := {} # 크기 라벨 -> 관찰한 최소 닉네임 글자 크기
 var failures := 0
 var seq := 0
 
@@ -63,7 +68,13 @@ func _ready() -> void:
 			for hero in [1, 5, 0]: # 0 = 관전
 				for state in ["preflop", "showdown"]:
 					await _run_case(table, sz, n, hero, state)
+		worst = true # 모든 좌석이 12자 최악 닉네임
+		for hero in [5, 0]:
+			for state in ["preflop", "showdown"]:
+				await _run_case(table, sz, 9, hero, state)
+		worst = false
 		holder.queue_free()
+	print("min nickname font size: ", min_name_fs)
 	get_tree().quit(1 if failures else 0)
 
 
@@ -73,7 +84,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 	for i in nos.size():
 		var no: int = nos[i]
 		var user := 7 if no == hero else 100 + no
-		table.nickname_cache[user] = "플레이어%d" % no
+		table.nickname_cache[user] = WORST[i % WORST.size()] if worst else "플레이어%d" % no
 		var status := "ACTIVE"
 		var extra := {}
 		if state == "preflop":
@@ -106,7 +117,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		view_extra = {"board": ["2c", "7d", "9s", "Th", "Ah"], "result": {"payouts": payouts, "shownHands": shown}}
 	var dealers: Array = nos
 	var min_gap := INF
-	var tag := "%dx%d n=%d hero=%s %s" % [sz.x, sz.y, n, "spec" if hero == 0 else str(hero), state]
+	var tag := "%dx%d n=%d hero=%s %s%s" % [sz.x, sz.y, n, "spec" if hero == 0 else str(hero), state, " worst-nick" if worst else ""]
 	var bad: Array = []
 	for d: int in dealers:
 		view_extra["buttonSeatNo"] = float(d)
@@ -161,7 +172,44 @@ func _collect(table: Control, hero: int) -> Dictionary:
 	return r
 
 
+## 닉네임은 어느 좌석이든 잘리지 않아야 한다: 글자 폭 <= 라벨 폭, 글자 크기 >= 최소, 말줄임·클립 없음
+func _name_bad(table: Control, sz: Vector2) -> Array:
+	var out: Array = []
+	for no in range(1, 10):
+		var s: Control = table.seat_nodes[no - 1]
+		var l: Label = s.name_label
+		if s.empty:
+			continue
+		var fs := l.get_theme_font_size("font_size")
+		var font := l.get_theme_font("font")
+		var w := font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if l.autowrap_mode != TextServer.AUTOWRAP_OFF: # 폰 두 줄: 가장 넓은 줄 폭이 라벨 폭 안, 줄 수 2 이하, 높이가 라벨 안
+			var ms := font.get_multiline_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, l.size.x, fs, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_GRAPHEME_BOUND)
+			w = ms.x
+			if ms.y > font.get_height(fs) * 2.0 + 0.5 or ms.y > l.size.y + 0.5:
+				out.append("seat%d 닉네임 두 줄에 안 들어감 %s (%.0f > %.0f)" % [no, l.text, ms.y, l.size.y])
+		if not table.desktop and l.get_global_rect().grow(-TOL).intersects(s.stack_label.get_global_rect().grow(-TOL)):
+			out.append("seat%d 닉네임 x 스택 %s %s" % [no, _s(l.get_global_rect()), _s(s.stack_label.get_global_rect())])
+		if not table.desktop and l.position.y < 0.0 or l.position.y + l.size.y > s.size.y:
+			out.append("seat%d 닉네임이 캡슐 밖 %s" % [no, _s(Rect2(l.position, l.size))])
+		var key := "%dx%d" % [sz.x, sz.y]
+		min_name_fs[key] = mini(min_name_fs.get(key, 999), fs)
+		if w > l.size.x + 0.5:
+			out.append("seat%d 닉네임 잘림 %s (%.0f > %.0f, fs %d)" % [no, l.text, w, l.size.x, fs])
+		if fs < s._name_min:
+			out.append("seat%d 닉네임 글자 %d < 최소 %d" % [no, fs, s._name_min])
+		if l.clip_text or l.text_overrun_behavior != TextServer.OVERRUN_NO_TRIMMING:
+			out.append("seat%d 닉네임 라벨에 clip/말줄임" % no)
+	return out
+
+
 func _collect_view(table: Control, hero: int) -> Dictionary:
+	var r := _collect_view2(table, hero)
+	r.bad.append_array(_name_bad(table, table.get_global_rect().size))
+	return r
+
+
+func _collect_view2(table: Control, hero: int) -> Dictionary:
 	if table.desktop:
 		return _collect_desktop(table, hero)
 	var area: Rect2 = table.felt_area.get_global_rect()

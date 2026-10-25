@@ -16,6 +16,8 @@ const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "�
 const AVATAR_COLORS := [Color("8FC9DC"), Color("93BEE6"), Color("A3B5EA"), Color("B9A8E6"), Color("E6A8C4"), Color("9FD6C2")]
 const WARN_SECONDS := 5.0
 const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
+const NAME_MIN_PHONE := 10 # 닉네임 글자 최소 크기(폰, px). 한 줄에 안 들어오면 두 줄로 줄바꿈한다(캡슐을 못 넓힌다: 9인 세로 화면에서 옆 좌석과 겹친다)
+const NAME_MIN_DESK := 12.0 # 데스크톱 최소 크기(× k)
 
 var compact := false
 var desk := false # 데스크톱 패널 모양(table.gd 가 set_desktop 으로 켠다). false 면 폰 캡슐
@@ -38,6 +40,10 @@ var _badge_count := 0
 var _style := StyleBoxFlat.new()
 var _dim := Color.WHITE # desk 에서 폴드·끊김 어둡게(패널 바탕·글자). 폰은 노드 modulate 를 쓴다
 var _stack_fs := 17
+var _name_fs := 14 # 닉네임 기본 글자 크기(맞춤은 여기서 1px 씩 줄인다)
+var _name_min := NAME_MIN_PHONE
+var _phone_x0 := 0.0
+var _name_w := 0.0 # 닉네임 라벨 폭
 var _all_in_style: StyleBox
 var _pulse := 0.0 # 경고 구간(남은 초 < WARN_SECONDS)에서 차례 테두리가 금색↔빨강으로 오가는 0~1 값
 
@@ -70,7 +76,12 @@ static func hero_card_size(is_compact: bool) -> Vector2:
 
 ## 데스크톱 패널 크기(설계 좌표 × 배율 k). 아래 가운데 내 자리는 카드가 크다
 static func panel_size(hero: bool, kk: float) -> Vector2:
-	return (Vector2(360, 150) if hero else Vector2(220, 90)) * kk
+	return (Vector2(360, 176) if hero else Vector2(220, 112)) * kk
+
+
+## 데스크톱 패널 위 닉네임 줄 높이(설계 좌표, 글자 14·17px 라벨의 최소 높이 22·26). 아바타·카드·스택은 이만큼 아래로 내려 앉는다
+static func name_row(hero: bool) -> float:
+	return 26.0 if hero else 22.0
 
 
 ## 데스크톱 좌석 카드 한 장 크기. 내 자리는 큰 카드(내 홀카드 MyCards 와 같다)
@@ -121,12 +132,16 @@ func set_compact(is_compact: bool) -> void:
 	initial.position = Vector2(7, 7)
 	initial.size = Vector2(d, d)
 	initial.add_theme_font_size_override("font_size", 16 if is_compact else 20)
-	var x0 := h
-	name_label.add_theme_font_size_override("font_size", 12 if is_compact else 14)
+	var x0 := h - 5.0
+	_phone_x0 = x0
+	_name_fs = 12 if is_compact else 14
+	_name_min = NAME_MIN_PHONE
+	name_label.add_theme_font_size_override("font_size", _name_fs)
 	_stack_fs = 15 if is_compact else 17
 	stack_label.add_theme_font_size_override("font_size", _stack_fs)
 	name_label.position = Vector2(x0, h / 2.0 - (19 if is_compact else 21))
-	name_label.size = Vector2(size.x - x0 - 10, 20)
+	_name_w = size.x - x0 - 6.0
+	name_label.size = Vector2(_name_w, 20)
 	stack_label.position = Vector2(x0, h / 2.0 - 1)
 	stack_label.size = Vector2(size.x - x0 - 6, 22)
 	var fs := 10 if is_compact else 11
@@ -156,26 +171,29 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	var cd: Rect2 = cols.cards
 	var d := (76.0 if hero else 54.0) * kk # 아바타 사진: 둥근 사각, 열을 거의 채운다(닉네임은 그 아래)
 	_avatar_r = d / 2.0
-	_avatar_c = Vector2(av.get_center().x, (5.0 if hero else 4.0) * kk + _avatar_r)
+	var dy := name_row(hero)
+	_avatar_c = Vector2(av.get_center().x, (dy + (5.0 if hero else 4.0)) * kk + _avatar_r)
 	initial.position = _avatar_c - Vector2(_avatar_r, _avatar_r)
 	initial.size = Vector2(d, d)
 	initial.add_theme_font_size_override("font_size", int(round((24.0 if hero else 18.0) * kk)))
-	name_label.add_theme_font_size_override("font_size", int(round((17.0 if hero else 14.0) * kk)))
+	_name_fs = int(round((17.0 if hero else 14.0) * kk))
+	_name_min = int(round(NAME_MIN_DESK * kk))
 	_stack_fs = int(round((22.0 if hero else 18.0) * kk))
 	stack_label.add_theme_font_size_override("font_size", _stack_fs)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var m := (8.0 if hero else 6.0) * kk # 닉네임은 패널 맨 위, 좌우 여백만 남기고 폭 전체
+	_name_w = size.x - 2.0 * m
+	name_label.position = Vector2(m, 2.0 * kk)
+	name_label.size = Vector2(_name_w, dy * kk)
+	name_label.add_theme_font_size_override("font_size", _name_fs)
 	if hero:
-		name_label.position = Vector2(av.position.x, 82.0 * kk)
-		name_label.size = Vector2(av.size.x, 22.0 * kk)
-		stack_label.position = Vector2(cd.position.x, 93.0 * kk)
+		stack_label.position = Vector2(cd.position.x, (93.0 + dy) * kk)
 		stack_label.size = Vector2(cd.size.x, 26.0 * kk)
-		hand_rank.position = Vector2(cd.position.x, 119.0 * kk)
+		hand_rank.position = Vector2(cd.position.x, (119.0 + dy) * kk)
 		hand_rank.size = Vector2(cd.size.x, 19.0 * kk)
 	else:
-		name_label.position = Vector2(av.position.x, 59.0 * kk)
-		name_label.size = Vector2(av.size.x, 18.0 * kk)
-		stack_label.position = Vector2(cd.position.x, 58.0 * kk)
+		stack_label.position = Vector2(cd.position.x, (58.0 + dy) * kk)
 		stack_label.size = Vector2(cd.size.x, 22.0 * kk)
 	hand_rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hand_rank.add_theme_font_size_override("font_size", int(round(16.0 * kk)))
@@ -246,7 +264,7 @@ func _set_dim(c: Color) -> void:
 ## 카드 칸 중심(오버레이·ALLIN·타이머 숫자 자리)
 func _zone_center() -> Vector2:
 	var cd: Rect2 = desk_columns(hero_slot, avatar_left, k).cards
-	return Vector2(cd.get_center().x, (50.0 if hero_slot else 31.0) * k)
+	return Vector2(cd.get_center().x, ((50.0 if hero_slot else 31.0) + name_row(hero_slot)) * k)
 
 
 func _center_label(l: Label) -> void:
@@ -263,7 +281,7 @@ func _place_desk_pills() -> void:
 			list.append(l)
 	var av: Rect2 = desk_columns(hero_slot, avatar_left, k).avatar
 	if hero_slot: # 아바타 열 닉네임 아래로 세로로 쌓는다
-		var y := 108.0 * k
+		var y := (108.0 + name_row(true)) * k
 		for l: Label in list:
 			if y + l.size.y > timer_bar_rect().position.y - 2.0 * k:
 				l.hide() # 아래로 넘치면 낮은 우선순위부터 숨긴다
@@ -287,6 +305,49 @@ func _fit_stack() -> void:
 	while fs > 10 and font.get_string_size(stack_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > stack_label.size.x:
 		fs -= 1
 	stack_label.add_theme_font_size_override("font_size", fs)
+
+
+## 닉네임을 자르지 않는다 — 기본 크기로 넘치면 1px 씩 줄이고, 최소 크기에서도 넘치면 그대로 둔다(폭은 최소 크기에서 12자가 들어오게 정했다)
+func _fit_name() -> void:
+	var fs := _name_fs
+	var font := name_label.get_theme_font("font")
+	if not desk:
+		_fit_name_phone(font)
+		return
+	while fs > _name_min and font.get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > _name_w:
+		fs -= 1
+	name_label.add_theme_font_size_override("font_size", fs)
+	name_label.size.x = _name_w # 글자가 넓으면 라벨 최소 폭으로 커져 있던 것을 되돌린다
+
+
+## 폰: 한 줄로 최소 크기까지 줄여 보고, 그래도 넘치면 최소 크기 이상에서 두 줄에 들어가는 가장 큰 글자로 줄바꿈한다(위·아래로 캡슐 높이 안에서 스택 줄이 내려간다)
+func _fit_name_phone(font: Font) -> void:
+	var w := _name_w
+	var h := size.y
+	var fs := _name_fs
+	while fs > _name_min and font.get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w:
+		fs -= 1
+	name_label.add_theme_font_size_override("font_size", fs)
+	if font.get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x <= w:
+		name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		name_label.position = Vector2(_phone_x0, h / 2.0 - (19 if compact else 21))
+		name_label.size = Vector2(w, 20)
+		stack_label.position.y = h / 2.0 - 1
+	else:
+		fs = _name_fs
+		while fs > _name_min and _name_lines(font, fs) > 2:
+			fs -= 1
+		name_label.add_theme_font_size_override("font_size", fs)
+		var lh := font.get_height(fs)
+		name_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+		name_label.position = Vector2(_phone_x0, 3.0)
+		name_label.size = Vector2(w, 2.0 * lh)
+		stack_label.position.y = 3.0 + 2.0 * lh
+
+
+func _name_lines(font: Font, fs: int) -> int:
+	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_GRAPHEME_BOUND
+	return roundi(font.get_multiline_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, _name_w, fs, -1, flags).y / font.get_height(fs))
 
 
 func _empty_rect() -> Rect2:
@@ -339,6 +400,7 @@ func show_player(info: Dictionary) -> void:
 	_avatar_color = AVATAR_COLORS[nick.hash() % AVATAR_COLORS.size()]
 	initial.text = "" # 기본 프로필 실루엣을 그리므로 이니셜은 쓰지 않는다
 	name_label.text = nick
+	_fit_name()
 	stack_label.text = Format.comma(info.stack)
 	_fit_stack()
 	for l: Control in [initial, name_label, stack_label]:
@@ -440,7 +502,7 @@ func _set_cards(codes: Array) -> void:
 		cs = desk_card_size(hero_slot, k)
 		gap = (8.0 if hero_slot else 4.0) * k
 		x0 = (desk_columns(hero_slot, avatar_left, k).cards as Rect2).get_center().x - (2.0 * cs.x + gap) / 2.0
-		y0 = 8.0 * k if hero_slot else 4.0 * k
+		y0 = ((8.0 if hero_slot else 4.0) + name_row(hero_slot)) * k
 	for i in 2:
 		var r: TextureRect = card_rects[i]
 		if i < codes.size():
@@ -488,7 +550,7 @@ func _place_action() -> void:
 	if desk: # 카드 칸 가운데(내 자리는 큰 카드 아랫부분에 반투명으로 얹는다)
 		var c := _zone_center()
 		if hero_slot:
-			c.y = 72.0 * k
+			c.y = (72.0 + name_row(true)) * k
 		badge_action.position = c - badge_action.size / 2.0
 	else:
 		badge_action.position = token_center - badge_action.size / 2.0

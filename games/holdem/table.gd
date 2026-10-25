@@ -507,6 +507,8 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 		var a := deg_to_rad(D_ANGLES[v])
 		var pc := D_CENTER + D_OUTER * Vector2(cos(a), sin(a))
 		var half: Vector2 = (SeatScript.panel_size(v == 0 and hero_render, 1.0)) / 2.0
+		if pc.y > D_CENTER.y: # 닉네임 줄만큼 커진 패널은 아래쪽 좌석에서 위로 자란다(아래 변은 옛 자리 — 행동 패널·화면 밖을 피한다)
+			pc.y -= SeatScript.name_row(v == 0 and hero_render) / 2.0
 		var bet: Vector2
 		var cands: Array = []
 		var mg := D_MARKER / 2.0 + 3.0 # 마커 중심이 패널 가장자리에서 떨어지는 거리(마커 반 + 틈 3)
@@ -548,7 +550,7 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0 * k, hc.y)
 	var hero_cd: Rect2 = SeatScript.desk_columns(true, true, k).cards # 내 큰 카드는 안쪽(카드) 열 가운데
-	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, 8.0 * k)
+	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, (8.0 + SeatScript.name_row(true)) * k)
 	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
 	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
 	for l: Label in [total_label, call_label]:
