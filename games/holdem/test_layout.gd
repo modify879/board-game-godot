@@ -49,6 +49,16 @@ func _ready() -> void:
 		await get_tree().process_frame
 		await get_tree().process_frame # 모드 전환(노드 이동) 뒤 컨테이너가 다시 정렬되는 프레임
 		check(is_equal_approx(table.felt_area.size.x, sz.x) and table.felt_area.size.y > 300.0, "%dx%d: felt_area %s" % [sz.x, sz.y, table.felt_area.size])
+		check(not table.settings_popup.visible, "%dx%d: 설정 팝업은 처음엔 닫혀 있다" % [sz.x, sz.y])
+		table.settings_button.pressed.emit()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var panel: Control = table.settings_popup.get_node("CenterContainer/PanelContainer")
+		var tall := true
+		for b: Control in [table.sfx_toggle, table.voice_toggle, table.settings_close]:
+			tall = tall and b.size.y >= 44.0
+		check(Rect2(Vector2.ZERO, sz).encloses(panel.get_global_rect()) and tall, "%dx%d: 설정 팝업은 화면 안에 들고 버튼이 44px 이상 %s" % [sz.x, sz.y, panel.get_global_rect()])
+		table.settings_close.pressed.emit()
 		for n in [2, 9]:
 			for hero in [1, 5, 0]: # 0 = 관전
 				for state in ["preflop", "showdown"]:

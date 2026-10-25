@@ -32,7 +32,8 @@ const DEAL_STREAMS := [
 	preload("res://games/holdem/assets/sounds/card-slide-8.ogg"),
 ]
 
-var muted := false
+var sfx_on := true # 음성 아닌 모든 소리(카드·칩·셔플·비프)
+var voice_on := true # voice_* 딜러 음성
 var silent := false # 헤드리스 점검에서는 소리를 내지 않는다
 var played: Array = [] # 재생 요청 기록(점검용)
 var _players: Array = []
@@ -43,7 +44,11 @@ func _ready() -> void:
 	silent = DisplayServer.get_name() == "headless"
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
-		muted = bool(cfg.get_value("sound", "muted", false))
+		if cfg.has_section_key("sound", "muted"): # 옛 설정 이전
+			sfx_on = not bool(cfg.get_value("sound", "muted"))
+			voice_on = sfx_on
+		sfx_on = bool(cfg.get_value("sound", "sfx_on", sfx_on))
+		voice_on = bool(cfg.get_value("sound", "voice_on", voice_on))
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -52,7 +57,7 @@ func _ready() -> void:
 
 ## volume 은 선형. 안 주면 효과음 기본값(목소리는 1.0, 비프는 원본 그대로)
 func play(sound: String, volume := -1.0) -> void:
-	if muted or not STREAMS.has(sound):
+	if not STREAMS.has(sound) or not (voice_on if sound.begins_with("voice_") else sfx_on):
 		return
 	played.append(sound)
 	if silent:
@@ -66,8 +71,21 @@ func play(sound: String, volume := -1.0) -> void:
 	p.play()
 
 
-func set_muted(value: bool) -> void:
-	muted = value
+func set_sfx_on(value: bool) -> void:
+	sfx_on = value
+	_save()
+
+
+func set_voice_on(value: bool) -> void:
+	voice_on = value
+	_save()
+
+
+func _save() -> void:
 	var cfg := ConfigFile.new()
-	cfg.set_value("sound", "muted", muted)
+	cfg.load(SETTINGS_PATH) # 다른 키를 지우지 않는다
+	cfg.set_value("sound", "sfx_on", sfx_on)
+	cfg.set_value("sound", "voice_on", voice_on)
+	if cfg.has_section_key("sound", "muted"):
+		cfg.erase_section_key("sound", "muted")
 	cfg.save(SETTINGS_PATH)

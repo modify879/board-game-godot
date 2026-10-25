@@ -49,10 +49,10 @@ size_flags_horizontal = 3
 horizontal_alignment = 2
 text = "대기 중 (2명 이상 필요)"
 
-[node name="SoundButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="SettingsButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "소리 켬"
+text = "설정"
 
 [node name="InfoBox" type="PanelContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
 unique_name_in_owner = true
@@ -505,3 +505,68 @@ text = "확인"
 unique_name_in_owner = true
 layout_mode = 2
 text = "취소"
+
+[node name="SettingsPopup" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Backdrop" type="ColorRect" parent="SettingsPopup"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="CenterContainer" type="CenterContainer" parent="SettingsPopup"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="SettingsPopup/CenterContainer"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="SettingsPopup/CenterContainer/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SettingsTitle" type="Label" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "설정"
+
+[node name="SfxToggle" type="CheckButton" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "효과음"
+
+[node name="VoiceToggle" type="CheckButton" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "딜러 음성"
+
+[node name="SettingsClose" type="Button" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "닫기"

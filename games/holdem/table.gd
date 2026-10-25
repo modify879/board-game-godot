@@ -97,7 +97,12 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var bottom_box: VBoxContainer = $VBoxContainer/BottomRegion/Bottom
 @onready var bottom_bar: HFlowContainer = $VBoxContainer/BottomRegion/Bottom/BottomBar
 @onready var info_box: PanelContainer = %InfoBox
-@onready var sound_button: Button = %SoundButton
+@onready var settings_button: Button = %SettingsButton
+@onready var settings_popup: Control = %SettingsPopup
+@onready var settings_backdrop: ColorRect = %Backdrop
+@onready var sfx_toggle: CheckButton = %SfxToggle
+@onready var voice_toggle: CheckButton = %VoiceToggle
+@onready var settings_close: Button = %SettingsClose
 @onready var info_label: Label = %InfoLabel
 @onready var total_box: PanelContainer = %TotalBox
 @onready var total_label: Label = %TotalLabel
@@ -186,8 +191,11 @@ func _ready() -> void:
 	back_button.pressed.connect(_leave_closed_table)
 	sfx = Sfx.new()
 	add_child(sfx)
-	sound_button.pressed.connect(_on_sound_pressed)
-	_sync_sound_button()
+	settings_button.pressed.connect(_open_settings)
+	settings_close.pressed.connect(settings_popup.hide)
+	settings_backdrop.gui_input.connect(_on_backdrop_input)
+	sfx_toggle.toggled.connect(sfx.set_sfx_on)
+	voice_toggle.toggled.connect(sfx.set_voice_on)
 	join_button.pressed.connect(_open_sit_popup)
 	stand_button.pressed.connect(_on_stand_pressed)
 	leave_room_button.pressed.connect(_on_stand_pressed.bind(true))
@@ -254,13 +262,16 @@ func _exit_tree() -> void:
 	Stomp.disconnect_ws()
 
 
-func _on_sound_pressed() -> void:
-	sfx.set_muted(not sfx.muted)
-	_sync_sound_button()
+func _open_settings() -> void:
+	sfx_toggle.set_pressed_no_signal(sfx.sfx_on)
+	voice_toggle.set_pressed_no_signal(sfx.voice_on)
+	settings_popup.show()
 
 
-func _sync_sound_button() -> void:
-	sound_button.text = "소리 끔" if sfx.muted else "소리 켬"
+## 배경(어두운 곳)을 누르면 닫는다
+func _on_backdrop_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		settings_popup.hide()
 
 
 ## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 딜은 좌석 하나(첫 바퀴)마다 한 번씩 DEAL_SOUND_GAP 간격으로.
