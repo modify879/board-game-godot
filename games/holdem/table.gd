@@ -26,17 +26,18 @@ const BET_GAP := 8.0 # 베팅 칩과 자기 좌석 캡슐 사이 간격
 const BET_ANGLES := [0.0, 35.0, -35.0, 70.0, -70.0, 105.0, -105.0, 140.0, -140.0, 180.0] # 기본(펠트 중심 쪽)이 막히면 캡슐 둘레를 따라 돌려 보는 각도
 const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
 # 데스크톱(가로) 배치는 1280x672(FeltArea) 설계 좌표에서 정하고 k = min(w/1280, h/672) 배로 키운다.
-# 같은 중심(D_CENTER)의 타원 세 겹: 펠트(스타디움) ⊂ 바깥(좌석 패널 중심) / 안쪽(베팅 더미). D/SB/BB 마커는 자기 패널의 펠트 쪽 모서리에 붙는다
-# 베팅은 좌석 패널 중심에서 펠트 중심으로 그은 선 위에서 각 타원과 만나는 점에 놓는다 — 그래서 한 바퀴 타원 띠를 이룬다
+# 같은 중심(D_CENTER)의 타원 두 겹: 펠트(스타디움) ⊂ 바깥(좌석 패널 중심). 베팅 더미는 자기 패널 곁(펠트 쪽). D/SB/BB 마커는 자기 패널의 펠트 쪽 모서리에 붙는다
+# 베팅은 좌석 패널 중심에서 펠트 중심으로 그은 선 위, 패널 가장자리 바로 안쪽에 놓는다 — 그래서 한 바퀴 타원 띠를 이룬다
 const D_W := 1280.0
 const D_H := 672.0
 const D_CENTER := Vector2(640, 321)
 const D_FELT_R := Vector2(446, 235) # 펠트 반지름(가로:세로 ≈ 1.9:1). 모서리 반지름 = 세로 반지름이라 양 끝이 반원
 const D_OUTER := Vector2(479.4, 276) # 좌석 패널 중심이 놓이는 타원
-const D_INNER := Vector2(262.3, 93.5) # 베팅 더미 + 금액
 ## 좌석 패널 중심의 매개 각도(°, 아래 = 90, 시계 방향). v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 왼쪽 아래·왼쪽·위 4곳·오른쪽·오른쪽 아래
 ## 내 자리 오른쪽엔 행동 패널(D_ACTION)이 있어 오른쪽 아래(v8)는 23°(행동 패널 위쪽 바깥)로 올렸다. 위 네 곳은 패널 폭(220)이 겹치지 않게 v4·v5 는 가운데에서 ±14.3° 이상, v3 은 v4 와 닿지 않게 벌렸다. 설계는 scratchpad 의 탐색으로 정했다
 const D_ANGLES := [90.0, 155.0, 189.7, 221.0, 255.7, 284.3, 318.5, 349.0, 383.0]
+const D_BET_H := 56.0 # 베팅 칸 대략 높이(더미 + 금액). 패널 곁 자리 계산용
+const BET_OUT := 5.0 # 베팅 칸과 자기 패널 가장자리 사이 틈
 const D_BET_W := 64.0 # 베팅 칸 최소 폭(기둥·금액이 더 넓으면 그만큼 넓어진다)
 const D_MARKER := 26.0 # D·SB·BB 칩(모두 같은 크기)
 const D_BOARD_CARD := Vector2(64, 88)
@@ -98,6 +99,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var total_label: Label = %TotalLabel
 @onready var call_key: Label = %CallKey
 @onready var call_label: Label = %CallLabel
+@onready var call_spacer: Control = %CallSpacer
 
 var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
 var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> BoxContainer(폰 가로·데스크톱 세로)(칩 아이콘 + 금액)
@@ -426,16 +428,22 @@ func _layout_desktop() -> Dictionary:
 			for i in 3:
 				cands.append(pc + Vector2(-half.x + D_MARKER / 2.0 + 4.0 + i * (D_MARKER + 4.0), -half.y - mg))
 		else: # 패널의 펠트 쪽 모서리(바깥 대각) → 같은 모서리에서 가로·세로 변을 따라 한 칸씩
-			bet = ring_point(pc, D_CENTER, D_INNER)
+			var dir := (D_CENTER - pc).normalized() # 패널 중심 → 펠트 중심 선을 따라, 칸이 패널(BET_OUT 만큼 키운)과 처음 안 닿는 곳에 놓는다
+			var keep := Rect2(pc - half, half * 2.0).grow(BET_OUT)
+			var t := 0.0
+			while Rect2(pc + dir * t - Vector2(D_BET_W, D_BET_H) / 2.0, Vector2(D_BET_W, D_BET_H)).intersects(keep) and t < 400.0:
+				t += 1.0
+			bet = pc + dir * t
 			var sx := signf(D_CENTER.x - pc.x)
 			var sy := signf(D_CENTER.y - pc.y)
 			var cx := pc.x + sx * half.x
 			var cy := pc.y + sy * half.y
-			var st := D_MARKER + 4.0
+			var st := D_MARKER + 7.0 # 베팅 칸이 패널 아래·옆에 붙으니 후보 간격을 조금 더 벌린다
 			cands = [Vector2(cx + sx * mg, cy + sy * mg),
 				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0)),
 				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0 + st), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0 + st)),
-				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0 + 2.0 * st), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0 + 2.0 * st))]
+				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0 + 2.0 * st), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0 + 2.0 * st)),
+				Vector2(pc.x - sx * (half.x - D_MARKER / 2.0 - 4.0), cy + sy * mg), Vector2(pc.x - sx * (half.x - D_MARKER / 2.0 - 4.0 - st), cy + sy * mg)] # 끝: 바깥쪽 모서리(베팅 칸이 안쪽 모서리를 막을 때)
 		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k), "left": pc.x <= D_CENTER.x} # left: 아바타 열이 왼쪽
 		sl.bet = off + bet * k
 		sl.cands = cands.map(func(m: Vector2) -> Vector2: return off + m * k)
@@ -453,13 +461,12 @@ func _layout_desktop() -> Dictionary:
 	var hero_cd: Rect2 = SeatScript.desk_columns(true, true, k).cards # 내 큰 카드는 안쪽(카드) 열 가운데
 	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, 8.0 * k)
 	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
-	total_box.custom_minimum_size = Vector2(260.0 * k, 0)
+	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
 	for l: Label in [total_label, call_label]:
 		l.add_theme_font_size_override("font_size", int(round(22.0 * k)))
 	for l: Label in [call_key, %TotalKey]:
 		l.add_theme_font_size_override("font_size", int(round(18.0 * k)))
-	for l: Label in [total_label, call_label, call_key, %TotalKey]: # 두 열 폭을 같게 — 가운데 선이 상자 가운데(= 보드 가운데)에 온다
-		l.custom_minimum_size.x = 112.0 * k
+	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
 	total_box.reset_size()
 	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
 	label_w = 360.0 * k
@@ -1154,7 +1161,7 @@ func _update_pot() -> void:
 	var my_turn: bool = hip and my_available_actions != null and _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no()
 	var call_amount := int(my_available_actions.get("callAmount", 0) if my_turn and my_available_actions.get("callAmount") != null else 0)
 	call_label.text = Format.comma(call_amount) if call_amount > 0 else ""
-	for n: Control in [call_key, call_label]:
+	for n: Control in [call_spacer, call_key, call_label]:
 		n.visible = call_amount > 0
 
 

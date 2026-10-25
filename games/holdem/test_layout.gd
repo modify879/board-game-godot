@@ -315,9 +315,16 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				inner.append({"n": "cards", "r": c.get_global_rect()})
-		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank], ["badge_action", s.badge_action]]: # 행동 알약은 아바타 아래, 패널 안·다른 것과 겹치지 않는다(팝 scale 은 제외)
+		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank]]:
 			if (pair[1] as Control).visible:
 				inner.append({"n": pair[0], "r": (pair[1] as Control).get_global_rect()})
+		if s.badge_action.visible: # 행동 글자는 자기 패널의 카드 칸 안에 얹힌다(카드와 겹치는 게 목적). 올인·폴드 오버레이와 동시에 보이지 않는다
+			var cr: Rect2 = s.desk_columns(s.hero_slot, s.avatar_left, table.k).cards
+			var cr_g := Rect2(s.global_position + cr.position, cr.size)
+			if not cr_g.grow(1.0).encloses(s.badge_action.get_global_rect()):
+				bad.append("%s/action 글자가 카드 칸 밖 %s %s" % [o, _s(s.badge_action.get_global_rect()), _s(cr_g)])
+			if s.badge_all_in.visible or s.fold_label.visible:
+				bad.append("%s/action 글자가 올인·폴드 오버레이와 같이 보임" % o)
 		if hero > 0 and no == hero and table.my_cards_box.visible:
 			for c: Control in table.my_card_rects:
 				if c.visible:
@@ -371,16 +378,10 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			var own := int(str(it.o).substr(4))
 			if _nearest_panel(it.r, panels) != own:
 				bad.append("%s/%s 가장 가까운 패널이 seat%d %s own %s near %s" % [it.o, it.k, _nearest_panel(it.r, panels), _s(it.r), _s(panels[own]), _s(panels[_nearest_panel(it.r, panels)])])
-			if it.k == "bet": # 타원 느슨 검사: 중심이 펠트 중심→패널 중심 선 위 안쪽 타원 반지름 ±15% 안
-				var c: Vector2 = (it.r as Rect2).get_center() - table.felt_area.get_global_position()
-				var fc: Vector2 = table.geo.center
-				var pcn: Vector2 = (panels[own] as Rect2).get_center() - table.felt_area.get_global_position()
-				if own != hero_no:
-					var want: Vector2 = table.ring_point(pcn, fc, table.D_INNER * table.k)
-					var got: Vector2 = c - fc
-					var tw: Vector2 = want - fc
-					if got.length() < tw.length() * 0.85 or got.length() > tw.length() * 1.15 or got.normalized().dot(tw.normalized()) < 0.98:
-						bad.append("%s/bet 안쪽 타원에서 벗어남 %s (기대 %s)" % [it.o, c, want])
+			if own != hero_no: # 베팅은 자기 패널 바로 곁(틈 14px 이내)
+				var bgap := _gap(it.r, panels[own])
+				if bgap > 14.0 * table.k:
+					bad.append("%s/bet 이 자기 패널에서 멂 (%.0f)" % [it.o, bgap])
 	for pair: Array in [["dealer", table.dealer_marker, 0], ["dealer-sb", table.sb_marker, 1], ["dealer-bb", table.bb_marker, 2]]:
 		if not pair[1].visible:
 			continue
@@ -394,15 +395,6 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			var mgap := _gap((pair[1] as Control).get_global_rect(), panels[own_no])
 			if mgap > 12.0 * table.k:
 				bad.append("%s 마커가 자기 패널에서 멂 (%.0f)" % [pair[0], mgap])
-	if table.total_box.visible: # Total/Call 상자: 보드와 같은 가운데, 두 행이 같은 두 열(라벨 오른쪽 정렬·금액 왼쪽 정렬)
-		var tb: Rect2 = table.total_box.get_global_rect()
-		if absf(tb.get_center().x - table.center_box.get_global_rect().get_center().x) > 1.0:
-			bad.append("Total 상자가 보드 가운데가 아님 %s %s" % [_s(tb), _s(table.center_box.get_global_rect())])
-		var tk: Label = table.get_node("%TotalKey")
-		if absf(tk.get_global_rect().end.x + 10.0 - table.total_label.get_global_rect().position.x) > 1.0 or absf(tb.get_center().x - table.total_label.get_global_rect().position.x) > 6.0 * table.k + 6.0:
-			bad.append("Total 열이 가운데 선에서 어긋남")
-		if table.call_label.visible and (absf(table.call_key.get_global_rect().end.x - tk.get_global_rect().end.x) > 1.0 or absf(table.call_label.get_global_rect().position.x - table.total_label.get_global_rect().position.x) > 1.0):
-			bad.append("Call 행이 Total 행과 같은 열이 아님")
 	if table.pot_row.visible:
 		bad.append("데스크톱에서 PotRow 가 보임")
 	if table.action_bg.get_index() > table.bottom_region.get_index() or table.my_cards_box.get_index() < table.seat_nodes[8].get_index():

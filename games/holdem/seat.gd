@@ -156,9 +156,9 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	var cols := desk_columns(hero, left, kk)
 	var av: Rect2 = cols.avatar
 	var cd: Rect2 = cols.cards
-	var d := (56.0 if hero else 40.0) * kk
+	var d := (82.0 if hero else 60.0) * kk # 아바타 사진: 둥근 사각, 열을 거의 채운다(닉네임은 그 아래)
 	_avatar_r = d / 2.0
-	_avatar_c = Vector2(av.get_center().x, (10.0 if hero else 5.0) * kk + _avatar_r)
+	_avatar_c = Vector2(av.get_center().x, (5.0 if hero else 4.0) * kk + _avatar_r)
 	initial.position = _avatar_c - Vector2(_avatar_r, _avatar_r)
 	initial.size = Vector2(d, d)
 	initial.add_theme_font_size_override("font_size", int(round((24.0 if hero else 18.0) * kk)))
@@ -168,14 +168,14 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if hero:
-		name_label.position = Vector2(av.position.x, 70.0 * kk)
+		name_label.position = Vector2(av.position.x, 89.0 * kk)
 		name_label.size = Vector2(av.size.x, 24.0 * kk)
 		stack_label.position = Vector2(cd.position.x, 96.0 * kk)
 		stack_label.size = Vector2(cd.size.x, 28.0 * kk)
 		hand_rank.position = Vector2(cd.position.x, 124.0 * kk)
 		hand_rank.size = Vector2(cd.size.x, 20.0 * kk)
 	else:
-		name_label.position = Vector2(av.position.x, 46.0 * kk)
+		name_label.position = Vector2(av.position.x, 66.0 * kk)
 		name_label.size = Vector2(av.size.x, 20.0 * kk)
 		stack_label.position = Vector2(cd.position.x, 59.0 * kk)
 		stack_label.size = Vector2(cd.size.x, 26.0 * kk)
@@ -188,6 +188,8 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	fold_label.add_theme_font_size_override("font_size", int(round(36.0 * kk)))
 	fold_label.position = Vector2.ZERO
 	fold_label.size = size
+	for l: Label in [badge_action, fold_label, badge_all_in]: # 내 큰 카드(table.gd 의 MyCards)가 좌석보다 위에 그려진다 — 오버레이는 그 위로
+		l.z_index = 1 if hero else 0
 	badge_all_in.add_theme_font_size_override("font_size", int(round(26.0 * kk)))
 	timer_label.add_theme_font_size_override("font_size", int(round((32.0 if hero else 38.0) * kk)))
 	var er := _empty_rect()
@@ -201,13 +203,14 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 ## desk 와 폰 사이에서 달라지는 노드 모양(올인 글자·정렬)을 바꾼다. 행동 배지는 폰 = 둥근 토큰, 데스크톱 = 아바타 아래 알약
 func _style_desk(on: bool) -> void:
 	var sb := badge_action.get_theme_stylebox("normal") as StyleBoxFlat
-	if on: # 데스크톱: 아바타 아래에 붙는 색 알약
-		sb.set_corner_radius_all(int(9.0 * k))
-		sb.content_margin_left = 7.0 * k
-		sb.content_margin_right = 7.0 * k
+	if on: # 데스크톱: 카드 칸 위에 큰 글자(바탕 없음, 색은 show_player 가 글자색으로)
+		sb.bg_color = Color(0, 0, 0, 0)
+		sb.content_margin_left = 0
+		sb.content_margin_right = 0
 		sb.set_border_width_all(0)
-		badge_action.custom_minimum_size = Vector2(0, 18.0 * k)
-		badge_action.add_theme_font_size_override("font_size", int(round(12.0 * k)))
+		badge_action.custom_minimum_size = Vector2.ZERO
+		badge_action.add_theme_font_size_override("font_size", int(round(30.0 * k)))
+		badge_action.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	else: # 폰: 둥근 토큰
 		sb.set_corner_radius_all(int(PHONE_TOKEN / 2.0))
 		sb.content_margin_left = 0
@@ -218,7 +221,8 @@ func _style_desk(on: bool) -> void:
 		badge_action.add_theme_font_size_override("font_size", 11)
 	badge_action.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge_action.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge_action.add_theme_constant_override("outline_size", 0)
+	badge_action.add_theme_constant_override("outline_size", int(round(8.0 * k)) if on else 0)
+	badge_action.z_index = 0
 	badge_all_in.text = "ALLIN" if on else "ALL-IN"
 	badge_all_in.add_theme_stylebox_override("normal", StyleBoxEmpty.new() if on else _all_in_style)
 	badge_all_in.add_theme_color_override("font_color", ACCENT if on else ON_ACCENT)
@@ -262,9 +266,9 @@ func _place_desk_pills() -> void:
 			list.append(l)
 	var av: Rect2 = desk_columns(hero_slot, avatar_left, k).avatar
 	if hero_slot: # 아바타 열 닉네임 아래로 세로로 쌓는다
-		var y := 98.0 * k
+		var y := 114.0 * k
 		for l: Label in list:
-			if y + l.size.y > size.y - 2.0 * k:
+			if y + l.size.y > size.y - 8.0 * k:
 				l.hide() # 아래로 넘치면 낮은 우선순위부터 숨긴다
 				continue
 			l.position = Vector2(av.get_center().x - l.size.x / 2.0, y)
@@ -275,7 +279,7 @@ func _place_desk_pills() -> void:
 		if x + l.size.x > av.end.x:
 			l.hide() # 아바타 열 한 줄에 다 못 담으면 낮은 우선순위부터 숨긴다
 			continue
-		l.position = Vector2(x, 68.0 * k)
+		l.position = Vector2(x, _avatar_c.y + _avatar_r - l.size.y - 3.0 * k) # 아바타 아랫부분에 걸친다(닉네임 자리를 비운다)
 		x += l.size.x + 3.0 * k
 
 
@@ -358,12 +362,15 @@ func show_player(info: Dictionary) -> void:
 	var action: String = info.get("action", "")
 	var changed := action != "" and action != badge_action.text
 	badge_action.text = action
-	badge_action.visible = action != ""
+	badge_action.visible = action != "" and not (desk and (info.all_in or info.folded)) # 카드 칸 겹침 우선순위: ALLIN > 폴드 > 행동
 	if action != "":
-		(badge_action.get_theme_stylebox("normal") as StyleBoxFlat).bg_color = ACTION_COLORS.get(action, SURFACE_RAISED)
+		if desk:
+			badge_action.add_theme_color_override("font_color", (ACTION_COLORS.get(action, SURFACE_RAISED) as Color).lightened(0.35))
+		else:
+			(badge_action.get_theme_stylebox("normal") as StyleBoxFlat).bg_color = ACTION_COLORS.get(action, SURFACE_RAISED)
 	_place_action()
 	_place_badges()
-	if changed:
+	if changed and badge_action.visible:
 		_pop(badge_action)
 	_set_cards(info.cards) # 내 카드는 table.gd 가 크게 따로 그린다 — 여기엔 빈 배열이 온다
 	_set_pill(info.category)
@@ -450,12 +457,14 @@ func _place_badges() -> void:
 		x += l.size.x + 4.0
 
 
-## 폰 행동 토큰은 token_center(table.gd 가 캡슐과 펠트 가운데 사이에서 비는 곳으로 정한다), 데스크톱 알약은 아바타 아래에 둔다
+## 폰 행동 토큰은 token_center(table.gd 가 캡슐과 펠트 가운데 사이에서 비는 곳으로 정한다), 데스크톱 글자는 카드 칸 위에 둔다
 func _place_action() -> void:
 	badge_action.reset_size()
-	if desk: # 아바타 원 아랫부분에 걸친다(내 자리는 이름 위까지 조금 내린다)
-		var bottom := _avatar_c.y + _avatar_r + (2.0 * k if hero_slot else 0.0)
-		badge_action.position = Vector2(_avatar_c.x - badge_action.size.x / 2.0, bottom - badge_action.size.y)
+	if desk: # 카드 칸 가운데(내 자리는 큰 카드 아랫부분에 반투명으로 얹는다)
+		var c := _zone_center()
+		if hero_slot:
+			c.y = 72.0 * k
+		badge_action.position = c - badge_action.size / 2.0
 	else:
 		badge_action.position = token_center - badge_action.size / 2.0
 
@@ -498,10 +507,22 @@ func _draw() -> void:
 		draw_rect(Rect2(10, y, w * frac, 4), DANGER if timer_left < WARN_SECONDS else ACCENT)
 
 
-## 기본 프로필: 파스텔 원 + 흰 머리·어깨 실루엣(어깨는 원 안으로 잘라 낸다)
-func _draw_avatar(c: Vector2, r: float, col: Color, a: float) -> void:
-	draw_circle(c, r, col)
+## 기본 프로필: 파스텔 바탕 + 흰 머리·어깨 실루엣. square 면 둥근 사각(어깨는 아래 변에 닿고 사각 안으로 잘린다), 아니면 원
+func _draw_avatar(c: Vector2, r: float, col: Color, a: float, square := false) -> void:
 	var white := Color(1, 1, 1, 0.65 * a)
+	if square:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = col
+		sb.set_corner_radius_all(int(round(6.0 * k)))
+		sb.draw(get_canvas_item(), Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0))
+		draw_circle(c + Vector2(0, -0.2 * r), 0.38 * r, white)
+		var q := PackedVector2Array()
+		for i in 48:
+			var t := TAU * i / 48.0
+			q.append(c + Vector2(0.8 * r * cos(t), minf(r + 0.62 * r * sin(t), r)))
+		draw_colored_polygon(q, white)
+		return
+	draw_circle(c, r, col)
 	draw_circle(c + Vector2(0, -0.25 * r), 0.36 * r, white)
 	var pts := PackedVector2Array()
 	for i in 48:
@@ -528,7 +549,7 @@ func _draw_desk() -> void:
 	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(radius)
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
-	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a)
+	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a, true)
 	if timer_left >= 0.0:
 		var bar := Rect2(10.0 * k, size.y - 8.0 * k, size.x - 20.0 * k, 4.0 * k)
 		draw_rect(bar, BORDER)
