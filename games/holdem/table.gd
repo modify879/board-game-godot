@@ -26,21 +26,17 @@ const BET_GAP := 8.0 # 베팅 칩과 자기 좌석 캡슐 사이 간격
 const BET_ANGLES := [0.0, 35.0, -35.0, 70.0, -70.0, 105.0, -105.0, 140.0, -140.0, 180.0] # 기본(펠트 중심 쪽)이 막히면 캡슐 둘레를 따라 돌려 보는 각도
 const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
 # 데스크톱(가로) 배치는 1280x672(FeltArea) 설계 좌표에서 정하고 k = min(w/1280, h/672) 배로 키운다.
-# 같은 중심(D_CENTER)의 타원 네 겹: 펠트(스타디움) ⊂ 바깥(좌석 패널 중심) / 가운데(행동 토큰·마커) / 안쪽(베팅 더미)
-# 토큰·베팅은 좌석 패널 중심에서 펠트 중심으로 그은 선 위에서 각 타원과 만나는 점에 놓는다 — 그래서 한 바퀴 타원 띠를 이룬다
+# 같은 중심(D_CENTER)의 타원 세 겹: 펠트(스타디움) ⊂ 바깥(좌석 패널 중심) / 안쪽(베팅 더미). D/SB/BB 마커는 자기 패널의 펠트 쪽 모서리에 붙는다
+# 베팅은 좌석 패널 중심에서 펠트 중심으로 그은 선 위에서 각 타원과 만나는 점에 놓는다 — 그래서 한 바퀴 타원 띠를 이룬다
 const D_W := 1280.0
 const D_H := 672.0
 const D_CENTER := Vector2(640, 321)
 const D_FELT_R := Vector2(446, 235) # 펠트 반지름(가로:세로 ≈ 1.9:1). 모서리 반지름 = 세로 반지름이라 양 끝이 반원
 const D_OUTER := Vector2(479.4, 276) # 좌석 패널 중심이 놓이는 타원
-const D_MID := Vector2(335, 150.9) # 행동 토큰·D/SB/BB 마커
 const D_INNER := Vector2(262.3, 93.5) # 베팅 더미 + 금액
 ## 좌석 패널 중심의 매개 각도(°, 아래 = 90, 시계 방향). v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 왼쪽 아래·왼쪽·위 4곳·오른쪽·오른쪽 아래
 ## 내 자리 오른쪽엔 행동 패널(D_ACTION)이 있어 오른쪽 아래(v8)는 23°(행동 패널 위쪽 바깥)로 올렸다. 위 네 곳은 패널 폭(220)이 겹치지 않게 v4·v5 는 가운데에서 ±14.3° 이상, v3 은 v4 와 닿지 않게 벌렸다. 설계는 scratchpad 의 탐색으로 정했다
 const D_ANGLES := [90.0, 155.0, 189.7, 221.0, 255.7, 284.3, 318.5, 349.0, 383.0]
-## 마커가 토큰 곁 어느 쪽(타원 접선, +1 = 각도 증가 방향)으로 먼저 놓일지. 막히면 반대쪽·더 먼 쪽으로 간다(_place_desktop)
-const D_MARK_SIDE := [1, -1, 1, 1, 1, -1, -1, -1, 1]
-const D_TOKEN := 56.0 # 행동 토큰 지름
 const D_BET_W := 64.0 # 베팅 칸 최소 폭(기둥·금액이 더 넓으면 그만큼 넓어진다)
 const D_MARKER := 26.0 # D·SB·BB 칩(모두 같은 크기)
 const D_BOARD_CARD := Vector2(64, 88)
@@ -102,7 +98,6 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var total_label: Label = %TotalLabel
 @onready var call_key: Label = %CallKey
 @onready var call_label: Label = %CallLabel
-@onready var call_spacer: Control = %CallSpacer
 
 var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
 var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> BoxContainer(폰 가로·데스크톱 세로)(칩 아이콘 + 금액)
@@ -409,7 +404,7 @@ static func ring_point(p: Vector2, c: Vector2, r: Vector2) -> Vector2:
 
 
 ## 데스크톱 배치. 타원 매개변수(D_*)·각도표(D_ANGLES)에서 슬롯을 계산한다. 설계 좌표 × k + 가운데 정렬 오프셋.
-## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, token, bet, cands[마커 후보 자리, 우선순위 순]}(FeltArea 좌표)
+## 반환 g: center(펠트 중심), hc(내 카드 크기), slots[v] = {panel, bet, cands[마커 후보 자리, 우선순위 순]}(FeltArea 좌표)
 func _layout_desktop() -> Dictionary:
 	var area := felt_area.size
 	k = maxf(minf(area.x / D_W, area.y / D_H), 0.3)
@@ -423,25 +418,25 @@ func _layout_desktop() -> Dictionary:
 		var a := deg_to_rad(D_ANGLES[v])
 		var pc := D_CENTER + D_OUTER * Vector2(cos(a), sin(a))
 		var half: Vector2 = (SeatScript.panel_size(v == 0, 1.0)) / 2.0
-		var token: Vector2
 		var bet: Vector2
 		var cands: Array = []
-		if v == 0: # 내 패널은 넓어 위로 곧게 올리면 Total 상자와 닿는다 — 패널 윗변 위 왼쪽에 토큰, 오른쪽에 베팅, 마커는 토큰 왼쪽 줄
-			token = pc + Vector2(-62, -111)
+		var mg := D_MARKER / 2.0 + 3.0 # 마커 중심이 패널 가장자리에서 떨어지는 거리(마커 반 + 틈 3)
+		if v == 0: # 내 패널은 넓어 베팅이 윗변 오른쪽 위에 있다 — 마커는 윗변 위 왼쪽부터 한 줄
 			bet = pc + Vector2(50, -117)
 			for i in 3:
-				cands.append(pc + Vector2(-115.0 - i * (D_MARKER + 4.0), -111))
-		else:
-			token = ring_point(pc, D_CENTER, D_MID)
+				cands.append(pc + Vector2(-half.x + D_MARKER / 2.0 + 4.0 + i * (D_MARKER + 4.0), -half.y - mg))
+		else: # 패널의 펠트 쪽 모서리(바깥 대각) → 같은 모서리에서 가로·세로 변을 따라 한 칸씩
 			bet = ring_point(pc, D_CENTER, D_INNER)
-			var d := token - D_CENTER # 가운데 타원의 접선(토큰 곁으로 타원을 따라 간다)
-			var t: Vector2 = Vector2(-d.y / (D_MID.y * D_MID.y), d.x / (D_MID.x * D_MID.x)).normalized() * D_MARK_SIDE[v]
-			var along := 1.0 / maxf(absf(t.x), absf(t.y)) # 대각선이어도 사각 경계가 닿지 않게 한 축으로 충분히 띄운다
-			var s1 := (D_TOKEN / 2.0 + 4.0 + D_MARKER / 2.0) * along
-			var s2 := s1 + (D_MARKER + 4.0) * along
-			cands = [token + t * s1, token - t * s1, token + t * s2, token - t * s2]
+			var sx := signf(D_CENTER.x - pc.x)
+			var sy := signf(D_CENTER.y - pc.y)
+			var cx := pc.x + sx * half.x
+			var cy := pc.y + sy * half.y
+			var st := D_MARKER + 4.0
+			cands = [Vector2(cx + sx * mg, cy + sy * mg),
+				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0)),
+				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0 + st), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0 + st)),
+				Vector2(cx - sx * (D_MARKER / 2.0 + 4.0 + 2.0 * st), cy + sy * mg), Vector2(cx + sx * mg, cy - sy * (D_MARKER / 2.0 + 4.0 + 2.0 * st))]
 		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k), "left": pc.x <= D_CENTER.x} # left: 아바타 열이 왼쪽
-		sl.token = off + token * k
 		sl.bet = off + bet * k
 		sl.cands = cands.map(func(m: Vector2) -> Vector2: return off + m * k)
 		slots.append(sl)
@@ -458,12 +453,13 @@ func _layout_desktop() -> Dictionary:
 	var hero_cd: Rect2 = SeatScript.desk_columns(true, true, k).cards # 내 큰 카드는 안쪽(카드) 열 가운데
 	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, 8.0 * k)
 	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
-	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
+	total_box.custom_minimum_size = Vector2(260.0 * k, 0)
 	for l: Label in [total_label, call_label]:
 		l.add_theme_font_size_override("font_size", int(round(22.0 * k)))
 	for l: Label in [call_key, %TotalKey]:
 		l.add_theme_font_size_override("font_size", int(round(18.0 * k)))
-	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
+	for l: Label in [total_label, call_label, call_key, %TotalKey]: # 두 열 폭을 같게 — 가운데 선이 상자 가운데(= 보드 가운데)에 온다
+		l.custom_minimum_size.x = 112.0 * k
 	total_box.reset_size()
 	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
 	label_w = 360.0 * k
@@ -487,7 +483,7 @@ func _layout_desktop() -> Dictionary:
 	return {"center": off + D_CENTER * k, "hc": hc, "slots": slots}
 
 
-## 데스크톱: 슬롯에 좌석·토큰·베팅을 고정 자리로 놓고(겹치지 않게 타원을 짰다. test_layout 이 확인한다), 마커는 후보 중 빈 자리를 고른다
+## 데스크톱: 슬롯에 좌석·베팅을 고정 자리로 놓고(겹치지 않게 타원을 짰다. test_layout 이 확인한다), 마커는 후보 중 빈 자리를 고른다
 func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 	for seat_no in range(1, 10):
 		var v := posmod(seat_no - hero, 9)
@@ -495,7 +491,6 @@ func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 		var seat_node: Control = seat_nodes[seat_no - 1]
 		seat_node.set_desktop(k, v == 0, sl.left)
 		seat_node.position = (sl.panel as Rect2).position
-		seat_node.token_center = (sl.token as Vector2) - seat_node.position
 		_render_seat(seat_no, seat_node)
 		var box: BoxContainer = bet_boxes[seat_no - 1]
 		box.vertical = true
@@ -512,15 +507,12 @@ func _place_desktop(g: Dictionary, hero: int, marks: Array) -> void:
 			var bm := Vector2(bw, ps.y + 4.0 + amount.get_combined_minimum_size().y)
 			box.size = bm
 			box.position = (sl.bet as Vector2) - bm / 2.0
-	# 마커: 자기 좌석 토큰 곁 후보 중 처음으로 아무것(패널·보이는 토큰·베팅·보드·Total·행동 패널·앞선 마커)과도 안 닿는 자리
+	# 마커: 자기 패널 모서리 후보 중 처음으로 아무것(패널·베팅·보드·Total·행동 패널·앞선 마커)과도 안 닿는 자리
 	var blocks: Array = []
 	for sl: Dictionary in g.slots:
 		blocks.append(sl.panel)
 	blocks.append_array([center_box.get_rect(), total_box.get_rect(), bottom_region.get_rect(), bottom_bar.get_rect()])
 	for seat_no in range(1, 10):
-		var sl: Dictionary = g.slots[posmod(seat_no - hero, 9)]
-		if seat_nodes[seat_no - 1].badge_action.visible:
-			blocks.append(Rect2((sl.token as Vector2) - Vector2(D_TOKEN, D_TOKEN) * k / 2.0, Vector2(D_TOKEN, D_TOKEN) * k))
 		if bet_boxes[seat_no - 1].visible:
 			blocks.append(bet_boxes[seat_no - 1].get_rect())
 	for mk: Array in marks: # [마커, 좌석, 종류(D 0·SB 1·BB 2)] — 놓는 순서 = 우선순위
@@ -1162,7 +1154,7 @@ func _update_pot() -> void:
 	var my_turn: bool = hip and my_available_actions != null and _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no()
 	var call_amount := int(my_available_actions.get("callAmount", 0) if my_turn and my_available_actions.get("callAmount") != null else 0)
 	call_label.text = Format.comma(call_amount) if call_amount > 0 else ""
-	for n: Control in [call_spacer, call_key, call_label]:
+	for n: Control in [call_key, call_label]:
 		n.visible = call_amount > 0
 
 

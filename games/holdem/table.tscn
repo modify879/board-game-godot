@@ -1,8 +1,7 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://games/holdem/table.gd" id="1"]
 [ext_resource type="Script" path="res://games/holdem/marker.gd" id="2"]
-[ext_resource type="Texture2D" path="res://games/holdem/assets/chips/chipYellow.png" id="3"]
 
 [node name="Table" type="Control"]
 anchors_preset = 15
@@ -183,47 +182,36 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/h_separation = 10
 theme_override_constants/v_separation = 2
-columns = 3
-
-[node name="PotIcon" type="TextureRect" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(26, 26)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-texture = ExtResource("3")
-expand_mode = 1
-stretch_mode = 5
+columns = 2
 
 [node name="TotalKey" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
+horizontal_alignment = 2
 text = "Total"
 
 [node name="TotalLabel" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
-horizontal_alignment = 2
 text = "0"
-
-[node name="CallSpacer" type="Control" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
-unique_name_in_owner = true
-layout_mode = 2
-mouse_filter = 2
 
 [node name="CallKey" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
+horizontal_alignment = 2
 text = "Call"
 
 [node name="CallLabel" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 mouse_filter = 2
-horizontal_alignment = 2
 text = "0"
 
 [node name="BottomRegion" type="MarginContainer" parent="VBoxContainer"]

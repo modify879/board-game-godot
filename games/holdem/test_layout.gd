@@ -315,7 +315,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				inner.append({"n": "cards", "r": c.get_global_rect()})
-		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank]]:
+		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank], ["badge_action", s.badge_action]]: # 행동 알약은 아바타 아래, 패널 안·다른 것과 겹치지 않는다(팝 scale 은 제외)
 			if (pair[1] as Control).visible:
 				inner.append({"n": pair[0], "r": (pair[1] as Control).get_global_rect()})
 		if hero > 0 and no == hero and table.my_cards_box.visible:
@@ -332,8 +332,6 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			for j in range(i + 1, inner.size()):
 				if _in(inner[i].r).intersects(_in(inner[j].r)):
 					bad.append("%s/%s x %s %s %s" % [o, inner[i].n, inner[j].n, _s(inner[i].r), _s(inner[j].r)])
-		if s.badge_action.visible: # 토큰은 패널 밖이다
-			items.append({"o": o, "k": "token", "r": Rect2(s.global_position + s.badge_action.position, s.badge_action.size)}) # 팝 연출 scale 은 제외
 		if table.bet_boxes[no - 1].visible:
 			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
 	for pair: Array in [["dealer", table.dealer_marker], ["dealer-sb", table.sb_marker], ["dealer-bb", table.bb_marker]]:
@@ -369,7 +367,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 	# 토큰·베팅·마커는 가장 가까운 패널이 자기 좌석이어야 한다(옆 좌석 것으로 보이지 않게)
 	var hero_no := hero if hero > 0 else 1
 	for it in items:
-		if it.k in ["token", "bet"]:
+		if it.k == "bet":
 			var own := int(str(it.o).substr(4))
 			if _nearest_panel(it.r, panels) != own:
 				bad.append("%s/%s 가장 가까운 패널이 seat%d %s own %s near %s" % [it.o, it.k, _nearest_panel(it.r, panels), _s(it.r), _s(panels[own]), _s(panels[_nearest_panel(it.r, panels)])])
@@ -390,6 +388,21 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		var near := _nearest_panel((pair[1] as Control).get_global_rect(), panels)
 		if near != seat_no:
 			bad.append("%s 마커의 가장 가까운 패널이 seat%d (주인 seat%d)" % [pair[0], near, seat_no])
+	for pair: Array in [["dealer", table.dealer_marker, 0], ["dealer-sb", table.sb_marker, 1], ["dealer-bb", table.bb_marker, 2]]: # 마커는 자기 패널 바로 곁(틈 12px 이내)
+		if pair[1].visible:
+			var own_no: int = int(table.public_view.get("buttonSeatNo")) if pair[2] == 0 else int(PublicView.blind_seats(table.public_view)["sb" if pair[2] == 1 else "bb"])
+			var mgap := _gap((pair[1] as Control).get_global_rect(), panels[own_no])
+			if mgap > 12.0 * table.k:
+				bad.append("%s 마커가 자기 패널에서 멂 (%.0f)" % [pair[0], mgap])
+	if table.total_box.visible: # Total/Call 상자: 보드와 같은 가운데, 두 행이 같은 두 열(라벨 오른쪽 정렬·금액 왼쪽 정렬)
+		var tb: Rect2 = table.total_box.get_global_rect()
+		if absf(tb.get_center().x - table.center_box.get_global_rect().get_center().x) > 1.0:
+			bad.append("Total 상자가 보드 가운데가 아님 %s %s" % [_s(tb), _s(table.center_box.get_global_rect())])
+		var tk: Label = table.get_node("%TotalKey")
+		if absf(tk.get_global_rect().end.x + 10.0 - table.total_label.get_global_rect().position.x) > 1.0 or absf(tb.get_center().x - table.total_label.get_global_rect().position.x) > 6.0 * table.k + 6.0:
+			bad.append("Total 열이 가운데 선에서 어긋남")
+		if table.call_label.visible and (absf(table.call_key.get_global_rect().end.x - tk.get_global_rect().end.x) > 1.0 or absf(table.call_label.get_global_rect().position.x - table.total_label.get_global_rect().position.x) > 1.0):
+			bad.append("Call 행이 Total 행과 같은 열이 아님")
 	if table.pot_row.visible:
 		bad.append("데스크톱에서 PotRow 가 보임")
 	if table.action_bg.get_index() > table.bottom_region.get_index() or table.my_cards_box.get_index() < table.seat_nodes[8].get_index():

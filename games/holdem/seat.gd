@@ -13,7 +13,7 @@ const TEXT_MUTED := Color(0.6039, 0.6431, 0.6980)
 const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 ## 행동 배지 바탕색(문구별). 폴드 회색·체크 파랑·콜 초록·레이즈 주황
 const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
-const AVATAR_COLORS := [Color("5B7DB1"), Color("7A5BB1"), Color("B15B7A"), Color("B1895B"), Color("4F9E7E"), Color("5B9EB1")]
+const AVATAR_COLORS := [Color("8FC9DC"), Color("93BEE6"), Color("A3B5EA"), Color("B9A8E6"), Color("E6A8C4"), Color("9FD6C2")]
 const WARN_SECONDS := 5.0
 const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
 
@@ -189,7 +189,7 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	fold_label.position = Vector2.ZERO
 	fold_label.size = size
 	badge_all_in.add_theme_font_size_override("font_size", int(round(26.0 * kk)))
-	timer_label.add_theme_font_size_override("font_size", int(round(38.0 * kk)))
+	timer_label.add_theme_font_size_override("font_size", int(round((32.0 if hero else 38.0) * kk)))
 	var er := _empty_rect()
 	empty_label.position = er.position
 	empty_label.size = er.size
@@ -198,19 +198,26 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	queue_redraw()
 
 
-## desk 와 폰 사이에서 달라지는 노드 모양(올인 글자·정렬)을 바꾼다. 행동 토큰은 둘 다 원형이고 지름만 다르다
+## desk 와 폰 사이에서 달라지는 노드 모양(올인 글자·정렬)을 바꾼다. 행동 배지는 폰 = 둥근 토큰, 데스크톱 = 아바타 아래 알약
 func _style_desk(on: bool) -> void:
 	var sb := badge_action.get_theme_stylebox("normal") as StyleBoxFlat
-	var d := 56.0 * k if on else PHONE_TOKEN
-	sb.set_corner_radius_all(int(d / 2.0))
-	sb.content_margin_left = 0
-	sb.content_margin_right = 0
-	sb.set_border_width_all(2)
-	sb.border_color = Color(1, 1, 1, 0.85)
+	if on: # 데스크톱: 아바타 아래에 붙는 색 알약
+		sb.set_corner_radius_all(int(9.0 * k))
+		sb.content_margin_left = 7.0 * k
+		sb.content_margin_right = 7.0 * k
+		sb.set_border_width_all(0)
+		badge_action.custom_minimum_size = Vector2(0, 18.0 * k)
+		badge_action.add_theme_font_size_override("font_size", int(round(12.0 * k)))
+	else: # 폰: 둥근 토큰
+		sb.set_corner_radius_all(int(PHONE_TOKEN / 2.0))
+		sb.content_margin_left = 0
+		sb.content_margin_right = 0
+		sb.set_border_width_all(2)
+		sb.border_color = Color(1, 1, 1, 0.85)
+		badge_action.custom_minimum_size = Vector2(PHONE_TOKEN, PHONE_TOKEN)
+		badge_action.add_theme_font_size_override("font_size", 11)
 	badge_action.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge_action.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge_action.custom_minimum_size = Vector2(d, d)
-	badge_action.add_theme_font_size_override("font_size", int(round(15.0 * k)) if on else 11)
 	badge_action.add_theme_constant_override("outline_size", 0)
 	badge_all_in.text = "ALLIN" if on else "ALL-IN"
 	badge_all_in.add_theme_stylebox_override("normal", StyleBoxEmpty.new() if on else _all_in_style)
@@ -329,7 +336,7 @@ func show_player(info: Dictionary) -> void:
 	empty_label.hide()
 	var nick: String = info.nickname
 	_avatar_color = AVATAR_COLORS[nick.hash() % AVATAR_COLORS.size()]
-	initial.text = nick.substr(0, 1).to_upper()
+	initial.text = "" # 기본 프로필 실루엣을 그리므로 이니셜은 쓰지 않는다
 	name_label.text = nick
 	stack_label.text = Format.comma(info.stack)
 	_fit_stack()
@@ -384,6 +391,8 @@ func set_timer(left: float, total: float) -> void:
 			timer_label.text = str(int(ceil(left)))
 			timer_label.add_theme_color_override("font_color", DANGER if left < WARN_SECONDS else ACCENT)
 			_center_label(timer_label)
+			if hero_slot: # 내 자리는 두 카드 사이가 아니라 아바타 위에 숫자를 놓는다
+				timer_label.position = _avatar_c - timer_label.size / 2.0
 		else:
 			_place_badges()
 		queue_redraw()
@@ -441,10 +450,14 @@ func _place_badges() -> void:
 		x += l.size.x + 4.0
 
 
-## 행동 토큰은 token_center(table.gd 가 캡슐과 펠트 가운데 사이에서 비는 곳으로 정한다)에 둔다
+## 폰 행동 토큰은 token_center(table.gd 가 캡슐과 펠트 가운데 사이에서 비는 곳으로 정한다), 데스크톱 알약은 아바타 아래에 둔다
 func _place_action() -> void:
 	badge_action.reset_size()
-	badge_action.position = token_center - badge_action.size / 2.0
+	if desk: # 아바타 원 아랫부분에 걸친다(내 자리는 이름 위까지 조금 내린다)
+		var bottom := _avatar_c.y + _avatar_r + (2.0 * k if hero_slot else 0.0)
+		badge_action.position = Vector2(_avatar_c.x - badge_action.size.x / 2.0, bottom - badge_action.size.y)
+	else:
+		badge_action.position = token_center - badge_action.size / 2.0
 
 
 func set_token_center(c: Vector2) -> void:
@@ -476,13 +489,28 @@ func _draw() -> void:
 	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(int(size.y / 2.0))
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
-	draw_circle(Vector2(size.y / 2.0, size.y / 2.0), (size.y - 14.0) / 2.0, _avatar_color)
+	_draw_avatar(Vector2(size.y / 2.0, size.y / 2.0), (size.y - 14.0) / 2.0, _avatar_color, 1.0)
 	if timer_left >= 0.0:
 		var w := size.x - 20.0
 		var y := size.y + (12.0 if _badge_count > 0 else 4.0)
 		draw_rect(Rect2(10, y, w, 4), BORDER)
 		var frac := clampf(timer_left / timer_total, 0.0, 1.0)
 		draw_rect(Rect2(10, y, w * frac, 4), DANGER if timer_left < WARN_SECONDS else ACCENT)
+
+
+## 기본 프로필: 파스텔 원 + 흰 머리·어깨 실루엣(어깨는 원 안으로 잘라 낸다)
+func _draw_avatar(c: Vector2, r: float, col: Color, a: float) -> void:
+	draw_circle(c, r, col)
+	var white := Color(1, 1, 1, 0.65 * a)
+	draw_circle(c + Vector2(0, -0.25 * r), 0.36 * r, white)
+	var pts := PackedVector2Array()
+	for i in 48:
+		var t := TAU * i / 48.0
+		var p := Vector2(0.75 * r * cos(t), 0.95 * r + 0.65 * r * sin(t))
+		if p.length() > r:
+			p = p.normalized() * r
+		pts.append(c + p)
+	draw_colored_polygon(pts, white)
 
 
 ## 데스크톱 패널: 둥근 사각 바탕 + 테두리(차례면 금색 굵게) + 아래 가장자리 안쪽 타이머 막대
@@ -500,7 +528,7 @@ func _draw_desk() -> void:
 	_style.border_color = ACCENT if to_act else (Color(ACCENT, 0.55) if is_me else BORDER)
 	_style.set_corner_radius_all(radius)
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
-	draw_circle(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a))
+	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a)
 	if timer_left >= 0.0:
 		var bar := Rect2(10.0 * k, size.y - 8.0 * k, size.x - 20.0 * k, 4.0 * k)
 		draw_rect(bar, BORDER)
