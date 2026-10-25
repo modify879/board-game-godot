@@ -5,6 +5,7 @@ extends Node
 ## 연출: 매 뷰를 have_view=false 로 먹여 고스트·트윈 없이 최종 위치로 그린다(첫 뷰/재연결과 같은 경로).
 
 const SIZES := [Vector2(1280, 720), Vector2(1600, 900), Vector2(1920, 1080), Vector2(488, 1056)]
+const HAND := {"category": "STRAIGHT_FLUSH", "tiebreakers": [14.0, 13.0, 12.0, 11.0, 10.0]} # 가장 긴 문구("로열 스트레이트 플러시")
 const MIN_GAP := 8.0
 const TOL := 2.0 # 겹침 허용 깊이(px) — 테두리가 살짝 닿는 정도는 겹침으로 세지 않는다
 # 같은 주인 안에서 겹쳐도 되는 (종류, 종류) — 캡슐 모서리의 배지, 캡슐·카드 모서리에 걸치는 족보 알약, 보드 줄 위에 겹쳐 그리는 결과 문구
@@ -111,7 +112,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		table._handle_public(_view(seats, view_extra))
 		if first: # 개인 뷰·행동 막대는 한 번만 먹이고 레이아웃이 가라앉길 기다린다
 			if hero > 0:
-				var priv := {"seq": float(seq), "holeCards": hole}
+				var priv := {"seq": float(seq), "holeCards": hole, "currentHand": HAND}
 				if state == "preflop":
 					priv["availableActions"] = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
 				table._handle_private(priv)
@@ -120,7 +121,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		else:
 			table.motion.kill_real()
 			if hero > 0:
-				table._handle_private({"seq": float(seq), "holeCards": hole, "availableActions": table.my_available_actions})
+				table._handle_private({"seq": float(seq), "holeCards": hole, "currentHand": HAND, "availableActions": table.my_available_actions})
 		var r := _collect(table, hero)
 		min_gap = minf(min_gap, r.gap)
 		for b: String in r.bad:
@@ -158,9 +159,12 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		for l: Label in [s.badge_all_in, s.badge_presence, s.badge_leave]:
 			if l.visible:
 				items.append({"o": o, "k": "badge", "r": l.get_global_rect()})
-		for l: Label in [s.hand_pill, s.badge_action]: # 둘 다 캡슐 윗변에 걸친 알약 — 자기 카드에 높이 절반까지만 걸친다
-			if l.visible:
-				items.append({"o": o, "k": "pill", "r": l.get_global_rect()})
+		if s.hand_pill.visible: # 캡슐 윗변에 걸친 알약 — 자기 카드에 높이 절반까지만 걸친다
+			items.append({"o": o, "k": "pill", "r": s.hand_pill.get_global_rect()})
+		if s.badge_action.visible: # 둥근 행동 토큰 — 아무것과도 겹치면 안 된다
+			items.append({"o": o, "k": "token", "r": Rect2(s.global_position + s.badge_action.position, s.badge_action.size)})
+			if abs(s.badge_action.size.x - 38.0) > 1.0 or abs(s.badge_action.size.y - 38.0) > 1.0:
+				bad_extra.append("%s 토큰 크기 %s" % [o, s.badge_action.size])
 		if s.payout_label.visible:
 			items.append({"o": o, "k": "payout", "r": s.payout_label.get_global_rect()})
 		if table.bet_boxes[no - 1].visible:
@@ -178,6 +182,10 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		items.append({"o": "center", "k": "pot", "r": pr})
 	if table.board_label.text != "": # 줄바꿈된 실제 라벨 사각(글자 너비보다 넓어도 그 폭 안에서만 그린다)
 		items.append({"o": "center", "k": "label", "r": table.board_label.get_global_rect()})
+	if hero > 0 and not table.hand_text_pill.visible:
+		bad_extra.append("폰 족보 알약이 보이지 않음")
+	elif hero > 0:
+		items.append({"o": "mypill", "k": "mypill", "r": table.hand_text_pill.get_global_rect()})
 	if table.my_cards_box.visible and hero > 0: # 내 큰 카드는 내 좌석 소유
 		for c: Control in table.my_card_rects:
 			if c.visible:
@@ -213,6 +221,20 @@ func _collect(table: Control, hero: int) -> Dictionary:
 				nearest = other
 		if nearest != no:
 			bad.append("seat%d/bet 가장 가까운 캡슐이 seat%d (%s)" % [no, nearest, _s(br)])
+	for no: int in caps: # 토큰도 자기 캡슐 곁
+		var s: Control = table.seat_nodes[no - 1]
+		if not s.badge_action.visible:
+			continue
+		var tr := Rect2(s.global_position + s.badge_action.position, s.badge_action.size)
+		var nearest := -1
+		var best := INF
+		for other: int in caps:
+			var d := _gap(tr, caps[other])
+			if d < best:
+				best = d
+				nearest = other
+		if nearest != no:
+			bad.append("seat%d/token 가장 가까운 캡슐이 seat%d (%s)" % [no, nearest, _s(tr)])
 	var gap := INF
 	var keys := caps.keys()
 	for i in keys.size():
@@ -281,7 +303,7 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				inner.append({"n": "cards", "r": c.get_global_rect()})
-		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label]]:
+		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank]]:
 			if (pair[1] as Control).visible:
 				inner.append({"n": pair[0], "r": (pair[1] as Control).get_global_rect()})
 		if hero > 0 and no == hero and table.my_cards_box.visible:
@@ -334,6 +356,15 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 				bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
 	if table.pot_row.visible:
 		bad.append("데스크톱에서 PotRow 가 보임")
+	if table.action_bg.get_index() > table.bottom_region.get_index() or table.my_cards_box.get_index() < table.seat_nodes[8].get_index():
+		bad.append("그리기 순서: 행동 바탕이 패널 위이거나 내 카드가 좌석 아래")
+	if hero > 0 and not table.seat_nodes[hero - 1].hand_rank.visible:
+		bad.append("데스크톱 HandRank 가 보이지 않음")
+	if table.hand_text_pill.visible:
+		bad.append("데스크톱에서 폰 족보 알약이 보임")
+	for m: Control in [table.dealer_marker, table.sb_marker, table.bb_marker]:
+		if m.visible and m.size.x < 36.0 * table.k:
+			bad.append("마커가 너무 작음 %s" % m.size)
 	var gap := INF
 	var keys := panels.keys()
 	for i in keys.size():

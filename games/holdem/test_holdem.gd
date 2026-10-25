@@ -19,6 +19,25 @@ func _init() -> void:
 	check(cards.category_text("NOPE") == "NOPE", "category_text unknown fallback")
 	check(cards.street_text("RIVER") == "리버", "street_text known")
 
+	# current_hand_text
+	var ch := func(cat: String, tb: Array) -> String: return cards.current_hand_text({"category": cat, "tiebreakers": tb})
+	check(ch.call("HIGH_CARD", [14.0, 9.0]) == "A탑", "current_hand HIGH_CARD")
+	check(ch.call("PAIR", [13.0]) == "K 원페어", "current_hand PAIR")
+	check(ch.call("PAIR", [2, 14]) == "2 원페어", "current_hand PAIR int 입력도")
+	check(ch.call("TWO_PAIR", [12.0, 5.0, 14.0]) == "Q·5 투페어", "current_hand TWO_PAIR")
+	check(ch.call("THREE_OF_A_KIND", [7.0]) == "7 트리플", "current_hand THREE_OF_A_KIND")
+	check(ch.call("STRAIGHT", [10.0]) == "10 스트레이트", "current_hand STRAIGHT")
+	check(ch.call("STRAIGHT", [5.0]) == "5 스트레이트", "current_hand 휠")
+	check(ch.call("FLUSH", [14.0, 9.0]) == "A 플러시", "current_hand FLUSH")
+	check(ch.call("FULL_HOUSE", [8.0, 3.0]) == "8 풀하우스", "current_hand FULL_HOUSE")
+	check(ch.call("FOUR_OF_A_KIND", [9.0]) == "9 포카드", "current_hand FOUR_OF_A_KIND")
+	check(ch.call("STRAIGHT_FLUSH", [9.0]) == "9 스트레이트 플러시", "current_hand STRAIGHT_FLUSH")
+	check(ch.call("STRAIGHT_FLUSH", [14.0]) == "로열 스트레이트 플러시", "current_hand 로열")
+	check(ch.call("PAIR", [11.0]) == "J 원페어", "current_hand J")
+	check(cards.current_hand_text(null) == "" and cards.current_hand_text({}) == "", "current_hand null·빈 값")
+	check(ch.call("PAIR", []) == "" and ch.call("TWO_PAIR", [12.0]) == "" and ch.call("PAIR", [1.0]) == "" and ch.call("PAIR", [15.0]) == "", "current_hand 잘못된 타이브레이커")
+	check(ch.call("NOPE", [5.0]) == "", "current_hand 모르는 카테고리")
+
 	# table_name
 	var rules := preload("res://games/holdem/rules.gd")
 	check(rules.table_name("  ") == "TABLE_NAME_INVALID", "방 이름 공백만 거부")

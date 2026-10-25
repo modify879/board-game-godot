@@ -30,15 +30,16 @@ const D_W := 1280.0
 const D_H := 672.0
 const D_FELT := Rect2(51, 30, 1178, 498)
 ## 슬롯 중심. v = posmod(seatNo - 내 좌석, 9): 0 내 자리(아래 가운데) → 시계 방향으로 왼쪽 아래 모서리·왼쪽 가운데·위 4곳·오른쪽 가운데·오른쪽 아래 모서리
-const D_SLOTS := [Vector2(640, 597), Vector2(140, 400), Vector2(125, 290), Vector2(292, 62), Vector2(524, 62), Vector2(756, 62), Vector2(988, 62), Vector2(1155, 290), Vector2(1140, 400)]
+## v8 은 행동 패널(D_ACTION, y 474~)이 막아 v1 보다 높다 — 패널 아래변이 474 를 넘지 않는 가장 낮은 자리(위 v7 아래변 335 와 마커 줄 사이)
+const D_SLOTS := [Vector2(640, 597), Vector2(140, 480), Vector2(125, 290), Vector2(292, 62), Vector2(524, 62), Vector2(756, 62), Vector2(988, 62), Vector2(1155, 290), Vector2(1140, 427)]
 const D_TOKEN := 56.0 # 행동 토큰 지름
-const D_MARKER := 30.0 # D·SB·BB 칩
+const D_MARKER := 42.0 # D·SB·BB 칩
 const D_BET_W := 84.0 # 베팅 칸(더미 + 금액) 폭
 const D_BET_H := 68.0
 const D_BOARD_CARD := Vector2(72, 98)
 const D_TOTAL_TOP := 356.0 # Total 상자 윗변(보드 아래)
 const D_ACTION := Rect2(836, 474, 374, 198) # 행동 패널(내 패널 오른쪽)
-const D_BAR := Rect2(16, 534, 400, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
+const D_BAR := Rect2(16, 534, 394, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
 const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")]
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
@@ -116,6 +117,8 @@ var label_w := 0.0 # 결과 문구 폭(_layout 이 정한다)
 var label_bottom := 0.0 # 결과 문구 아래 끝 y — 팟 줄 아래쪽
 var geo := {} # 마지막 _layout() 결과
 var have_view := false # 첫 뷰·재연결 뒤 첫 뷰는 연출 없이 그린다
+var my_hand_text := "" # 개인 뷰 currentHand 의 화면 문구("K 원페어"). 없으면 ""
+var hand_text_pill: Label # 폰: 내 큰 카드 위 족보 알약(데스크톱은 내 패널의 HandRank)
 var my_codes: Array = [] # 지금 MyCards 에 그린 홀카드
 var my_codes_ticks := -100000 # my_codes 가 바뀐 시각 — 개인 뷰가 공개 뷰보다 먼저 올 때 딜 연출을 맞춘다
 var deal_plan := {} # seatNo -> [첫 장, 둘째 장] 딜 지연(초). 내 좌석은 홀카드가 올 때 쓴다
@@ -272,6 +275,22 @@ func _build_seats() -> void:
 		seat_node.name = "Seat%d" % seat_no # QA 브리지 키(Seat3/NameLabel)
 		felt_area.add_child(seat_node)
 		seat_nodes.append(seat_node)
+	hand_text_pill = Label.new()
+	hand_text_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hand_text_pill.add_theme_font_size_override("font_size", 12)
+	hand_text_pill.add_theme_color_override("font_color", SeatScript.ACCENT)
+	var pill_style := StyleBoxFlat.new()
+	pill_style.bg_color = SeatScript.SURFACE_RAISED
+	pill_style.set_corner_radius_all(9)
+	pill_style.set_border_width_all(1)
+	pill_style.border_color = SeatScript.ACCENT
+	pill_style.content_margin_left = 8
+	pill_style.content_margin_right = 8
+	pill_style.content_margin_top = 1
+	pill_style.content_margin_bottom = 1
+	hand_text_pill.add_theme_stylebox_override("normal", pill_style)
+	hand_text_pill.hide()
+	felt_area.add_child(hand_text_pill)
 	motion = Motion.new()
 	felt_area.add_child(motion) # 마지막 자식 = 맨 위
 	_render_seats()
@@ -309,7 +328,8 @@ func _apply_mode() -> void:
 	if want:
 		bottom_region.reparent(felt_area, false)
 		bottom_bar.reparent(felt_area, false)
-		felt_area.move_child(action_bg, bottom_region.get_index())
+		felt_area.move_child(action_bg, bottom_region.get_index() - 1) # 바탕이 행동 패널 바로 아래(위에 그리면 버튼이 흐려진다)
+		felt_area.move_child(my_cards_box, motion.get_index()) # 내 큰 카드는 좌석 패널 위(아래에 깔리면 패널 바탕에 흐려진다)
 		for b: Button in presets:
 			b.reparent(preset_row, false)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -389,20 +409,26 @@ func _layout_desktop() -> Dictionary:
 		var half: Vector2 = (SeatScript.panel_size(v == 0, 1.0)) / 2.0
 		var sl := {"panel": Rect2(off + (pc - half) * k, half * 2.0 * k)}
 		var markers: Array
+		var mg := D_MARKER + 4.0 # 마커 간격
 		if v == 0: # 내 패널 위에 토큰·베팅, 왼쪽에 마커 세로 줄
 			sl.token = pc + Vector2(-50, -half.y - 4 - D_TOKEN / 2.0)
 			sl.bet = pc + Vector2(60, -half.y - 4 - D_BET_H / 2.0)
-			markers = [pc + Vector2(-half.x - 19, -32), pc + Vector2(-half.x - 19, 0), pc + Vector2(-half.x - 19, 32)]
+			var mx := -half.x - 4 - D_MARKER / 2.0
+			markers = [pc + Vector2(mx, -mg), pc + Vector2(mx, 0), pc + Vector2(mx, mg)]
 		elif v >= 3 and v <= 6: # 위 네 곳: 패널 아래에 토큰 → 베팅, 마커는 토큰 양옆
 			var by := half.y + 4 + D_MARKER / 2.0
+			var mx := D_TOKEN / 2.0 + 4 + D_MARKER / 2.0
 			sl.token = pc + Vector2(0, half.y + 4 + D_TOKEN / 2.0)
 			sl.bet = pc + Vector2(0, half.y + 4 + D_TOKEN + 4 + D_BET_H / 2.0)
-			markers = [pc + Vector2(-64, by), pc + Vector2(64, by), pc + Vector2(98, by)]
-		else: # 양옆·아래 모서리: 가운데 쪽으로 마커 세로 줄 → 토큰 → 베팅
+			markers = [pc + Vector2(-mx, by), pc + Vector2(mx, by), pc + Vector2(mx + mg, by)]
+		else: # 양옆·아래 모서리: 패널 바로 안쪽에 토큰 → 그 안쪽에 베팅, 마커는 패널 윗변 위 가로 줄(바깥 끝부터)
 			var sx := 1.0 if v <= 2 else -1.0
-			sl.token = pc + Vector2(sx * (half.x + 68), 0)
-			sl.bet = pc + Vector2(sx * (half.x + 144), 0)
-			markers = [pc + Vector2(sx * (half.x + 19), -32), pc + Vector2(sx * (half.x + 19), 0), pc + Vector2(sx * (half.x + 19), 32)]
+			sl.token = pc + Vector2(sx * (half.x + 4 + D_TOKEN / 2.0), 0)
+			sl.bet = (sl.token as Vector2) + Vector2(sx * (D_TOKEN / 2.0 + 4 + D_BET_W / 2.0), 0)
+			var my := -half.y - 4 - D_MARKER / 2.0
+			markers = []
+			for i in 3:
+				markers.append(pc + Vector2(-sx * (half.x - D_MARKER / 2.0 - i * mg), my))
 		sl.token = off + (sl.token as Vector2) * k
 		sl.bet = off + (sl.bet as Vector2) * k
 		sl.markers = markers.map(func(m: Vector2) -> Vector2: return off + m * k)
@@ -616,6 +642,7 @@ func _handle_private(body: Dictionary) -> void:
 		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
 	leave_room_after_stand = body.get("leaveReservation") == "LEAVE" # null | "SPECTATE" | "LEAVE"
+	my_hand_text = Cards.current_hand_text(body.get("currentHand"))
 	_update_pot()
 	_update_buttons()
 	_render_seats()
@@ -688,6 +715,7 @@ func _drop_private() -> void:
 	private_subscribed = false
 	last_private_seq = -1
 	my_cards_box.hide()
+	my_hand_text = ""
 	my_available_actions = null
 
 
@@ -982,6 +1010,7 @@ func qa_state() -> Dictionary:
 		"bb_seat_no": PublicView.blind_seats(public_view).bb,
 		"street": public_view.get("street", ""),
 		"my_hole_cards": my_codes,
+		"my_hand_text": my_hand_text,
 		"to_act_seat": _to_act_seat_no(),
 		"available_actions": actions,
 		"seats": seats,
@@ -1067,9 +1096,10 @@ func _update_pot() -> void:
 	total_box.visible = desktop and hip
 	total_label.text = Format.comma(pot)
 	var my_turn: bool = hip and my_available_actions != null and _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no()
-	call_label.text = Format.comma(int(my_available_actions.get("callAmount", 0))) if my_turn else ""
+	var call_amount := int(my_available_actions.get("callAmount", 0) if my_turn and my_available_actions.get("callAmount") != null else 0)
+	call_label.text = Format.comma(call_amount) if call_amount > 0 else ""
 	for n: Control in [call_spacer, call_key, call_label]:
-		n.visible = my_turn
+		n.visible = call_amount > 0
 
 
 func _update_board_label() -> void:
@@ -1105,6 +1135,11 @@ func _render_seats() -> void:
 	_apply_mode()
 	var g := _layout() if compact else _layout_desktop()
 	geo = g
+	hand_text_pill.visible = compact and my_hand_text != "" and my_cards_box.visible
+	if hand_text_pill.visible: # 내 큰 카드 바로 위 가운데
+		hand_text_pill.text = my_hand_text
+		hand_text_pill.reset_size()
+		hand_text_pill.position = Vector2(my_cards_box.position.x + (my_cards_box.size.x - hand_text_pill.size.x) / 2.0, my_cards_box.position.y - hand_text_pill.size.y - 3.0)
 	var hero := _my_seat_no()
 	if hero == -1:
 		hero = 1
@@ -1131,7 +1166,8 @@ func _render_seats() -> void:
 		seat_node.badge_side = 0 if absf(sp.x - g.center.x) < 20.0 else int(signf(sp.x - g.center.x))
 		seat_node.badge_bounds = Vector2(4.0 - seat_node.position.x, area.x - 4.0 - seat_node.position.x)
 		_render_seat(seat_no, seat_node)
-	var placed: Array = [] # 이미 놓은 마커 사각 — 다음 마커의 자리 검사에서 막는다
+	var placed: Array = [] # 이미 놓은 마커 사각 — 다음 마커의 자리 검사에서 막는다. 행동 토큰도 먼저 넣는다
+	_place_tokens(g, placed)
 	for mk: Array in marks:
 		if mk[1] != -1:
 			_place_marker(mk[0], mk[1], hero, g, placed)
@@ -1147,6 +1183,47 @@ func _render_seats() -> void:
 			bet_box.position = b - bm / 2.0
 			bet_blockers.append(Rect2(bet_box.position, bm))
 	_place_payouts(hero, g)
+
+
+## 폰 행동 토큰: 자기 캡슐에서 펠트 가운데 쪽으로 시작해, 막히면 둘레를 따라 돌려 가며 카드·배지·알약·보드·다른 캡슐을 피하는 첫 자리. 놓은 사각은 placed 에 보탠다
+func _place_tokens(g: Dictionary, placed: Array) -> void:
+	var blockers: Array = _center_blockers()
+	for n: Control in seat_nodes:
+		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.hand_pill]:
+			if c.visible:
+				blockers.append(_seat_rect(n, c))
+		if n.timer_left >= 0.0 and not n.empty:
+			blockers.append(Rect2(n.position + Vector2(0, n.size.y), Vector2(n.size.x, 18.0))) # 타이머 막대 자리
+	for seat_no in range(1, 10):
+		var n: Control = seat_nodes[seat_no - 1]
+		if not n.badge_action.visible:
+			continue
+		var sp := n.position + n.size / 2.0
+		var to_center: Vector2 = (g.center - sp).normalized()
+		var tsz: Vector2 = n.badge_action.size
+		var chosen := Vector2.ZERO
+		var found := false
+		for i in BET_ANGLES.size():
+			var dir := to_center.rotated(deg_to_rad(BET_ANGLES[i]))
+			var p0 := _push_clear(sp, sp, tsz, dir, 4.0, g.cap)
+			if i == 0:
+				chosen = p0
+			for extra in range(0, 40, 6): # 같은 방향으로 조금씩 더 밀어 본다(카드·배지 가장자리를 비켜 간다)
+				var p := p0 + dir * float(extra)
+				var r := Rect2(p - tsz / 2.0, tsz)
+				var ok := Rect2(Vector2.ZERO, felt_area.size).encloses(r)
+				for bl: Rect2 in blockers + placed:
+					ok = ok and not bl.grow(2.0).intersects(r)
+				for o: Control in seat_nodes:
+					ok = ok and (o.empty or not _near_capsule(o.position + o.size / 2.0, g.cap, r, 2.0))
+				if ok:
+					chosen = p
+					found = true
+					break
+			if found:
+				break
+		n.set_token_center(chosen - n.position)
+		placed.append(Rect2(chosen - tsz / 2.0, tsz))
 
 
 ## 칩이 가려선 안 되는 것: 모든 좌석의 작은 카드·배지·알약, 마커, 보드 묶음·결과 문구·내 큰 카드
@@ -1166,17 +1243,20 @@ func _bet_blockers() -> Array:
 func _bet_spot(sp: Vector2, bm: Vector2, to_center: Vector2, g: Dictionary, blockers: Array) -> Vector2:
 	var first := Vector2.ZERO
 	for i in BET_ANGLES.size():
-		var b := _push_clear(sp, sp, bm, to_center.rotated(deg_to_rad(BET_ANGLES[i])), BET_GAP, g.cap)
+		var dir := to_center.rotated(deg_to_rad(BET_ANGLES[i]))
+		var p0 := _push_clear(sp, sp, bm, dir, BET_GAP, g.cap)
 		if i == 0:
-			first = b
-		var r := Rect2(b - bm / 2.0, bm)
-		var ok := Rect2(Vector2.ZERO, felt_area.size).encloses(r)
-		for bl: Rect2 in blockers:
-			ok = ok and not bl.grow(2.0).intersects(r)
-		for n: Control in seat_nodes:
-			ok = ok and (n.empty or not _near_capsule(n.position + n.size / 2.0, g.cap, r, 2.0))
-		if ok:
-			return b
+			first = p0
+		for extra in range(0, 40, 6): # 같은 방향으로 조금씩 더 밀어 본다(토큰·카드 가장자리를 비켜 간다)
+			var b := p0 + dir * float(extra)
+			var r := Rect2(b - bm / 2.0, bm)
+			var ok := Rect2(Vector2.ZERO, felt_area.size).encloses(r)
+			for bl: Rect2 in blockers:
+				ok = ok and not bl.grow(2.0).intersects(r)
+			for n: Control in seat_nodes:
+				ok = ok and (n.empty or not _near_capsule(n.position + n.size / 2.0, g.cap, r, 2.0))
+			if ok:
+				return b
 	return first
 
 
@@ -1189,9 +1269,10 @@ func _place_marker(marker: Control, seat_no: int, hero: int, g: Dictionary, plac
 	var d := _push_clear(sp, sp, msz, to_center, 4.0, g.cap)
 	if seat_no == hero:
 		d = sp + Vector2(g.hc.x + 26.0, -g.cap.y / 2.0 - 12.0)
-		for r: Rect2 in placed: # 같은 자리에 이미 놓였으면 옆으로 한 칸씩
-			if r.grow(2.0).intersects(Rect2(d - msz / 2.0, msz)):
-				d.x += msz.x + 4.0
+		for _i in 6: # 같은 자리에 이미 놓였으면(마커·토큰) 옆으로 한 칸씩
+			for r: Rect2 in placed:
+				if r.grow(2.0).intersects(Rect2(d - msz / 2.0, msz)):
+					d.x += msz.x + 4.0
 	else: # 마커가 이 좌석의 작은 카드·배지를 가리거나 화면 밖이면 캡슐 옆·아래 모서리로 옮긴다
 		var sx := 1.0 if to_center.x >= 0.0 else -1.0
 		var cands: Array = [d, sp + Vector2(sx * (g.cap.x / 2.0 + msz.x / 2.0 + 4.0), 0.0),
@@ -1236,6 +1317,8 @@ func _center_blockers() -> Array:
 		out.append(Rect2(board_label.position, board_label.size))
 	if _my_seat_no() != -1:
 		out.append(Rect2(my_cards_box.position, my_cards_box.size))
+	if hand_text_pill.visible:
+		out.append(Rect2(hand_text_pill.position, hand_text_pill.size))
 	return out
 
 
@@ -1243,7 +1326,7 @@ func _center_blockers() -> Array:
 func _dealer_spot_ok(r: Rect2, seat_node: Control, hero: int, g: Dictionary, placed: Array) -> bool:
 	if not Rect2(Vector2.ZERO, felt_area.size).encloses(r):
 		return false
-	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave, seat_node.badge_action]:
+	for cr: Control in seat_node.card_rects + [seat_node.badge_all_in, seat_node.badge_presence, seat_node.badge_leave, seat_node.badge_action, seat_node.hand_pill]:
 		if cr.visible and _seat_rect(seat_node, cr).grow(2.0).intersects(r):
 			return false
 	for b: Rect2 in _center_blockers() + placed:
@@ -1320,6 +1403,8 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		cards = revealed_hand.holeCards
 	elif hand_in_progress and not is_me and (seat.status == "ACTIVE" or seat.status == "ALL_IN"):
 		cards = ["back", "back"]
+	if is_me and hand_text_pill.visible: # 폰: 내 족보는 카드 위 알약이 보이므로 캡슐 알약은 숨긴다
+		category = ""
 	seat_node.show_player({
 		"nickname": _nickname_for(seat.userId),
 		"stack": int(seat.stack),
@@ -1333,6 +1418,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
 		"cards": [] if is_me else cards, # 내 카드는 아래 MyCards 가 크게 그린다
 		"category": category,
+		"hand_text": my_hand_text if is_me else "",
 		"payout": _payout_for(seat_no),
 	})
 	var street_bet := _street_bet(seat)

@@ -15,12 +15,13 @@ const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
 const AVATAR_COLORS := [Color("5B7DB1"), Color("7A5BB1"), Color("B15B7A"), Color("B1895B"), Color("4F9E7E"), Color("5B9EB1")]
 const WARN_SECONDS := 5.0
+const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
 
 var compact := false
 var desk := false # 데스크톱 패널 모양(table.gd 가 set_desktop 으로 켠다). false 면 폰 캡슐
 var hero_slot := false # desk 일 때 아래 가운데 큰 패널
 var k := 1.0 # desk 크기 배율
-var token_center := Vector2.ZERO # desk 에서 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다
+var token_center := Vector2.ZERO # 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다(데스크톱·폰 모두)
 var empty := true
 var is_me := false
 var to_act := false
@@ -120,7 +121,6 @@ func set_compact(is_compact: bool) -> void:
 	var fs := 10 if is_compact else 11
 	for l: Label in [badge_all_in, badge_presence, badge_leave, hand_pill]:
 		l.add_theme_font_size_override("font_size", fs)
-	badge_action.add_theme_font_size_override("font_size", 13 if is_compact else 15)
 	_place_action()
 	payout_label.add_theme_font_size_override("font_size", 15 if is_compact else 17)
 	var er := _empty_rect()
@@ -149,8 +149,8 @@ func set_desktop(kk: float, hero: bool) -> void:
 		name_label.size = Vector2(170, 24) * kk
 		stack_label.position = Vector2(190, 96) * kk
 		stack_label.size = Vector2(156, 28) * kk
-		hand_rank.position = Vector2(14, 124) * kk
-		hand_rank.size = Vector2(332, 22) * kk
+		hand_rank.position = Vector2(14, 122) * kk
+		hand_rank.size = Vector2(332, 20) * kk
 	else:
 		name_label.position = Vector2(10, 6) * kk
 		name_label.size = Vector2(112, 22) * kk
@@ -176,18 +176,19 @@ func set_desktop(kk: float, hero: bool) -> void:
 	queue_redraw()
 
 
-## desk 와 폰 사이에서 달라지는 노드 모양(행동 토큰 원형·올인 글자·정렬)을 바꾼다
+## desk 와 폰 사이에서 달라지는 노드 모양(올인 글자·정렬)을 바꾼다. 행동 토큰은 둘 다 원형이고 지름만 다르다
 func _style_desk(on: bool) -> void:
 	var sb := badge_action.get_theme_stylebox("normal") as StyleBoxFlat
-	sb.set_corner_radius_all(int(28.0 * k) if on else 9)
-	sb.content_margin_left = 0 if on else 6
-	sb.content_margin_right = 0 if on else 6
-	sb.set_border_width_all(2 if on else 0)
+	var d := 56.0 * k if on else PHONE_TOKEN
+	sb.set_corner_radius_all(int(d / 2.0))
+	sb.content_margin_left = 0
+	sb.content_margin_right = 0
+	sb.set_border_width_all(2)
 	sb.border_color = Color(1, 1, 1, 0.85)
-	badge_action.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if on else HORIZONTAL_ALIGNMENT_LEFT
-	badge_action.vertical_alignment = VERTICAL_ALIGNMENT_CENTER if on else VERTICAL_ALIGNMENT_TOP
-	badge_action.custom_minimum_size = Vector2(56, 56) * k if on else Vector2.ZERO
-	badge_action.add_theme_font_size_override("font_size", int(round(15.0 * k)) if on else (13 if compact else 15))
+	badge_action.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_action.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_action.custom_minimum_size = Vector2(d, d)
+	badge_action.add_theme_font_size_override("font_size", int(round(15.0 * k)) if on else 11)
 	badge_action.add_theme_constant_override("outline_size", 0)
 	badge_all_in.text = "ALLIN" if on else "ALL-IN"
 	badge_all_in.add_theme_stylebox_override("normal", StyleBoxEmpty.new() if on else _all_in_style)
@@ -339,6 +340,8 @@ func show_player(info: Dictionary) -> void:
 		_pop(badge_action)
 	_set_cards(info.cards) # 내 카드는 table.gd 가 크게 따로 그린다 — 여기엔 빈 배열이 온다
 	_set_pill(info.category)
+	hand_rank.text = info.get("hand_text", "")
+	hand_rank.visible = desk and hero_slot and hand_rank.text != ""
 	payout_label.text = "+%s" % Format.comma(info.payout)
 	payout_label.visible = info.payout > 0
 	payout_label.reset_size()
@@ -391,8 +394,6 @@ func _set_cards(codes: Array) -> void:
 func _set_pill(category: String) -> void:
 	hand_pill.text = category
 	hand_pill.visible = category != ""
-	if category != "" and not desk: # 결과 화면에서도 행동 배지가 남지만 같은 윗변 자리를 쓰므로 패 이름이 우선한다
-		badge_action.hide()
 	hand_pill.reset_size()
 	if desk: # 자리는 _place_desk_pills 가 정한다. 행동 토큰은 패널 밖이라 같은 자리를 다투지 않는다
 		return
@@ -420,13 +421,15 @@ func _place_badges() -> void:
 		x += l.size.x + 4.0
 
 
-## 행동 배지는 캡슐 윗변에 걸쳐 가운데에 둔다
+## 행동 토큰은 token_center(table.gd 가 캡슐과 펠트 가운데 사이에서 비는 곳으로 정한다)에 둔다
 func _place_action() -> void:
 	badge_action.reset_size()
-	if desk:
-		badge_action.position = token_center - badge_action.size / 2.0
-		return
-	badge_action.position = Vector2((size.x - badge_action.size.x) / 2.0, -badge_action.size.y / 2.0)
+	badge_action.position = token_center - badge_action.size / 2.0
+
+
+func set_token_center(c: Vector2) -> void:
+	token_center = c
+	_place_action()
 
 
 ## 배지가 새 문구로 바뀔 때 살짝 커졌다 돌아온다
