@@ -320,6 +320,26 @@ func _init() -> void:
 	check(EnvBadge.environment_of({"ok": false, "status": 0, "data": null, "error": "NETWORK_ERROR"}) == "default", "EnvBadge 요청 실패는 default")
 	check(EnvBadge.environment_of({"ok": true, "data": null}) == "default" and EnvBadge.environment_of({"ok": true, "data": "qa"}) == "default", "EnvBadge dict 아닌 data 는 default")
 
+	# FocusVisible: 마우스로 포커스를 받으면 포커스 링 없음, 키보드면 있음
+	var fv := FocusVisible.new()
+	var fb := Button.new()
+	fv._on_node_added(fb)
+	check(fb.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "FocusVisible 손바닥 커서")
+	fv._input(InputEventMouseButton.new())
+	fv._on_focus_changed(fb)
+	check(fb.has_theme_stylebox_override("focus"), "FocusVisible 마우스 포커스는 링 없음")
+	fv._input(InputEventKey.new())
+	fv._on_focus_changed(fb)
+	check(not fb.has_theme_stylebox_override("focus"), "FocusVisible 키보드 포커스는 링 있음")
+	fv.touch_device = true
+	var tb := Button.new()
+	root.add_child(tb)
+	fv._flatten_hover(tb)
+	check(tb.get_theme_stylebox("hover") == tb.get_theme_stylebox("normal"), "FocusVisible 터치는 hover == normal")
+	tb.free()
+	fb.free()
+	fv.free()
+
 	quit(1 if failures else 0)
 
 
