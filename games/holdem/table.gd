@@ -22,7 +22,8 @@ const FELT_COLOR := Color("1B5E3A")
 const FELT_RIM_COLOR := Color("0F3D26")
 const FELT_RIM := 12
 const CARD_ASPECT := 190.0 / 140.0 # 카드 이미지 비율(세로/가로)
-const BET_LERP := 0.38 # 베팅 칩 위치: 좌석 → 펠트 중심 사이 비율
+const BET_GAP := 8.0 # 베팅 칩과 자기 좌석 캡슐 사이 간격
+const BET_ANGLES := [0.0, 35.0, -35.0, 70.0, -70.0, 105.0, -105.0, 140.0, -140.0, 180.0] # 기본(펠트 중심 쪽)이 막히면 캡슐 둘레를 따라 돌려 보는 각도
 const RESUME_SEAT_CHECK_SEC := 2.0 # 탭 복귀 소켓 교체 뒤 이 시간 동안 POSITION·SEATED 스냅샷이 없으면 me/seat 로 확인한다
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
 
@@ -130,6 +131,7 @@ var hand_counter := 0
 var last_hand_in_progress := false
 var last_turn_key := ""
 var raise_turn_key := "" # 레이즈 슬라이더를 초기화한 턴
+var turn_total_ms := 0 # 이번 턴 타이머 전체 길이(서버 turnTimeoutMs). 0 이면 막대를 숨긴다
 var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시계 아님). -1 이면 카운트다운 없음
 
 
@@ -353,6 +355,8 @@ func _handle_public(body: Dictionary) -> void:
 	_track_street_base()
 	var left_ms = body.get("turnRemainingMs")
 	turn_deadline_ticks = -1 if left_ms == null else Time.get_ticks_msec() + int(left_ms)
+	var total_ms = body.get("turnTimeoutMs")
+	turn_total_ms = 0 if total_ms == null else int(total_ms)
 	if _to_act_seat_no() != _my_seat_no():
 		my_available_actions = null
 	_update_status_label()
@@ -718,7 +722,7 @@ func qa_state() -> Dictionary:
 	for seat in public_view.get("seats", []):
 		var nick: String = nickname_cache.get(seat.userId, seat_nodes[int(seat.seatNo) - 1].name_label.text) # 캐시가 비면 화면에 보이는 이름
 		seats.append({"seat_no": int(seat.seatNo), "nickname": nick, "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.leaveReserved,
-			"last_action": PublicView.action_label(seat, public_view.get("handInProgress", false))})
+			"last_action": PublicView.action_label(seat)})
 	var winners := []
 	var result = public_view.get("result")
 	if result != null:
@@ -884,32 +888,49 @@ func _render_seats() -> void:
 	for mk: Array in marks:
 		if mk[1] != -1:
 			_place_marker(mk[0], mk[1], hero, g, placed)
+	var bet_blockers := _bet_blockers() # 카드·배지·마커·보드·내 카드. 놓은 칩도 여기에 보탠다
 	for seat_no in range(1, 10): # 베팅은 모든 좌석·마커가 놓인 뒤 — 좌석 사이 충돌을 본다
 		var sp := _seat_center(seat_no, hero, g)
-		var seat_node: Control = seat_nodes[seat_no - 1]
 		var to_center: Vector2 = (g.center - sp).normalized()
-		var is_hero := seat_no == hero
 		var bet_box: HBoxContainer = bet_boxes[seat_no - 1]
 		if bet_box.visible:
 			bet_box.reset_size()
 			var bm := bet_box.get_combined_minimum_size()
-			var b: Vector2 = sp.lerp(g.center, BET_LERP)
-			var rel := posmod(seat_no - hero, 9)
-			if not compact and (rel == 2 or rel == 7): # 아래 옆 좌석의 작은 카드 위로 칩이 걸치지 않게 조금 올린다
-				b.y -= 20.0
-			b = _push_clear(sp, b, bm, to_center, 6.0, g.cap) # 알약 캡슐 가장자리 밖으로(사각이 아니라 알약 기준)
-			if not is_hero: # 이 좌석의 마커(딜러·SB·BB)와 겹치면 마커 바깥으로 민다
-				for mk: Array in marks:
-					if mk[1] != seat_no:
-						continue
-					var msz: Vector2 = mk[0].size
-					var dpos: Vector2 = mk[0].position + msz / 2.0
-					if Rect2(b - bm / 2.0, bm).grow(4.0).intersects(Rect2(dpos - msz / 2.0, msz)):
-						b = dpos + to_center * (absf(to_center.x) * (bm.x + msz.x) / 2.0 + absf(to_center.y) * (bm.y + msz.y) / 2.0 + 4.0)
-			if is_hero: # 내 카드를 가리지 않게: 가로는 카드 왼쪽, 세로는 카드 바로 위
-				b = Vector2(g.center.x, g.hero_top - 12.0) if compact else Vector2(b.x - g.hc.x - 56.0, b.y)
+			var b := _bet_spot(sp, bm, to_center, g, bet_blockers)
 			bet_box.position = b - bm / 2.0
+			bet_blockers.append(Rect2(bet_box.position, bm))
 	_place_payouts(hero, g)
+
+
+## 칩이 가려선 안 되는 것: 모든 좌석의 작은 카드·배지·알약, 마커, 보드 묶음·결과 문구·내 큰 카드
+func _bet_blockers() -> Array:
+	var out: Array = _center_blockers()
+	for n: Control in seat_nodes:
+		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.badge_action, n.hand_pill]:
+			if c.visible:
+				out.append(_seat_rect(n, c))
+	for m: Control in [dealer_marker, sb_marker, bb_marker]:
+		if m.visible:
+			out.append(Rect2(m.position, m.size))
+	return out
+
+
+## 베팅 칩 자리: 자기 캡슐에서 BET_GAP 만큼 떨어진 곳에서 펠트 중심 쪽(to_center)으로 시작해, 막히면 캡슐 둘레로 돌려 가며 처음 비는 곳. 모두 막히면 기본 자리
+func _bet_spot(sp: Vector2, bm: Vector2, to_center: Vector2, g: Dictionary, blockers: Array) -> Vector2:
+	var first := Vector2.ZERO
+	for i in BET_ANGLES.size():
+		var b := _push_clear(sp, sp, bm, to_center.rotated(deg_to_rad(BET_ANGLES[i])), BET_GAP, g.cap)
+		if i == 0:
+			first = b
+		var r := Rect2(b - bm / 2.0, bm)
+		var ok := Rect2(Vector2.ZERO, felt_area.size).encloses(r)
+		for bl: Rect2 in blockers:
+			ok = ok and not bl.grow(2.0).intersects(r)
+		for n: Control in seat_nodes:
+			ok = ok and (n.empty or not _near_capsule(n.position + n.size / 2.0, g.cap, r, 2.0))
+		if ok:
+			return b
+	return first
 
 
 ## 마커(딜러·SB·BB)를 seat_no 좌석 곁에 놓는다. 가리는 것이 없는 첫 후보 자리에 두고 placed 에 사각을 보탠다
@@ -961,7 +982,7 @@ func _seat_rect(n: Control, c: Control) -> Rect2:
 	return Rect2(n.position + c.position, c.size)
 
 
-## 보드 묶음(팟·보드)·결과 문구·내 큰 카드 자리. 내 카드는 개인 뷰보다 공개 뷰가 먼저 와도 앉아 있으면 자리를 잡아 둔다
+## 보드 묶음(팟·보드)·결과 문구·내 큰 카드. 내 카드는 개인 뷰보다 공개 뷰가 먼저 와도 앉아 있으면 자리를 잡아 둔다
 func _center_blockers() -> Array:
 	var out: Array = [Rect2(center_box.position, center_box.size)]
 	if board_label.text != "":
@@ -1059,7 +1080,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"to_act": _to_act_seat_no() == seat_no,
 		"folded": seat.status == "FOLDED",
 		"all_in": seat.status == "ALL_IN",
-		"action": PublicView.action_label(seat, hand_in_progress),
+		"action": PublicView.action_label(seat),
 		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
 		"leave_reserved": seat.leaveReserved,
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
@@ -1105,9 +1126,9 @@ func _update_turn_timer() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	for seat_no in range(1, 10):
 		var left := -1.0
-		if hip and seat_no == to_act and turn_deadline_ticks >= 0:
+		if hip and seat_no == to_act and turn_deadline_ticks >= 0 and turn_total_ms > 0:
 			left = maxf((turn_deadline_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
-		seat_nodes[seat_no - 1].set_timer(left)
+		seat_nodes[seat_no - 1].set_timer(left, turn_total_ms / 1000.0)
 
 
 func _nickname_for(user_id: int) -> String:

@@ -146,12 +146,16 @@ func _ready() -> void:
 	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김
 	var seat1: Control = table.seat_nodes[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
-	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
+	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0, "turnTimeoutMs": 40000.0})))
 	table._update_turn_timer()
 	check(absf(seat1.timer_left - 31.0) < 0.5, "turn timer from turnRemainingMs: %.2f" % seat1.timer_left)
-	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0})))
+	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0, "turnTimeoutMs": 40000.0})))
 	table._update_turn_timer()
 	check(absf(seat1.timer_left - 20.0) < 0.5, "same-turn view re-syncs timer: %.2f" % seat1.timer_left)
+	check(absf(seat1.timer_total - 40.0) < 0.01, "turn timer total from turnTimeoutMs")
+	table._handle_public(_view(161, seats, turn_extra.merged({"turnRemainingMs": 20000.0, "turnTimeoutMs": null})))
+	table._update_turn_timer()
+	check(seat1.timer_left < 0.0, "null turnTimeoutMs hides timer")
 	table._handle_public(_view(17, seats, turn_extra.merged({"turnRemainingMs": null})))
 	table._update_turn_timer()
 	check(seat1.timer_left < 0.0, "null turnRemainingMs hides timer")
@@ -406,7 +410,7 @@ func _ready() -> void:
 		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
 	check(settled, "첫 뷰(재연결)는 도는 연출을 끊고 노드를 scale 1 / alpha 1 로 맞춘다")
 
-	# 마지막 행동 배지: 핸드 중에만 보이고, 정산 뒤(handInProgress=false)엔 숨는다
+	# 마지막 행동 배지: lastAction 이 있으면 정산 뒤(handInProgress=false)에도 남고, null 이면 숨는다
 	var acted := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
 	acted[0]["lastAction"] = "RAISE_TO"
 	acted[1]["lastAction"] = "FOLD"
@@ -417,7 +421,10 @@ func _ready() -> void:
 	check(sn[0].badge_action.visible and sn[0].badge_action.text == "레이즈" and sn[1].badge_action.text == "폴드" and sn[2].badge_action.text == "콜" and sn[2].badge_all_in.visible, "행동 배지 문구")
 	check(table.qa_state().seats[0].last_action == "레이즈", "qa_state last_action")
 	table._handle_public(_view(401, acted, {"handInProgress": false}))
-	check(not sn[0].badge_action.visible and not sn[1].badge_action.visible and not sn[2].badge_action.visible, "핸드 밖에서는 행동 배지 숨김")
+	check(sn[0].badge_action.visible and sn[0].badge_action.text == "레이즈" and sn[1].badge_action.text == "폴드", "정산 뒤에도 lastAction 이 있으면 행동 배지 유지")
+	var cleared := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
+	table._handle_public(_view(402, cleared, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	check(not sn[0].badge_action.visible and not sn[1].badge_action.visible and not sn[2].badge_action.visible, "lastAction null 이면 행동 배지 숨김")
 
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")

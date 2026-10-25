@@ -14,7 +14,6 @@ const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 ## 행동 배지 바탕색(문구별). 폴드 회색·체크 파랑·콜 초록·레이즈 주황
 const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
 const AVATAR_COLORS := [Color("5B7DB1"), Color("7A5BB1"), Color("B15B7A"), Color("B1895B"), Color("4F9E7E"), Color("5B9EB1")]
-const TURN_SECONDS := 30.0
 const WARN_SECONDS := 5.0
 
 var compact := false
@@ -24,6 +23,7 @@ var to_act := false
 var badge_side := 0 # 배지 줄이 캡슐보다 넓으면 넘치는 쪽: 1 = 오른쪽, -1 = 왼쪽, 0 = 양쪽(table.gd 가 화면 가운데 반대쪽으로 정한다)
 var badge_bounds := Vector2(-INF, INF) # 배지 줄이 있어야 할 로컬 x 범위(펠트 영역 안)
 var timer_left := -1.0 # 남은 초. 음수면 숨김
+var timer_total := 0.0 # 이번 턴 타이머 전체 길이(초) — 서버 turnTimeoutMs
 var shown_codes: Array = [] # 좌석 위에 그린 카드(테스트가 본다)
 var _avatar_color: Color = AVATAR_COLORS[0]
 var _badge_count := 0
@@ -84,7 +84,7 @@ func set_compact(is_compact: bool) -> void:
 	name_label.position = Vector2(x0, h / 2.0 - (19 if is_compact else 21))
 	name_label.size = Vector2(size.x - x0 - 10, 20)
 	stack_label.position = Vector2(x0, h / 2.0 - 1)
-	stack_label.size = Vector2(size.x - x0 - 10, 22)
+	stack_label.size = Vector2(size.x - x0 - 6, 22)
 	var fs := 10 if is_compact else 11
 	for l: Label in [badge_all_in, badge_presence, badge_leave, hand_pill]:
 		l.add_theme_font_size_override("font_size", fs)
@@ -96,6 +96,15 @@ func set_compact(is_compact: bool) -> void:
 	empty_label.size = er.size
 	empty_label.add_theme_font_size_override("font_size", 12 if is_compact else 13)
 	queue_redraw()
+
+
+## 스택 문구가 라벨 폭보다 넓으면(세로 폰의 6자리 이상) 글자를 1px 씩 줄여 잘리지 않게 한다
+func _fit_stack() -> void:
+	var fs := 15 if compact else 17
+	var font := stack_label.get_theme_font("font")
+	while fs > 10 and font.get_string_size(stack_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > stack_label.size.x:
+		fs -= 1
+	stack_label.add_theme_font_size_override("font_size", fs)
 
 
 func _empty_rect() -> Rect2:
@@ -146,6 +155,7 @@ func show_player(info: Dictionary) -> void:
 	initial.text = nick.substr(0, 1).to_upper()
 	name_label.text = nick
 	stack_label.text = Format.comma(info.stack)
+	_fit_stack()
 	for l: Control in [initial, name_label, stack_label]:
 		l.show()
 	var disconnected: bool = info.presence_text != ""
@@ -175,9 +185,10 @@ func show_player(info: Dictionary) -> void:
 	queue_redraw()
 
 
-func set_timer(left: float) -> void:
-	if not is_equal_approx(left, timer_left):
+func set_timer(left: float, total: float) -> void:
+	if not is_equal_approx(left, timer_left) or not is_equal_approx(total, timer_total):
 		timer_left = left
+		timer_total = total
 		_place_badges()
 		queue_redraw()
 
@@ -201,6 +212,8 @@ func _set_cards(codes: Array) -> void:
 func _set_pill(category: String) -> void:
 	hand_pill.text = category
 	hand_pill.visible = category != ""
+	if category != "": # 결과 화면에서도 행동 배지가 남지만 같은 윗변 자리를 쓰므로 패 이름이 우선한다
+		badge_action.hide()
 	hand_pill.reset_size()
 	hand_pill.position = Vector2((size.x - hand_pill.size.x) / 2.0, -hand_pill.size.y / 2.0 - 2)
 
@@ -256,5 +269,5 @@ func _draw() -> void:
 		var w := size.x - 20.0
 		var y := size.y + (12.0 if _badge_count > 0 else 4.0)
 		draw_rect(Rect2(10, y, w, 4), BORDER)
-		var frac := clampf(timer_left / TURN_SECONDS, 0.0, 1.0)
+		var frac := clampf(timer_left / timer_total, 0.0, 1.0)
 		draw_rect(Rect2(10, y, w * frac, 4), DANGER if timer_left < WARN_SECONDS else ACCENT)

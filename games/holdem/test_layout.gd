@@ -74,6 +74,8 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 				extra["leaveReserved"] = true
 			else:
 				status = "ALL_IN"
+		if i % 2 == 1:
+			extra["stack"] = 1234567.0 # 7자리 스택도 캡슐 안에 잘리지 않아야 한다
 		extra["lastAction"] = "RAISE_TO" # 행동 배지(가장 긴 문구)도 겹침을 본다
 		seats.append(_seat(no, user, status, extra))
 	var view_extra := {}
@@ -132,6 +134,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 ## {"gap": 좌석 캡슐 사이 최소 간격, "bad": 위반 목록}
 func _collect(table: Control, hero: int) -> Dictionary:
 	var area: Rect2 = table.felt_area.get_global_rect()
+	var bad_extra: Array = []
 	var items: Array = [] # {o: 주인, k: 종류, r: Rect2}
 	var caps := {}
 	for no in range(1, 10):
@@ -142,6 +145,10 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		var cap := Rect2(s.global_position, s.size)
 		caps[no] = cap
 		items.append({"o": o, "k": "cap", "r": cap})
+		var sl: Label = s.stack_label
+		var sw := sl.get_theme_font("font").get_string_size(sl.text, HORIZONTAL_ALIGNMENT_LEFT, -1, sl.get_theme_font_size("font_size")).x
+		if sw > sl.size.x + 0.5:
+			bad_extra.append("%s 스택 문구 잘림 %s (%.0f > %.0f)" % [o, sl.text, sw, sl.size.x])
 		for c: Control in s.card_rects:
 			if c.visible:
 				items.append({"o": o, "k": "cards", "r": c.get_global_rect()})
@@ -172,7 +179,7 @@ func _collect(table: Control, hero: int) -> Dictionary:
 		for c: Control in table.my_card_rects:
 			if c.visible:
 				items.append({"o": "seat%d" % hero, "k": "hero", "r": c.get_global_rect()})
-	var bad: Array = []
+	var bad: Array = bad_extra
 	for it in items:
 		if not area.grow(0.5).encloses(it.r):
 			bad.append("%s/%s 화면 밖 %s (area %s)" % [it.o, it.k, _s(it.r), _s(area)])
@@ -189,6 +196,20 @@ func _collect(table: Control, hero: int) -> Dictionary:
 				if not (oth.k in ["hero", "cards"]) or pill.r.intersection(oth.r).size.y <= pill.r.size.y / 2.0 + 1.0:
 					continue
 			bad.append("%s/%s x %s/%s %s %s" % [a.o, a.k, b.o, b.k, _s(a.r), _s(b.r)])
+	for no: int in caps: # 칩은 자기 좌석 캡슐 곁에 있어야 한다(가장 가까운 캡슐이 자기 것)
+		var bb: Control = table.bet_boxes[no - 1]
+		if not bb.visible:
+			continue
+		var br := bb.get_global_rect()
+		var nearest := -1
+		var best := INF
+		for other: int in caps:
+			var d := _gap(br, caps[other])
+			if d < best:
+				best = d
+				nearest = other
+		if nearest != no:
+			bad.append("seat%d/bet 가장 가까운 캡슐이 seat%d (%s)" % [no, nearest, _s(br)])
 	var gap := INF
 	var keys := caps.keys()
 	for i in keys.size():

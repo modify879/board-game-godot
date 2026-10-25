@@ -2,10 +2,8 @@ extends RefCounted
 ## 공개 뷰(public_view) 순수 조회·계산. 노드·Api·시계에 기대지 않고 전부 인자로 받는다(헤드리스 점검용).
 
 
-## 좌석 마지막 행동 배지 문구. 서버가 정산 뒤 lastAction 을 null 로 지우므로 핸드 중일 때만 보인다.
-static func action_label(seat: Dictionary, hand_in_progress: bool) -> String:
-	if not hand_in_progress:
-		return ""
+## 좌석 마지막 행동 배지 문구. lastAction 은 이번 판 내내(결과 화면까지) 유지되고 다음 판이 시작되면 null 이다.
+static func action_label(seat: Dictionary) -> String:
 	match seat.get("lastAction"):
 		"FOLD": return "폴드"
 		"CHECK": return "체크"
