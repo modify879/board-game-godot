@@ -46,7 +46,8 @@ const D_BOARD_CARD := Vector2(64, 88)
 const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
 const D_POTS_W := 400.0 # 사이드 팟 줄 최대 폭(넘으면 …)
 const D_TOTAL_TOP := 371.0 # Total 상자 윗변(보드 아래)
-const D_ACTION := Rect2(836, 476, 374, 196) # 행동 패널(내 패널 오른쪽)
+const D_ACTION := Rect2(832, 476, 432, 196) # 행동 패널(내 패널 오른쪽). 폭·아래변만 쓴다 — 높이는 내용에 맞춰 줄이고 아래변에 붙인다(_fit_action_region)
+const D_ACTION_RATIO := [1.0, 0.9, 1.3, 1.8, 0.9] # 데스크톱 버튼 한 줄(폴드·체크·콜·레이즈·올인)의 폭 비율 — 레이즈 금액이 가장 길다
 const D_BAR := Rect2(16, 534, 394, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
 const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")]
 const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue 이벤트가 없으면 me/seat 로 착석을 확인한다 — DROPPED 는 스냅샷으로 다시 오지 않는다
@@ -68,9 +69,12 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var my_cards_box: HBoxContainer = %MyCards
 @onready var error_label: Label = %ErrorLabel
 @onready var join_button: Button = %JoinButton
-@onready var stand_button: Button = %StandButton
-@onready var leave_room_button: Button = %LeaveRoomButton
-@onready var cancel_leave_button: Button = %CancelLeaveButton
+@onready var leave_backdrop: Control = %LeaveBackdrop # 뒤로가기 버튼 아래 메뉴 + 바깥을 누르면 닫는 투명 판
+@onready var leave_menu: PanelContainer = %LeaveMenu
+@onready var menu_spectate: Button = %MenuSpectate
+@onready var menu_leave: Button = %MenuLeave
+@onready var menu_cancel_reservation: Button = %MenuCancelReservation
+@onready var menu_close: Button = %MenuClose
 @onready var add_chips_button: Button = %AddChipsButton
 @onready var add_chips_box: HBoxContainer = %AddChipsBox
 @onready var add_chips_spin: SpinBox = %AddChipsSpin
@@ -87,7 +91,11 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var sit_popup_cancel: Button = %SitPopupCancel
 @onready var action_bar: VBoxContainer = %ActionBar
 @onready var fold_button: Button = %FoldButton
-@onready var check_call_button: Button = %CheckCallButton
+@onready var check_button: Button = %CheckActionButton # 체크·콜은 따로 둔 고정 버튼 — 못 쓰는 쪽은 숨기지 않고 비활성
+@onready var call_button: Button = %CallButton
+@onready var button_row: HBoxContainer = %ButtonRow
+@onready var button_row_top: HBoxContainer = %ButtonRowTop
+@onready var spacer: Control = %Spacer
 @onready var raise_box: HBoxContainer = %RaiseBox
 @onready var raise_slider: HSlider = %RaiseSlider
 @onready var raise_spin: SpinBox = %RaiseSpin
@@ -119,7 +127,7 @@ var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드
 var desktop := false # 데스크톱 배치가 적용돼 있다(_apply_mode). compact 의 반대 — 노드를 옮겨 둔 상태
 var k := 1.0 # 데스크톱 배율
 var _fold_armed := false # 공짜 체크가 가능할 때 폴드를 한 번 눌러 "정말 폴드?" 로 바뀐 상태
-@onready var preset_row: HBoxContainer = %PresetRow # 폰 전용 줄(올인·−·값·+). 폰: 줄1, 슬라이더 줄2(전체 폭), 폴드·체크·레이즈 줄3. 데스크톱은 비어 숨긴다
+@onready var preset_row: HBoxContainer = %PresetRow # 폰 전용 줄(−·값·+). 폰: 줄1 −·값·+, 줄2 슬라이더(전체 폭), 줄3 체크·콜·올인, 줄4 폴드·레이즈. 데스크톱은 비워 숨긴다(슬라이더·−·값·+ 는 RaiseBox, 버튼 다섯은 ButtonRow)
 var action_bg: Panel # 데스크톱 행동 패널 바탕
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
 var street_base_key := ""
@@ -152,6 +160,8 @@ var was_my_turn := false # 직전 뷰에서 내 차례였다(차례 시작 알�
 var tab_alert_on := false # Web 탭 제목을 바꿔 둔 상태
 var prev_tab_title := ""
 var resume_event_seen := false # 탭 복귀 뒤 join-queue 이벤트를 받았다 — 서버가 아직 대기열에 두고 있다는 뜻
+var leave_pending := false # 일어서기·예약 요청이 진행 중이다 — 메뉴 항목을 다시 누르지 못하게
+var desk_off := Vector2.ZERO # 데스크톱 배치 오프셋(_layout_desktop) — 행동 패널을 내용 높이로 줄여 아래에 붙일 때 쓴다
 var leave_room_after_stand := false # 핸드 후 방 나가기 의도. 개인 뷰의 leaveReservation 이 오면 그것을 따라 재접속해도 복원되고, 핸드 비참가자는 개인 뷰가 없어 이 메모리 값이 전부다 — 재접속하면 사라져 관전자로 남는다. 일어선 뒤엔 개인 뷰가 안 오므로 마지막 값으로 목록행을 정한다
 var sit_popup_gen := 0 # 착석 팝업을 열 때마다 올린다 — 늦게 온 지갑 응답을 거른다
 var join_event_seen := false # 이 테이블의 join-queue 이벤트(POSITION·SEATED·DROPPED)를 하나라도 받았다 — 방 생성 뒤 착석 확인을 건너뛴다
@@ -190,7 +200,12 @@ var turn_deadline_ticks := -1 # 턴 마감 시각(get_ticks_msec 기준, OS 시�
 
 func _ready() -> void:
 	title_label.text = "새 방" if creating else "#%d" % table_id
-	back_button.pressed.connect(_leave_closed_table)
+	back_button.pressed.connect(_on_back_pressed)
+	leave_backdrop.gui_input.connect(_on_leave_backdrop_input)
+	menu_close.pressed.connect(_close_leave_menu)
+	menu_spectate.pressed.connect(_on_menu_stand.bind(false))
+	menu_leave.pressed.connect(_on_menu_stand.bind(true))
+	menu_cancel_reservation.pressed.connect(_on_cancel_leave_pressed)
 	sfx = Sfx.new()
 	add_child(sfx)
 	settings_button.pressed.connect(_open_settings)
@@ -199,9 +214,6 @@ func _ready() -> void:
 	sfx_toggle.toggled.connect(sfx.set_sfx_on)
 	voice_toggle.toggled.connect(sfx.set_voice_on)
 	join_button.pressed.connect(_open_sit_popup)
-	stand_button.pressed.connect(_on_stand_pressed)
-	leave_room_button.pressed.connect(_on_stand_pressed.bind(true))
-	cancel_leave_button.pressed.connect(_on_cancel_leave_pressed)
 	cancel_request_button.pressed.connect(_on_cancel_request_pressed)
 	show_hand_button.pressed.connect(_on_show_hand_pressed)
 	add_chips_button.pressed.connect(_on_add_chips_pressed)
@@ -222,7 +234,21 @@ func _ready() -> void:
 	for style_name in ["up_background", "up_background_hovered", "up_background_pressed", "up_background_disabled", "down_background", "down_background_hovered", "down_background_pressed", "down_background_disabled", "field_and_buttons_separator", "up_down_buttons_separator"]:
 		raise_spin.add_theme_stylebox_override(style_name, no_style)
 	raise_spin.custom_minimum_size.x = 72
-	check_call_button.pressed.connect(_on_check_call_pressed)
+	var spin_edit := raise_spin.get_line_edit() # 칸이 좁아도 숫자가 들어가게 안쪽 여백·최소 글자 폭을 줄인다(슬라이더가 첫 줄 대부분을 갖는다)
+	for style_name in ["normal", "focus", "read_only"]:
+		var edit_style: StyleBox = spin_edit.get_theme_stylebox(style_name).duplicate()
+		edit_style.content_margin_left = 4
+		edit_style.content_margin_right = 4
+		spin_edit.add_theme_stylebox_override(style_name, edit_style)
+	for style_name in ["normal", "hover", "pressed", "disabled", "focus"]: # 칩 추가 "+" 는 작은 정사각 — 테마 여백을 줄여 32px 에 들어가게
+		var plus_style: StyleBox = add_chips_button.get_theme_stylebox(style_name).duplicate()
+		plus_style.content_margin_left = 2
+		plus_style.content_margin_right = 2
+		plus_style.content_margin_top = 0
+		plus_style.content_margin_bottom = 0
+		add_chips_button.add_theme_stylebox_override(style_name, plus_style)
+	check_button.pressed.connect(_send_play_action.bind("CHECK"))
+	call_button.pressed.connect(_send_play_action.bind("CALL"))
 	raise_button.pressed.connect(_on_raise_pressed)
 	raise_slider.value_changed.connect(_on_raise_slider_changed)
 	raise_spin.value_changed.connect(_on_raise_spin_changed)
@@ -239,7 +265,7 @@ func _ready() -> void:
 		_render_seats())
 	bottom_region.resized.connect(_fit_bottom_width)
 	name_label.get_parent().resized.connect(_update_table_name)
-	raise_box.visibility_changed.connect(_sync_preset_row)
+	bottom_box.minimum_size_changed.connect(_sync_action_bg) # 데스크톱 행동 패널은 내용 높이에 맞춘다
 	info_label.text = "SB %s / BB %s" % [Format.comma(Rules.BIG_BLIND / 2), Format.comma(Rules.BIG_BLIND)]
 	_build_seats()
 	Stomp.message.connect(_on_stomp_message)
@@ -389,6 +415,7 @@ func _build_seats() -> void:
 	board_label.add_theme_constant_override("outline_size", 6)
 	felt_area.move_child(board_label, -1)
 	felt_area.add_child(motion) # 마지막 자식 = 맨 위
+	felt_area.move_child(add_chips_button, motion.get_index()) # 칩 추가 "+" 는 좌석 위
 	_render_seats()
 
 
@@ -427,10 +454,17 @@ func _apply_mode() -> void:
 		raise_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		raise_slider.custom_minimum_size = Vector2(24, 0)
 		raise_spin.size_flags_horizontal = Control.SIZE_FILL
-		raise_spin.custom_minimum_size.x = 60 # 슬라이더 폭을 남기려 좁힌다
-		for n: Control in [minus_button, raise_spin, plus_button, all_in_button]: # 데스크톱: 슬라이더 오른쪽에 −·값·+·올인
+		raise_spin.custom_minimum_size.x = 72 # 슬라이더가 첫 줄 대부분을 가진다
+		for n: Control in [minus_button, raise_spin, plus_button]: # 데스크톱: 슬라이더 오른쪽에 −·값·+
 			n.reparent(raise_box, false)
-		all_in_button.size_flags_horizontal = Control.SIZE_FILL
+		var row: Array[Button] = [fold_button, check_button, call_button, raise_button, all_in_button] # 둘째 줄: 고정 자리 다섯 버튼
+		for i in row.size():
+			row[i].reparent(button_row, false)
+			button_row.move_child(row[i], i)
+			row[i].size_flags_stretch_ratio = D_ACTION_RATIO[i]
+		button_row.add_theme_constant_override("separation", 6)
+		button_row_top.hide()
+		spacer.hide()
 		bottom_region.reparent(felt_area, false)
 		bottom_bar.reparent(felt_area, false)
 		felt_area.move_child(action_bg, bottom_region.get_index() - 1) # 바탕이 행동 패널 바로 아래(위에 그리면 버튼이 흐려진다)
@@ -445,24 +479,29 @@ func _apply_mode() -> void:
 		vbox.move_child(bottom_region, -1)
 		bottom_bar.reparent(bottom_box, false)
 		bottom_box.move_child(bottom_bar, -1)
-		raise_slider.reparent(action_bar, false) # 슬라이더는 전체 폭 한 줄(프리셋 줄 아래)
+		raise_slider.reparent(action_bar, false) # 슬라이더는 전체 폭 한 줄(−·값·+ 줄 아래)
 		action_bar.move_child(raise_slider, 1)
 		raise_slider.size_flags_horizontal = Control.SIZE_FILL
 		raise_slider.custom_minimum_size = Vector2(0, 44)
-		raise_spin.size_flags_horizontal = Control.SIZE_FILL
+		raise_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		raise_spin.custom_minimum_size.x = 72
-		for n: Control in [all_in_button, minus_button, raise_spin, plus_button]: # 폰: 한 줄에 올인·−·값·+
+		for n: Control in [minus_button, raise_spin, plus_button]: # 폰: 한 줄에 −·값·+
 			n.reparent(preset_row, false)
-		all_in_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		all_in_button.custom_minimum_size.y = 44
-		all_in_button.remove_theme_font_size_override("font_size")
+		for b: Button in [check_button, call_button, all_in_button]: # 폰: 체크·콜·올인 한 줄, 그 아래 폴드·레이즈(사이를 벌려 잘못 누르지 않게)
+			b.reparent(button_row_top, false)
+		for b: Button in [fold_button, raise_button]:
+			b.reparent(button_row, false)
+		button_row.add_theme_constant_override("separation", 24)
+		button_row_top.show()
+		spacer.show()
 		for b: Button in [minus_button, plus_button]:
 			b.custom_minimum_size = Vector2(44, 44)
 			b.add_theme_font_size_override("font_size", 24)
-		for b: Button in [fold_button, check_call_button, raise_button]:
+		for b: Button in [fold_button, check_button, call_button, raise_button, all_in_button]:
 			b.custom_minimum_size.y = 44
+			b.size_flags_stretch_ratio = 1.0
 			b.remove_theme_font_size_override("font_size")
-		bottom_region.custom_minimum_size = Vector2(0, 206)
+		bottom_region.custom_minimum_size = Vector2(0, 240)
 		bottom_region.add_theme_constant_override("margin_top", 6)
 		bottom_region.add_theme_constant_override("margin_bottom", 12)
 		top_bar.add_theme_constant_override("margin_top", 16)
@@ -495,16 +534,25 @@ func _apply_mode() -> void:
 
 func _sync_preset_row() -> void:
 	if preset_row != null:
-		preset_row.visible = raise_box.visible and not desktop
-		raise_slider.visible = raise_box.visible
+		preset_row.visible = not desktop
+		raise_box.visible = desktop
 
 
 func _sync_action_bg() -> void:
 	if action_bg == null:
 		return
+	if desktop:
+		_fit_action_region()
 	action_bg.visible = desktop and action_bar.visible
 	action_bg.position = bottom_region.position
 	action_bg.size = bottom_region.size
+
+
+## 데스크톱 행동 패널: 폭은 고정, 높이는 내용에 맞춰 줄이고 설계 좌표의 아래변에 붙인다(빈 아래 칸이 없다)
+func _fit_action_region() -> void:
+	var h := bottom_region.get_combined_minimum_size().y
+	bottom_region.size = Vector2(D_ACTION.size.x * k, h)
+	bottom_region.position = desk_off + Vector2(D_ACTION.position.x * k, D_ACTION.end.y * k - h)
 
 
 ## 중심 c 에서 점 p 로 그은 선이 반지름 r 타원과 만나는 점
@@ -519,6 +567,7 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	var area := felt_area.size
 	k = maxf(minf(area.x / D_W, area.y / D_H), 0.3)
 	var off := (area - Vector2(D_W, D_H) * k) / 2.0
+	desk_off = off
 	felt.position = off + (D_CENTER - D_FELT_R) * k
 	felt.size = D_FELT_R * 2.0 * k
 	felt_style.set_corner_radius_all(int(D_FELT_R.y * k))
@@ -586,18 +635,15 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	bottom_region.custom_minimum_size = Vector2.ZERO
 	for side in ["left", "right", "top", "bottom"]:
 		bottom_region.add_theme_constant_override("margin_" + side, int(8.0 * k))
-	bottom_region.position = off + D_ACTION.position * k
-	bottom_region.size = D_ACTION.size * k
 	bottom_bar.position = off + D_BAR.position * k
 	bottom_bar.size = D_BAR.size * k
-	all_in_button.custom_minimum_size.y = 30.0 * k
-	all_in_button.add_theme_font_size_override("font_size", int(round(16.0 * k)))
 	for b: Button in [minus_button, plus_button]:
 		b.custom_minimum_size = Vector2(30.0, 30.0) * k
 		b.add_theme_font_size_override("font_size", int(round(18.0 * k)))
-	for b: Button in [fold_button, check_call_button, raise_button]:
+	for b: Button in [fold_button, check_button, call_button, raise_button, all_in_button]:
 		b.custom_minimum_size.y = 44.0 * k
-		b.add_theme_font_size_override("font_size", int(round(17.0 * k)))
+		b.add_theme_font_size_override("font_size", int(round(14.0 * k)))
+	_fit_action_region()
 	_sync_action_bg()
 	return {"center": off + D_CENTER * k, "hc": hc, "slots": slots}
 
@@ -1172,7 +1218,7 @@ func qa_state() -> Dictionary:
 	var actions := []
 	if my_available_actions != null:
 		var a: Dictionary = my_available_actions
-		actions.append("CHECK" if a.get("canCheck", false) else "CALL")
+		actions.append("CHECK" if a.get("canCheck", false) else "CALL") # 체크·콜 버튼 가용은 노드 disabled 로 본다
 		actions.append("FOLD")
 		if a.get("minRaiseTo") != null:
 			actions.append("RAISE_TO")
@@ -1247,12 +1293,8 @@ func _update_table_name() -> void:
 	name_label.remove_theme_font_size_override("font_size") # 이전에 줄인 값에서 다시 시작
 	var font := name_label.get_theme_font("font")
 	var size := name_label.get_theme_font_size("font_size")
-	var row: HBoxContainer = name_label.get_parent()
-	var other := 0.0
-	for c: Control in row.get_children():
-		if c != name_label and c.visible:
-			other += c.get_combined_minimum_size().x
-	var room := row.size.x - other - row.get_theme_constant("separation") * (row.get_child_count() - 1)
+	var row: HBoxContainer = name_label.get_parent() # TitleBox: "#id" + " · 이름"(구분 간격 한 번)
+	var room := row.size.x - title_label.get_combined_minimum_size().x - row.get_theme_constant("separation")
 	while size > 12 and font.get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > room:
 		size -= 1
 	name_label.add_theme_font_size_override("font_size", size)
@@ -1392,6 +1434,7 @@ func _render_seats() -> void:
 	bb_marker.visible = bb_seat != -1
 	if desktop:
 		_place_desktop(g, hero, [[dealer_marker, dealer_seat, 0], [sb_marker, sb_seat, 1], [bb_marker, bb_seat, 2]])
+		_place_add_chips()
 		return
 	var marks: Array = [[dealer_marker, dealer_seat], [sb_marker, sb_seat], [bb_marker, bb_seat]] # 놓는 순서 = 겹침 우선순위
 	var area := felt_area.size
@@ -1403,7 +1446,8 @@ func _render_seats() -> void:
 		seat_node.badge_side = 0 if absf(sp.x - g.center.x) < 20.0 else int(signf(sp.x - g.center.x))
 		seat_node.badge_bounds = Vector2(4.0 - seat_node.position.x, area.x - 4.0 - seat_node.position.x)
 		_render_seat(seat_no, seat_node)
-	var placed: Array = [] # 이미 놓은 마커 사각 — 다음 마커의 자리 검사에서 막는다. 행동 토큰도 먼저 넣는다
+	_place_add_chips() # 칩 추가 "+" 를 먼저 놓고 토큰·마커·베팅·지급액이 비켜 가게 한다
+	var placed: Array = _add_chips_blockers() # 이미 놓은 마커 사각 — 다음 마커의 자리 검사에서 막는다. 행동 토큰도 먼저 넣는다
 	_place_tokens(g, placed)
 	for mk: Array in marks:
 		if mk[1] != -1:
@@ -1420,6 +1464,30 @@ func _render_seats() -> void:
 			bet_box.position = b - bm / 2.0
 			bet_blockers.append(Rect2(bet_box.position, bm))
 	_place_payouts(hero, g)
+
+
+## 칩 추가 "+": 내 좌석 스택 바로 옆(데스크톱은 글자 오른쪽, 폰은 캡슐 왼쪽). 관전 중엔 숨긴다(_update_buttons 가 visible 을 정한다)
+func _place_add_chips() -> void:
+	var me := _my_seat_no()
+	if me == -1:
+		return
+	var seat_node: Control = seat_nodes[me - 1]
+	var side := maxf(32.0, 26.0 * k) if desktop else 40.0 # 데스크톱: 스택 줄 높이(26·k)를 넘지 않게(아래 족보 칸과 안 겹친다)
+	add_chips_button.custom_minimum_size = Vector2(side, side)
+	add_chips_button.size = Vector2(side, side)
+	add_chips_button.add_theme_font_size_override("font_size", 20 if desktop else 22)
+	var tr: Rect2 = seat_node.stack_text_rect()
+	var x := seat_node.position.x + tr.end.x + 4.0 # 데스크톱: 내 패널의 스택 글자 바로 오른쪽
+	var cy := seat_node.position.y + tr.get_center().y
+	if not desktop: # 폰: 캡슐은 작아 안에 못 들어간다 — 캡슐 왼쪽 가장자리에 붙인다(오른쪽은 행동 토큰·지급액 자리)
+		x = seat_node.position.x - side - 4.0
+		cy = seat_node.position.y + seat_node.size.y / 2.0
+	add_chips_button.position = Vector2(clampf(x, 4.0, felt_area.size.x - side - 4.0), cy - side / 2.0)
+
+
+## 폰: 칩 추가 "+" 자리(앉아 있을 때만 — visible 은 뒤에 정해지므로 좌석으로 본다)
+func _add_chips_blockers() -> Array:
+	return [add_chips_button.get_rect()] if not desktop and _my_seat_no() != -1 else []
 
 
 ## 폰 행동 토큰: 자기 캡슐에서 펠트 가운데 쪽으로 시작해, 막히면 둘레를 따라 돌려 가며 카드·배지·알약·보드·다른 캡슐을 피하는 첫 자리. 놓은 사각은 placed 에 보탠다
@@ -1465,7 +1533,7 @@ func _place_tokens(g: Dictionary, placed: Array) -> void:
 
 ## 칩이 가려선 안 되는 것: 모든 좌석의 작은 카드·배지·알약, 마커, 보드 묶음·결과 문구·내 큰 카드
 func _bet_blockers() -> Array:
-	var out: Array = _center_blockers()
+	var out: Array = _center_blockers() + _add_chips_blockers()
 	for n: Control in seat_nodes:
 		for c: Control in n.card_rects + [n.badge_all_in, n.badge_presence, n.badge_leave, n.badge_action, n.hand_pill]:
 			if c.visible:
@@ -1590,6 +1658,7 @@ func _place_payouts(hero: int, g: Dictionary) -> void:
 		if m.visible:
 			blockers.append(Rect2(m.position, m.size))
 	blockers.append_array(_center_blockers())
+	blockers.append_array(_add_chips_blockers())
 	for seat_no in range(1, 10):
 		var n: Control = seat_nodes[seat_no - 1]
 		if n.empty or not n.payout_label.visible:
@@ -1752,15 +1821,10 @@ func _fetch_nickname(user_id: int) -> void:
 func _update_buttons() -> void:
 	var seated := _is_seated()
 	var my_seat: Variant = _find_seat_by_user(Api.user_id)
-	# 핸드 중 일어서기는 나가기 예약(서버가 202) — 예약돼 있으면 취소 버튼으로 바꾼다
+	# 핸드 중 일어서기는 나가기 예약(서버가 202) — 예약돼 있으면 뒤로가기 버튼이 그 종류를 보이고 메뉴가 취소·변경을 준다
 	var leave_reserved: bool = seated and my_seat != null and my_seat.leaveReserved
-	var in_hand: bool = public_view.get("handInProgress", false)
-	stand_button.visible = seated and not leave_reserved
-	stand_button.text = "핸드 후 관전" if in_hand else "일어서기"
-	leave_room_button.visible = seated and not leave_reserved
-	leave_room_button.text = "핸드 후 방 나가기" if in_hand else "방 나가기"
-	cancel_leave_button.visible = leave_reserved
-	cancel_leave_button.text = "나가기 예약됨 · 취소" if leave_room_after_stand else "관전 예약됨 · 취소"
+	back_button.text = ("나가기 예약됨" if leave_room_after_stand else "관전 예약됨") if leave_reserved else "← 방 목록"
+	_refresh_leave_menu()
 	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
 	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
 	show_hand_button.visible = _can_show_hand()
@@ -1775,8 +1839,58 @@ func _update_buttons() -> void:
 	join_button.disabled = not stomp_connected or table_id == 0
 	cancel_request_button.visible = waiting
 	cancel_request_button.disabled = table_id == 0
-	back_button.disabled = seated or waiting
-	back_button.tooltip_text = "일어선 뒤 나갈 수 있습니다" if back_button.disabled else ""
+
+
+## 뒤로가기: 관전 중이면 방 목록, 앉아 있으면 아래에 메뉴(관전·나가기·예약 취소). 대기열에 있으면 대기를 취소하고 목록으로 간다
+func _on_back_pressed() -> void:
+	if _is_seated():
+		if leave_backdrop.visible:
+			_close_leave_menu()
+		else:
+			_open_leave_menu()
+	elif waiting:
+		await _on_cancel_request_pressed()
+		if not waiting and not _is_seated():
+			_leave_closed_table()
+	else:
+		_leave_closed_table()
+
+
+func _open_leave_menu() -> void:
+	leave_backdrop.show()
+	leave_menu.show()
+	_refresh_leave_menu()
+
+
+func _close_leave_menu() -> void:
+	leave_backdrop.hide()
+	leave_menu.hide()
+
+
+func _on_leave_backdrop_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		_close_leave_menu()
+
+
+## 메뉴 항목을 지금 상태에 맞춘다. 예약 없음: 관전·나가기(핸드 중이면 "핸드 후"). 예약 있음: 예약 취소 + 다른 종류로 바꾸기
+func _refresh_leave_menu() -> void:
+	if not leave_backdrop.visible:
+		return
+	if not _is_seated():
+		_close_leave_menu()
+		return
+	var my_seat: Variant = _find_seat_by_user(Api.user_id)
+	var reserved: bool = my_seat != null and my_seat.leaveReserved
+	var in_hand: bool = public_view.get("handInProgress", false)
+	var after := "핸드 후 " if in_hand else ""
+	menu_spectate.visible = not (reserved and not leave_room_after_stand)
+	menu_leave.visible = not (reserved and leave_room_after_stand)
+	menu_spectate.text = "관전으로 변경" if reserved else after + "관전"
+	menu_leave.text = "나가기로 변경" if reserved else after + "나가기"
+	menu_cancel_reservation.visible = reserved
+	leave_menu.reset_size()
+	var rect := back_button.get_global_rect() # 뒤로가기 버튼 바로 아래, 왼쪽 맞춤
+	leave_menu.global_position = Vector2(rect.position.x, rect.end.y + 4.0)
 
 
 ## 참가 버튼이 보이는 상태(관전 중이고 대기열 밖)
@@ -1801,10 +1915,10 @@ func _update_action_bar() -> void:
 		return
 	var actions: Dictionary = my_available_actions
 	var can_check: bool = actions.get("canCheck", false)
-	check_call_button.text = "체크" if can_check else "콜 %d" % int(actions.get("callAmount", 0))
+	var call_amount := _call_amount(actions)
+	call_button.text = "콜 %d" % call_amount if call_amount > 0 else "콜"
 	var min_raise = actions.get("minRaiseTo")
 	var raise_allowed := min_raise != null
-	raise_box.visible = raise_allowed
 	if raise_allowed:
 		var min_v := int(min_raise)
 		var max_v := int(actions.get("maxRaiseTo"))
@@ -1824,20 +1938,33 @@ func _update_action_bar() -> void:
 
 
 func _update_raise_button_label() -> void:
+	if my_available_actions == null or my_available_actions.get("minRaiseTo") == null:
+		raise_button.text = "레이즈"
+		return
 	var v := int(raise_slider.value)
 	var is_bet: bool = my_available_actions != null and my_available_actions.get("canCheck", false) and public_view.get("street", "") != "PREFLOP"
 	raise_button.text = ("올인 %d" % v) if v == int(raise_slider.max_value) else (("베팅 %d" if is_bet else "레이즈 %d") % v)
 
 
-func _set_action_bar_disabled(disabled: bool) -> void:
-	fold_button.disabled = disabled
-	check_call_button.disabled = disabled
-	raise_button.disabled = disabled
-	raise_slider.editable = not disabled
-	all_in_button.disabled = disabled
-	raise_spin.editable = not disabled
-	minus_button.disabled = disabled
-	plus_button.disabled = disabled
+## 서버는 콜할 게 없으면 callAmount 를 null 로 보낸다(체크 가능) — 0 으로 본다
+func _call_amount(actions: Dictionary) -> int:
+	var amount = actions.get("callAmount")
+	return 0 if amount == null else int(amount)
+
+
+## 못 쓰는 행동은 숨기지 않고 비활성으로 둔다(자리 고정). busy = 요청 진행 중 — 전부 잠근다
+func _set_action_bar_disabled(busy: bool) -> void:
+	var actions: Dictionary = my_available_actions if my_available_actions != null else {}
+	var can_raise: bool = actions.get("minRaiseTo") != null
+	fold_button.disabled = busy
+	check_button.disabled = busy or not actions.get("canCheck", false)
+	call_button.disabled = busy or _call_amount(actions) <= 0
+	raise_button.disabled = busy or not can_raise
+	all_in_button.disabled = busy or not can_raise
+	raise_slider.editable = not busy and can_raise
+	raise_spin.editable = not busy and can_raise
+	minus_button.disabled = busy or not can_raise
+	plus_button.disabled = busy or not can_raise
 
 
 func _on_raise_slider_changed(value: float) -> void:
@@ -1871,13 +1998,6 @@ func _on_fold_pressed() -> void:
 func _disarm_fold() -> void:
 	_fold_armed = false
 	fold_button.text = "폴드"
-
-
-func _on_check_call_pressed() -> void:
-	if my_available_actions != null and my_available_actions.get("canCheck", false):
-		_send_play_action("CHECK")
-	else:
-		_send_play_action("CALL")
 
 
 func _on_raise_pressed() -> void:
@@ -2070,12 +2190,14 @@ func _on_add_chips_ok() -> void:
 	_update_buttons()
 
 
-func _on_stand_pressed(leave_room := false) -> void:
-	stand_button.disabled = true
-	leave_room_button.disabled = true
+## 메뉴의 관전·나가기. 핸드 중이면 서버가 202(예약), 핸드 밖이면 204(바로 일어섬 — 나가기면 목록으로)
+func _on_menu_stand(leave_room: bool) -> void:
+	if leave_pending:
+		return
+	leave_pending = true
+	_close_leave_menu()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat?after=" + ("LEAVE" if leave_room else "SPECTATE"))
-	stand_button.disabled = false
-	leave_room_button.disabled = false
+	leave_pending = false
 	_apply_stand_result(r, leave_room)
 
 
@@ -2098,9 +2220,12 @@ func _should_leave_room() -> bool:
 
 
 func _on_cancel_leave_pressed() -> void:
-	cancel_leave_button.disabled = true
+	if leave_pending:
+		return
+	leave_pending = true
+	_close_leave_menu()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat/leave-reservation")
-	cancel_leave_button.disabled = false
+	leave_pending = false
 	_apply_cancel_result(r)
 
 

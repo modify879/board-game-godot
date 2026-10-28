@@ -316,6 +316,16 @@ func _place_desk_pills() -> void:
 
 
 ## 스택 문구가 라벨 폭보다 넓으면(세로 폰의 6자리 이상) 글자를 1px 씩 줄여 잘리지 않게 한다
+## 스택 글자가 실제로 차지하는 사각(이 노드 로컬 좌표). 칩 추가 "+" 를 글자 바로 옆에 놓는 데 쓴다
+func stack_text_rect() -> Rect2:
+	var font := stack_label.get_theme_font("font")
+	var w := font.get_string_size(stack_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, stack_label.get_theme_font_size("font_size")).x
+	var x := stack_label.position.x
+	if stack_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER:
+		x += (stack_label.size.x - w) / 2.0
+	return Rect2(x, stack_label.position.y, w, stack_label.size.y)
+
+
 func _fit_stack() -> void:
 	var fs := _stack_fs
 	var font := stack_label.get_theme_font("font")

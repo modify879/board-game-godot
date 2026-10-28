@@ -117,6 +117,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 				payouts.append({"seatNo": float(nos[i]), "userId": uid, "amount": 180000.0 - i})
 			shown.append({"seatNo": float(nos[i]), "userId": uid, "holeCards": ["Qh", "Jh"], "category": "FULL_HOUSE" if i % 2 == 0 else "STRAIGHT_FLUSH"})
 		view_extra = {"board": ["2c", "7d", "9s", "Th", "Ah"], "result": {"payouts": payouts, "shownHands": shown}}
+	view_extra["tableName"] = "화면 확인"
 	var dealers: Array = nos
 	var min_gap := INF
 	var tag := "%dx%d n=%d hero=%s %s%s" % [sz.x, sz.y, n, "spec" if hero == 0 else str(hero), state, " worst-nick" if worst else ""]
@@ -208,7 +209,72 @@ func _name_bad(table: Control, sz: Vector2) -> Array:
 func _collect_view(table: Control, hero: int) -> Dictionary:
 	var r := _collect_view2(table, hero)
 	r.bad.append_array(_name_bad(table, table.get_global_rect().size))
+	r.bad.append_array(_actions_bad(table, hero))
 	return r
+
+
+## 상단 제목("#id · 이름")은 한 덩어리, 행동 버튼은 고정 자리·충분한 크기·패널 안, 뒤로가기 메뉴는 버튼 아래 화면 안
+func _actions_bad(table: Control, hero: int) -> Array:
+	var out: Array = []
+	var tl: Rect2 = table.title_label.get_global_rect()
+	var nl: Rect2 = table.name_label.get_global_rect()
+	if table.name_label.text != "" and nl.position.x - tl.end.x > 8.0:
+		out.append("제목과 방 이름 사이가 넓음 (%.0f)" % (nl.position.x - tl.end.x))
+	if table.name_label.text != "" and nl.end.x > table.status_label.get_global_rect().position.x + 0.5:
+		out.append("방 이름이 상태 글자와 겹침")
+	if not table.action_bar.visible:
+		return out
+	var region: Rect2 = table.bottom_region.get_global_rect()
+	var btns: Array = [table.fold_button, table.check_button, table.call_button, table.raise_button, table.all_in_button]
+	var min_h: float = 44.0 * (table.k if table.desktop else 1.0)
+	for i in btns.size():
+		var b: Button = btns[i]
+		var br := b.get_global_rect()
+		if not b.visible:
+			out.append("%s 숨겨짐(자리 고정이어야 함)" % b.name)
+		if br.size.y < min_h - 0.5 or (not table.desktop and br.size.x < 44.0):
+			out.append("%s 터치 크기 부족 %s" % [b.name, _s(br)])
+		if not region.grow(0.5).encloses(br):
+			out.append("%s 행동 패널 밖 %s (패널 %s)" % [b.name, _s(br), _s(region)])
+		for j in range(i + 1, btns.size()):
+			if _in(br).intersects(_in((btns[j] as Button).get_global_rect())):
+				out.append("%s x %s 겹침" % [b.name, btns[j].name])
+		var fw := b.get_theme_font("font").get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, b.get_theme_font_size("font_size")).x
+		if fw > br.size.x + 0.5:
+			out.append("%s 글자 넘침 '%s' (%.0f > %.0f)" % [b.name, b.text, fw, br.size.x])
+	for c: Control in [table.raise_slider, table.minus_button, table.raise_spin, table.plus_button]:
+		if not c.visible or not region.grow(0.5).encloses(c.get_global_rect()):
+			out.append("%s 숨겨졌거나 행동 패널 밖" % c.name)
+	var all_btns: Array = btns + [table.minus_button, table.plus_button]
+	if table.desktop:
+		var row1: Rect2 = table.raise_slider.get_global_rect().merge(table.plus_button.get_global_rect())
+		if table.raise_slider.size.x < row1.size.x * 0.5:
+			out.append("슬라이더가 첫 줄의 절반 미만 %.0f/%.0f" % [table.raise_slider.size.x, row1.size.x])
+		if table.raise_spin.size.x > 90.0 * table.k:
+			out.append("RaiseSpin 이 넓음 %.0f" % table.raise_spin.size.x)
+		var content_h: float = table.bottom_region.get_combined_minimum_size().y
+		if table.bottom_region.size.y > content_h + 1.0:
+			out.append("행동 패널 아래에 빈 칸 (%.0f > 내용 %.0f)" % [table.bottom_region.size.y, content_h])
+		var ys := {}
+		for b: Button in btns:
+			ys[int(b.get_global_rect().position.y)] = true
+		if ys.size() != 1:
+			out.append("데스크톱 버튼 줄이 한 줄이 아님")
+	else:
+		for b: Control in [table.minus_button, table.plus_button]:
+			if b.size.x < 44.0 or b.size.y < 44.0:
+				out.append("%s 폰 터치 크기 부족" % b.name)
+		var fold_r: Rect2 = table.fold_button.get_global_rect()
+		var raise_r: Rect2 = table.raise_button.get_global_rect()
+		if raise_r.position.x - fold_r.end.x < 16.0:
+			out.append("폴드·레이즈 사이 간격 부족 %.0f" % (raise_r.position.x - fold_r.end.x))
+	# 상태별 가용(이 테스트의 행동: 콜 200, 레이즈 400~1000)
+	if hero > 0 and table.my_available_actions != null:
+		if table.fold_button.disabled or not table.check_button.disabled or table.call_button.disabled or table.raise_button.disabled or table.all_in_button.disabled:
+			out.append("행동 버튼 가용 상태가 행동과 다름")
+		if table.call_button.text != "콜 200":
+			out.append("콜 문구 '%s'" % table.call_button.text)
+	return out
 
 
 func _collect_view2(table: Control, hero: int) -> Dictionary:
@@ -263,6 +329,8 @@ func _collect_view2(table: Control, hero: int) -> Dictionary:
 			items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
 	if table.board_label.text != "": # 결과 배너(큰 글자+작은 줄) — 보드 카드와는 겹쳐도 된다(위에 얹는다)
 		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
+	if table.add_chips_button.visible:
+		items.append({"o": "addchips", "k": "addchips", "r": table.add_chips_button.get_global_rect()})
 	if hero > 0 and not table.hand_text_pill.visible:
 		bad_extra.append("폰 족보 알약이 보이지 않음")
 	elif hero > 0:
@@ -409,9 +477,15 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		for c: Control in s.card_rects:
 			if c.visible:
 				inner.append({"n": "cards", "r": c.get_global_rect()})
+		var stack_r: Rect2 = s.stack_label.get_global_rect()
+		if hero > 0 and no == hero: # 내 스택은 글자 폭만(옆 "+" 와 겹치는지 본다)
+			var txt: Rect2 = s.stack_text_rect()
+			stack_r = Rect2(s.global_position + txt.position, txt.size)
+		if hero > 0 and no == hero and table.add_chips_button.visible:
+			inner.append({"n": "addchips", "r": table.add_chips_button.get_global_rect()})
 		for pair: Array in [["name", s.name_label], ["stack", s.stack_label], ["badge_leave", s.badge_leave], ["badge_presence", s.badge_presence], ["hand_pill", s.hand_pill], ["payout", s.payout_label], ["hand_rank", s.hand_rank]]:
 			if (pair[1] as Control).visible:
-				inner.append({"n": pair[0], "r": (pair[1] as Control).get_global_rect()})
+				inner.append({"n": pair[0], "r": stack_r if pair[0] == "stack" else (pair[1] as Control).get_global_rect()})
 		if s.badge_action.visible: # 행동 글자는 자기 패널의 카드 칸 안에 얹힌다(카드와 겹치는 게 목적). 올인·폴드 오버레이와 동시에 보이지 않는다
 			var cr: Rect2 = s.desk_columns(s.hero_slot, s.avatar_left, table.k).cards
 			var cr_g := Rect2(s.global_position + cr.position, cr.size)
@@ -457,7 +531,11 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
 	if table.board_label.text != "":
 		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
-	items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
+	if table.add_chips_button.visible: # 내 패널 안(스택 옆)에 있어야 한다 — 안쪽 요소와 겹치면 아래에서 걸린다
+		var hs: Control = table.seat_nodes[hero - 1]
+		if not Rect2(hs.global_position, hs.size).grow(0.5).encloses(table.add_chips_button.get_global_rect()):
+			bad.append("칩 추가 + 가 내 패널 밖")
+		items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
 	items.append({"o": "ui", "k": "bar", "r": table.bottom_bar.get_global_rect()})
 	items.append({"o": "ui", "k": "topbar", "r": table.top_bar.get_global_rect()})
 	if table.action_bg.visible:

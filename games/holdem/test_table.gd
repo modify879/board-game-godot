@@ -45,6 +45,12 @@ func _ready() -> void:
 	table.my_available_actions = {"canCheck": true, "callAmount": 0.0, "minRaiseTo": null}
 	table._update_action_bar()
 	check(table.action_bar.visible, "action bar visible on my turn")
+	check(not table.fold_button.disabled and not table.check_button.disabled and table.call_button.disabled and table.call_button.text == "콜", "공짜 체크: 폴드·체크 활성, 콜 비활성('콜')")
+	table.my_available_actions = {"canCheck": true, "callAmount": null, "minRaiseTo": null} # 실서버는 콜할 게 없으면 null
+	table._update_action_bar()
+	check(table.call_button.disabled and table.call_button.text == "콜" and not table.check_button.disabled, "callAmount null: 콜 비활성('콜')")
+	check(table.raise_button.disabled and table.all_in_button.disabled and not table.raise_slider.editable and table.raise_button.text == "레이즈", "레이즈 불가: 레이즈·올인·슬라이더 비활성(숨기지 않는다)")
+	check(table.check_button.visible and table.call_button.visible and table.raise_button.visible and table.all_in_button.visible and table.raise_slider.visible, "못 쓰는 버튼도 보인다(자리 고정)")
 	var qs: Dictionary = table.qa_state()
 	check(qs.to_act_seat == 1 and qs.hand_in_progress and qs.board.size() == 3 and qs.seats.size() == 2 and qs.available_actions == ["CHECK", "FOLD"], "qa_state 기본 필드")
 	var names_ok := true
@@ -293,6 +299,7 @@ func _ready() -> void:
 	table.add_chips_pending = false
 	table._handle_public(_view(2000, [my_seat]))
 	check(table.add_chips_button.visible and not table.add_chips_button.disabled, "add chips enabled between hands")
+	check(table.add_chips_button.size.x >= (32.0 if table.desktop else 40.0) and table.add_chips_button.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "add chips '+' size and pointing cursor")
 	table._handle_public(_view(2001, [my_seat], {"handInProgress": true}))
 	check(table.add_chips_button.disabled, "add chips disabled during hand")
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
@@ -318,30 +325,42 @@ func _ready() -> void:
 	check(not table.seat_nodes[0].hero_slot, "unseated: back to normal panel")
 	table._handle_public(_view(2009, [my_seat]))
 
-	# 14c. 나가기 예약: 핸드 중에도 일어서기가 켜져 있고(예약 문구), 예약되면 취소 버튼으로 바뀐다
+	# 14c. 뒤로가기 메뉴: 앉아 있으면 항상 켜져 있고 누르면 메뉴(핸드 중이면 "핸드 후"), 예약되면 버튼 문구가 바뀌고 메뉴는 취소·변경을 준다
 	table._handle_public(_view(2010, [my_seat], {"handInProgress": true}))
-	check(table.stand_button.visible and not table.stand_button.disabled, "stand enabled during hand")
-	check(table.stand_button.text == "핸드 후 관전" and table.leave_room_button.visible and table.leave_room_button.text == "핸드 후 방 나가기" and not table.cancel_leave_button.visible, "two buttons during hand, cancel hidden")
+	check(not table.back_button.disabled and table.back_button.text == "← 방 목록" and not table.leave_menu.visible, "back enabled while seated, menu closed")
+	table.back_button.pressed.emit()
+	check(table.leave_menu.visible and table.menu_spectate.visible and table.menu_leave.visible and not table.menu_cancel_reservation.visible and table.menu_close.visible, "menu in hand: spectate/leave/close")
+	check(table.menu_spectate.text == "핸드 후 관전" and table.menu_leave.text == "핸드 후 나가기", "menu texts during hand")
+	table.menu_close.pressed.emit()
+	check(not table.leave_menu.visible and not table.leave_backdrop.visible, "menu close hides")
 	var reserved_seat := _seat(1, 7)
 	reserved_seat["leaveReserved"] = true
+	table.back_button.pressed.emit()
 	table._handle_public(_view(2011, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
-	check(not table.stand_button.visible and table.cancel_leave_button.visible, "reserved: stand hidden, cancel visible")
+	check(table.back_button.text == "관전 예약됨" and not table.menu_spectate.visible and table.menu_leave.visible and table.menu_cancel_reservation.visible and table.menu_leave.text == "나가기로 변경", "reserved spectate: cancel + switch to leave")
+	table.menu_close.pressed.emit()
 	var other_reserved := _seat(2, 8)
 	other_reserved["leaveReserved"] = true
 	table._handle_public(_view(2012, [my_seat, other_reserved], {"handInProgress": true}))
-	check(table.stand_button.visible and not table.cancel_leave_button.visible, "other seat reserved leaves my buttons alone")
+	check(table.back_button.text == "← 방 목록" and not table.back_button.disabled, "other seat reserved leaves my back button alone")
 	table._handle_public(_view(2013, [my_seat]))
-	check(table.stand_button.text == "일어서기" and table.leave_room_button.text == "방 나가기" and table.leave_room_button.visible, "stand/leave texts between hands")
+	table.back_button.pressed.emit()
+	check(table.menu_spectate.text == "관전" and table.menu_leave.text == "나가기" and table.menu_spectate.visible and table.menu_leave.visible and not table.menu_cancel_reservation.visible, "menu texts between hands")
+	table._handle_public(_view(2013, [_seat(2, 8)]))
+	check(not table.leave_menu.visible and not table.back_button.disabled, "unseated: menu closes, back stays enabled (-> list)")
+	table._handle_public(_view(2013, [my_seat]))
 	# 14d. 방 나가기 의도: 202 → 예약 뷰에서 취소 문구·내 배지가 의도를 따르고, 취소하면 의도가 꺼진다
 	table._handle_public(_view(2014, [my_seat], {"handInProgress": true}))
 	table._apply_stand_result({"ok": true, "status": 202}, true)
 	check(table.leave_room_after_stand, "202 with leave_room sets intent")
 	table._handle_public(_view(2015, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
-	check(table.cancel_leave_button.text == "나가기 예약됨 · 취소" and not table.leave_room_button.visible, "cancel text for leave-room intent")
+	table.back_button.pressed.emit()
+	check(table.back_button.text == "나가기 예약됨" and table.menu_spectate.visible and table.menu_spectate.text == "관전으로 변경" and not table.menu_leave.visible and table.menu_cancel_reservation.visible, "leave-room intent: button text, switch to spectate")
+	table.menu_close.pressed.emit()
 	check(table.seat_nodes[0].badge_leave.visible and table.seat_nodes[0].badge_leave.text == "나가기 예약", "my badge: 나가기 예약")
 	table.leave_room_after_stand = false
 	table._handle_public(_view(2016, [reserved_seat, other_reserved], {"handInProgress": true}))
-	check(table.cancel_leave_button.text == "관전 예약됨 · 취소" and table.seat_nodes[0].badge_leave.text == "관전 예약", "spectate intent texts")
+	check(table.back_button.text == "관전 예약됨" and table.seat_nodes[0].badge_leave.text == "관전 예약", "spectate intent texts")
 	check(table.seat_nodes[1].badge_leave.visible and table.seat_nodes[1].badge_leave.text == "일어서기 예약", "other badge neutral")
 	table.leave_room_after_stand = true
 	table.public_view = _view(2017, [reserved_seat])
@@ -508,6 +527,7 @@ func _ready() -> void:
 	check(table.action_pending, "폴드 확인: canCheck 가 아니면 바로 보낸다")
 	table.action_pending = false
 	table._update_action_bar()
+	check(table.check_button.disabled and not table.call_button.disabled and table.call_button.text == "콜 200" and not table.raise_button.disabled and not table.all_in_button.disabled and table.raise_slider.editable, "콜 200: 체크 비활성, 콜·레이즈·올인 활성")
 	table.raise_slider.value = 400
 	table.plus_button.pressed.emit()
 	check(int(table.raise_slider.value) == 500 and int(table.raise_spin.value) == 500, "+ 버튼은 100 올린다")
