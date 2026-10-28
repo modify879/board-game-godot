@@ -170,10 +170,10 @@ texture_filter = 4
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-custom_minimum_size = Vector2(40, 40)
+custom_minimum_size = Vector2(56, 44)
 mouse_default_cursor_shape = 2
-theme_override_font_sizes/font_size = 22
-text = "+"
+theme_override_font_sizes/font_size = 16
+text = "+ 칩"
 
 [node name="BoardLabel" type="Label" parent="VBoxContainer/FeltArea"]
 unique_name_in_owner = true

@@ -299,9 +299,22 @@ func _ready() -> void:
 	table.add_chips_pending = false
 	table._handle_public(_view(2000, [my_seat]))
 	check(table.add_chips_button.visible and not table.add_chips_button.disabled, "add chips enabled between hands")
-	check(table.add_chips_button.size.x >= (32.0 if table.desktop else 40.0) and table.add_chips_button.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "add chips '+' size and pointing cursor")
+	check(table.add_chips_button.text == "+ 칩" and table.add_chips_button.size.x >= (40.0 if table.desktop else 56.0) and table.add_chips_button.size.y >= (20.0 if table.desktop else 44.0) and table.add_chips_button.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "add chips '+ 칩' text, size and pointing cursor")
+	var my_stack: Label = table.seat_nodes[0].stack_label
+	check(my_stack.mouse_filter == Control.MOUSE_FILTER_STOP and my_stack.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "my stack label clickable between hands")
+	var stack_click := InputEventMouseButton.new()
+	stack_click.button_index = MOUSE_BUTTON_LEFT
+	stack_click.pressed = true
+	my_stack.gui_input.emit(stack_click) # 칩 추가 입력을 연다(버튼과 같은 흐름: 요청이 시작되면 대기 중)
+	check(table.add_chips_pending and table.add_chips_button.disabled, "stack stack_click starts the add-chips flow")
+	table.add_chips_pending = false
+	table.add_chips_gen += 1 # 날아간 조회 응답은 버린다
 	table._handle_public(_view(2001, [my_seat], {"handInProgress": true}))
 	check(table.add_chips_button.disabled, "add chips disabled during hand")
+	check(my_stack.mouse_filter == Control.MOUSE_FILTER_IGNORE and my_stack.mouse_default_cursor_shape == Control.CURSOR_ARROW, "my stack label not clickable during hand")
+	table.add_chips_pending = false
+	my_stack.gui_input.emit(stack_click)
+	check(not table.add_chips_pending, "stack stack_click ignored during hand")
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
 	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
 	my_seat.stack = 20000.0
@@ -310,6 +323,7 @@ func _ready() -> void:
 	my_seat.stack = 1000.0
 	table._handle_public(_view(2004, [_seat(2, 8)]))
 	check(not table.add_chips_button.visible, "add chips hidden when not seated")
+	check(table.seat_nodes[0].stack_label.mouse_filter == Control.MOUSE_FILTER_IGNORE, "stack label not clickable when not seated (spectator)")
 	table._handle_public(_view(2005, [my_seat]))
 	table.add_chips_pending = true
 	table._update_buttons()

@@ -29,6 +29,7 @@ var avatar_left := true # desk 일 때 아바타 열이 왼쪽(바깥쪽이 왼�
 var hero_slot := false # desk 일 때 아래 가운데 큰 패널
 var k := 1.0 # desk 크기 배율
 var markers: Array = [] # 이 좌석에 붙은 D(0)·SB(1)·BB(2). 순서대로 그린다. table.gd 가 set_desktop 보다 먼저 정한다(닉네임 폭이 달라진다)
+var right_reserve := 0.0 # desk 닉네임 줄 오른쪽 끝에 비워 둘 폭(내 패널의 칩 추가 버튼 자리). table.gd 가 set_desktop 보다 먼저 정한다
 var token_center := Vector2.ZERO # 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다(데스크톱·폰 모두)
 signal empty_clicked ## 관전자가 빈 자리를 눌렀다 — table.gd 가 참가 흐름을 연다
 
@@ -205,7 +206,7 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var m := (8.0 if hero else 6.0) * kk # 닉네임은 패널 맨 위, 좌우 여백만 남기고 폭 전체
 	var mw := _markers_width() # 마커가 있으면 닉네임은 남은 폭의 가운데
-	_name_w = size.x - 2.0 * m - mw
+	_name_w = size.x - 2.0 * m - mw - right_reserve
 	name_label.position = Vector2(m + mw, 2.0 * kk)
 	name_label.size = Vector2(_name_w, dy * kk)
 	name_label.add_theme_font_size_override("font_size", _name_fs)

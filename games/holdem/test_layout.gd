@@ -159,12 +159,16 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 			var msg := "btn=%d %s" % [d, b] if "마커" in b else b # 딜러 위치와 무관한 위반은 한 번만
 			if not bad.has(msg):
 				bad.append(msg)
-	if state == "runout": # 올인 런아웃: 베팅 칸은 하나도 없고 사이드 팟 줄은 보인다
+	if state == "sidepots" or state == "runout": # 사이드 팟 줄은 폰·데스크톱 모두 보이고(크기가 있고 글자 12px 이상) 펠트 안에 있다
+		var pl: Label = table.pots_label
+		if not pl.visible or pl.size.x < 20.0 or pl.size.y < 12.0 or pl.get_theme_font_size("font_size") < 12:
+			bad.append("사이드 팟 줄이 안 보임·너무 작음 vis=%s size=%s" % [pl.visible, pl.size])
+		elif not table.felt.get_global_rect().grow(0.5).encloses(pl.get_global_rect()):
+			bad.append("사이드 팟 줄이 펠트 밖 %s (펠트 %s)" % [_s(pl.get_global_rect()), _s(table.felt.get_global_rect())])
+	if state == "runout": # 올인 런아웃: 베팅 칸은 하나도 없다
 		for bb in table.bet_boxes:
 			if bb.visible:
 				bad.append("런아웃인데 베팅 칸이 보임")
-		if not table.pots_label.visible:
-			bad.append("런아웃인데 사이드 팟 줄이 안 보임")
 	var shown_gap := "%.1f" % min_gap
 	print("%-9s %-3d %-9s %-9s %8s" % ["%dx%d" % [sz.x, sz.y], n, "spec" if hero == 0 else str(hero), state, shown_gap])
 	check(bad.is_empty() and min_gap >= MIN_GAP, "%s (min capsule gap %s)%s" % [tag, shown_gap, "" if bad.is_empty() else ": " + "; ".join(bad.slice(0, 8)) + ("" if bad.size() <= 8 else " ... (+%d)" % (bad.size() - 8))])
@@ -567,6 +571,14 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		var hs: Control = table.seat_nodes[hero - 1]
 		if not Rect2(hs.global_position, hs.size).grow(0.5).encloses(table.add_chips_button.get_global_rect()):
 			bad.append("칩 추가 + 가 내 패널 밖")
+		var ab: Rect2 = table.add_chips_button.get_global_rect() # 닉네임 줄(패널 위 name_row·k) 안, 알약 모양(글자 "+ 칩"이 안 잘림)
+		if ab.end.y > hs.global_position.y + (hs.name_row(true) + 4.0) * table.k + 0.5:
+			bad.append("칩 추가 버튼이 닉네임 줄 밖 %s" % _s(ab))
+		if ab.get_center().x < hs.global_position.x + hs.size.x / 2.0:
+			bad.append("칩 추가 버튼이 닉네임 줄 오른쪽 끝이 아님 %s" % _s(ab))
+		var bfont: Font = table.add_chips_button.get_theme_font("font")
+		if bfont.get_string_size(table.add_chips_button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, table.add_chips_button.get_theme_font_size("font_size")).x > ab.size.x - 4.0:
+			bad.append("칩 추가 버튼 글자가 좁은 폭에 잘림")
 		items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
 	items.append({"o": "ui", "k": "bar", "r": table.bottom_bar.get_global_rect()})
 	items.append({"o": "ui", "k": "topbar", "r": table.top_bar.get_global_rect()})

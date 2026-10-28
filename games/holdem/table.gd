@@ -42,6 +42,8 @@ const BET_OUT := 5.0 # 베팅 칸과 자기 패널 가장자리 사이 틈
 const D_BET_W := 64.0 # 베팅 칸 최소 폭(기둥·금액이 더 넓으면 그만큼 넓어진다)
 const D_BOARD_CARD := Vector2(64, 88)
 const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
+const ADD_CHIPS_W := 54.0 # 칩 추가 "+ 칩" 알약 폭(데스크톱 설계 좌표 × k). 내 패널 닉네임 줄 오른쪽 끝
+const PHONE_POTS_H := 18.0 # 폰 사이드 팟 줄 높이 — 가운데 묶음에 늘 비워 둔다(줄이 생겨도 보드가 안 움직인다)
 const D_POTS_W := 400.0 # 사이드 팟 줄 최대 폭(넘으면 …)
 const D_TOTAL_TOP := 371.0 # Total 상자 윗변(보드 아래)
 const D_ACTION := Rect2(832, 476, 432, 196) # 행동 패널(내 패널 오른쪽). 폭·아래변만 쓴다 — 높이는 내용에 맞춰 줄이고 아래변에 붙인다(_fit_action_region)
@@ -163,6 +165,7 @@ var last_post_blind := false
 var last_buy_in := 0 # 재시도·재연결 뒤 다시 요청할 때 같은 바이인을 보낸다
 var show_denied_hand := -1 # SHOW_NOT_ALLOWED 를 받은 hand_counter — 그 판 동안은 버튼을 다시 띄우지 않는다
 var show_pending := false # 패 보여 주기 요청 진행 중
+var pots_gap: Control # 폰 전용: 가운데 묶음에서 사이드 팟 줄 자리를 비워 두는 빈칸
 var add_chips_gen := 0 # 칩 추가 입력을 열 때마다 올린다 — 늦게 온 buy-in 응답을 거른다
 var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이다
 var add_chips_max_stack := 0 # 칩 추가 입력을 열 때 받은 buy-in 응답
@@ -232,12 +235,14 @@ func _ready() -> void:
 		edit_style.content_margin_left = 4
 		edit_style.content_margin_right = 4
 		spin_edit.add_theme_stylebox_override(style_name, edit_style)
-	for style_name in ["normal", "hover", "pressed", "disabled", "focus"]: # 칩 추가 "+" 는 작은 정사각 — 테마 여백을 줄여 32px 에 들어가게
+	for style_name in ["normal", "hover", "pressed", "disabled", "focus"]: # 칩 추가 "+ 칩" 은 작은 알약 — 테마 여백을 줄이고 둥글게
 		var plus_style: StyleBox = add_chips_button.get_theme_stylebox(style_name).duplicate()
-		plus_style.content_margin_left = 2
-		plus_style.content_margin_right = 2
+		plus_style.content_margin_left = 4
+		plus_style.content_margin_right = 4
 		plus_style.content_margin_top = 0
 		plus_style.content_margin_bottom = 0
+		if plus_style is StyleBoxFlat:
+			plus_style.set_corner_radius_all(22)
 		add_chips_button.add_theme_stylebox_override(style_name, plus_style)
 	check_button.pressed.connect(_send_play_action.bind("CHECK"))
 	call_button.pressed.connect(_send_play_action.bind("CALL"))
@@ -333,6 +338,21 @@ func _process(_delta: float) -> void:
 	_update_turn_timer()
 
 
+## 폰: 사이드 팟 줄은 팟 줄 바로 아래 둘째 줄이다 — 같은 줄(HBox)에 두면 폭이 0 으로 눌려 안 보였다. 씬 기본이 폰이라 _apply_mode 가 첫 호출엔 이 분기를 안 거치므로 시작할 때도 부른다
+func _phone_pots_line() -> void:
+	pots_label.reparent(felt_area, false)
+	felt_area.move_child(pots_label, motion.get_index())
+	pots_label.custom_minimum_size = Vector2.ZERO
+	pots_label.add_theme_font_size_override("font_size", 13)
+	if pots_gap == null: # 중앙 묶음 안 팟 줄과 보드 사이에 줄 높이만큼 늘 비워 둔다
+		pots_gap = Control.new()
+		pots_gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		center_box.add_child(pots_gap)
+		center_box.move_child(pots_gap, 1)
+	pots_gap.custom_minimum_size = Vector2(0, PHONE_POTS_H)
+	pots_gap.show()
+
+
 func _build_seats() -> void:
 	for seat_no in range(1, 10):
 		var box := BoxContainer.new()
@@ -364,6 +384,7 @@ func _build_seats() -> void:
 		felt_area.add_child(seat_node)
 		seat_node.empty_clicked.connect(_open_sit_popup) # 관전 중 빈 자리 = 참가 버튼과 같은 흐름
 		seat_nodes.append(seat_node)
+		seat_node.stack_label.gui_input.connect(_on_stack_input.bind(seat_no)) # 내 스택 글자도 칩 추가 단축 — 눌리는지는 _update_buttons 가 정한다
 	hand_text_pill = Label.new()
 	hand_text_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hand_text_pill.add_theme_font_size_override("font_size", 12)
@@ -397,6 +418,7 @@ func _build_seats() -> void:
 	board_label.add_theme_constant_override("outline_size", 6)
 	felt_area.move_child(board_label, -1)
 	felt_area.add_child(motion) # 마지막 자식 = 맨 위
+	_phone_pots_line()
 	felt_area.move_child(add_chips_button, motion.get_index()) # 칩 추가 "+" 는 좌석 위
 	_render_seats()
 
@@ -454,6 +476,7 @@ func _apply_mode() -> void:
 		pot_row.hide() # 팟은 Total 상자가 보인다
 		pots_label.reparent(felt_area, false)
 		felt_area.move_child(pots_label, motion.get_index())
+		pots_gap.hide()
 	else:
 		bottom_region.reparent(vbox, false)
 		vbox.move_child(bottom_region, -1)
@@ -488,9 +511,7 @@ func _apply_mode() -> void:
 		top_bar.add_theme_constant_override("margin_bottom", 8)
 		pot_row.show()
 		total_box.hide()
-		pots_label.reparent(pot_row, false)
-		pots_label.custom_minimum_size = Vector2.ZERO
-		pots_label.add_theme_font_size_override("font_size", 12)
+		_phone_pots_line()
 		bottom_bar.custom_minimum_size = Vector2.ZERO
 		felt_style.set_border_width_all(FELT_RIM)
 		for box: BoxContainer in bet_boxes:
@@ -614,6 +635,7 @@ func _place_desktop(g: Dictionary, hero: int) -> void:
 		var v := posmod(seat_no - hero, 9)
 		var sl: Dictionary = g.slots[v]
 		var seat_node: Control = seat_nodes[seat_no - 1]
+		seat_node.right_reserve = (ADD_CHIPS_W + 4.0) * k if v == 0 and hero_render else 0.0 # 닉네임 줄 오른쪽 끝은 칩 추가 알약 자리
 		seat_node.set_desktop(k, v == 0 and hero_render, sl.left)
 		seat_node.position = (sl.panel as Rect2).position
 		_render_seat(seat_no, seat_node)
@@ -654,9 +676,10 @@ func _layout() -> Dictionary:
 	# 가운데 묶음(팟·보드·결과 문구): 내 카드 위에 붙이되 펠트 안에 둔다
 	var clear := 26.0 if compact else 16.0 # 내 카드와의 간격
 	var avail_h := hero_top - clear - (rect.position.y + FELT_RIM + 8.0)
-	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 36.0) / CARD_ASPECT), 36.0, 72.0)
+	var pots_h := 0.0 if desktop else PHONE_POTS_H + 4.0 # 폰: 사이드 팟 줄
+	var card_w := clampf(minf((rect.size.x - 90.0 - 24.0) / 5.0, (avail_h - 36.0 - pots_h) / CARD_ASPECT), 36.0, 72.0)
 	var card_h := roundf(card_w * CARD_ASPECT)
-	var block_h := 28.0 + 4.0 + card_h
+	var block_h := 28.0 + 4.0 + pots_h + card_h
 	var block_w := card_w * 5.0 + 24.0
 	var block_top := maxf(rect.position.y + FELT_RIM + 8.0, minf(c.y - block_h / 2.0, hero_top - clear - block_h)) # 세로(compact)는 내 베팅 칩 자리를 비워 둔다
 	# 보드가 좌우 끝 좌석(캡슐)보다 넓으면 그 좌석 위로 올린다 — 좁은 세로 화면의 9인 테이블
@@ -674,6 +697,7 @@ func _layout() -> Dictionary:
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
 	my_cards_box.position = Vector2(c.x - my_cards_box.size.x / 2.0, hero_top)
 	var g := {"center": c, "rx": rect.size.x / 2.0, "ry": rect.size.y / 2.0, "cap": cap, "hc": hc, "hero_top": hero_top}
+	_layout_pots_label()
 	_place_board_label()
 	return g
 
@@ -1243,7 +1267,7 @@ func _update_pot() -> void:
 	var pots := PublicView.pot_labels(public_view)
 	pots_label.text = "  ·  ".join(pots)
 	pots_label.visible = not pots.is_empty() and (desktop or show_pot) # 데스크톱은 결과 중에도 남는다(서버가 최종 구성을 유지)
-	if desktop and total_box.size.y > 0.0:
+	if total_box.size.y > 0.0 if desktop else center_box.size.y > 0.0:
 		_layout_pots_label()
 
 
@@ -1251,6 +1275,14 @@ func _update_pot() -> void:
 func _layout_pots_label() -> void:
 	var fs := pots_label.get_theme_font_size("font_size")
 	var tw := pots_label.get_theme_font("font").get_string_size(pots_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	if not desktop: # 폰: 가운데 묶음의 팟 줄 아래 가운데, 펠트 안에 가둔다
+		var inner := felt.size.x - 2.0 * (FELT_RIM + 6.0)
+		pots_label.custom_minimum_size = Vector2(minf(tw + 2.0, inner), 0)
+		pots_label.reset_size()
+		var cx := center_box.position.x + center_box.size.x / 2.0
+		var x := clampf(cx - pots_label.size.x / 2.0, felt.position.x + FELT_RIM + 6.0, felt.position.x + felt.size.x - FELT_RIM - 6.0 - pots_label.size.x)
+		pots_label.position = Vector2(x, center_box.position.y + 28.0 + 4.0)
+		return
 	pots_label.custom_minimum_size = Vector2(minf(tw + 2.0, D_POTS_W * k), 0)
 	pots_label.reset_size()
 	pots_label.position = total_box.position + Vector2((total_box.size.x - pots_label.size.x) / 2.0, total_box.size.y + 4.0 * k)
@@ -1365,23 +1397,23 @@ func _render_seats() -> void:
 	_place_payouts(hero, g)
 
 
-## 칩 추가 "+": 내 좌석 스택 바로 옆(데스크톱은 글자 오른쪽, 폰은 캡슐 왼쪽). 관전 중엔 숨긴다(_update_buttons 가 visible 을 정한다)
+## 칩 추가 "+ 칩": 데스크톱은 내 패널 닉네임 줄 오른쪽 끝(마커는 왼쪽 끝), 폰은 캡슐 왼쪽. 관전 중엔 숨긴다(_update_buttons 가 visible 을 정한다)
 func _place_add_chips() -> void:
 	var me := _my_seat_no()
 	if me == -1:
 		return
 	var seat_node: Control = seat_nodes[me - 1]
-	var side := maxf(32.0, 26.0 * k) if desktop else 40.0 # 데스크톱: 스택 줄 높이(26·k)를 넘지 않게(아래 족보 칸과 안 겹친다)
-	add_chips_button.custom_minimum_size = Vector2(side, side)
-	add_chips_button.size = Vector2(side, side)
-	add_chips_button.add_theme_font_size_override("font_size", 20 if desktop else 22)
-	var tr: Rect2 = seat_node.stack_text_rect()
-	var x := seat_node.position.x + tr.end.x + 4.0 # 데스크톱: 내 패널의 스택 글자 바로 오른쪽
-	var cy := seat_node.position.y + tr.get_center().y
-	if not desktop: # 폰: 캡슐은 작아 안에 못 들어간다 — 캡슐 왼쪽 가장자리에 붙인다(오른쪽은 행동 토큰·지급액 자리)
-		x = seat_node.position.x - side - 4.0
-		cy = seat_node.position.y + seat_node.size.y / 2.0
-	add_chips_button.position = Vector2(clampf(x, 4.0, felt_area.size.x - side - 4.0), cy - side / 2.0)
+	var sz := Vector2(ADD_CHIPS_W * k, 24.0 * k) if desktop else Vector2(56.0, 44.0)
+	add_chips_button.custom_minimum_size = sz
+	add_chips_button.size = sz
+	add_chips_button.add_theme_font_size_override("font_size", int(round(14.0 * k)) if desktop else 16)
+	if desktop: # 닉네임 줄(위 여백 2·k + 줄 높이 26·k) 세로 가운데, 패널 오른쪽 안쪽 여백 8·k
+		var row_h := SeatScript.name_row(true) * k
+		add_chips_button.position = seat_node.position + Vector2(seat_node.size.x - 8.0 * k - sz.x, 2.0 * k + (row_h - sz.y) / 2.0)
+		return
+	var x := seat_node.position.x - sz.x - 4.0 # 폰: 캡슐은 작아 안에 못 들어간다 — 캡슐 왼쪽 가장자리에 붙인다(오른쪽은 행동 토큰·지급액 자리)
+	var cy := seat_node.position.y + seat_node.size.y / 2.0
+	add_chips_button.position = Vector2(clampf(x, 4.0, felt_area.size.x - sz.x - 4.0), cy - sz.y / 2.0)
 
 
 ## 폰: 칩 추가 "+" 자리(앉아 있을 때만 — visible 은 뒤에 정해지므로 좌석으로 본다)
@@ -1666,6 +1698,10 @@ func _update_buttons() -> void:
 	show_hand_button.disabled = show_pending
 	add_chips_button.visible = seated
 	add_chips_button.disabled = not can_add or add_chips_pending
+	for n: Control in seat_nodes: # 내 스택 글자: 버튼이 눌리는 때만 눌리고 손 모양 커서
+		var on: bool = seated and seat_nodes.find(n) == _my_seat_no() - 1 and not add_chips_button.disabled
+		n.stack_label.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+		n.stack_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if on else Control.CURSOR_ARROW
 	if not can_add:
 		add_chips_box.hide() # 판이 시작되거나 일어서면 열려 있던 입력을 닫는다
 	join_button.visible = _can_join_visible()
@@ -1964,6 +2000,13 @@ func _on_show_hand_pressed() -> void:
 		if r.error == "SHOW_NOT_ALLOWED":
 			show_denied_hand = hand_counter
 	_update_buttons()
+
+
+## 내 스택 글자를 누르면 칩 추가 버튼과 같다(버튼이 눌리는 때만)
+func _on_stack_input(event: InputEvent, seat_no: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and seat_no == _my_seat_no() and add_chips_button.visible and not add_chips_button.disabled:
+		_on_add_chips_pressed()
 
 
 func _on_add_chips_pressed() -> void:
