@@ -15,6 +15,10 @@ const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
 const AVATAR_COLORS := [Color("8FC9DC"), Color("93BEE6"), Color("A3B5EA"), Color("B9A8E6"), Color("E6A8C4"), Color("9FD6C2")]
 const WARN_SECONDS := 5.0
+const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")] # D·SB·BB
+const MARKER_DESK := 19.0 # 데스크톱 마커 한 변(설계 좌표, × k)
+const MARKER_PHONE := 18.0 # 폰 마커 한 변(px)
+const MARKER_GAP := 2.0 # 마커 사이 간격(설계 좌표)
 const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
 const NAME_MIN_PHONE := 10 # 닉네임 글자 최소 크기(폰, px). 한 줄에 안 들어오면 두 줄로 줄바꿈한다(캡슐을 못 넓힌다: 9인 세로 화면에서 옆 좌석과 겹친다)
 const NAME_MIN_DESK := 12.0 # 데스크톱 최소 크기(× k)
@@ -24,6 +28,7 @@ var desk := false # 데스크톱 패널 모양(table.gd 가 set_desktop 으로 �
 var avatar_left := true # desk 일 때 아바타 열이 왼쪽(바깥쪽이 왼쪽인 좌석)인지
 var hero_slot := false # desk 일 때 아래 가운데 큰 패널
 var k := 1.0 # desk 크기 배율
+var markers: Array = [] # 이 좌석에 붙은 D(0)·SB(1)·BB(2). 순서대로 그린다. table.gd 가 set_desktop 보다 먼저 정한다(닉네임 폭이 달라진다)
 var token_center := Vector2.ZERO # 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다(데스크톱·폰 모두)
 signal empty_clicked ## 관전자가 빈 자리를 눌렀다 — table.gd 가 참가 흐름을 연다
 
@@ -199,8 +204,9 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var m := (8.0 if hero else 6.0) * kk # 닉네임은 패널 맨 위, 좌우 여백만 남기고 폭 전체
-	_name_w = size.x - 2.0 * m
-	name_label.position = Vector2(m, 2.0 * kk)
+	var mw := _markers_width() # 마커가 있으면 닉네임은 남은 폭의 가운데
+	_name_w = size.x - 2.0 * m - mw
+	name_label.position = Vector2(m + mw, 2.0 * kk)
 	name_label.size = Vector2(_name_w, dy * kk)
 	name_label.add_theme_font_size_override("font_size", _name_fs)
 	if hero:
@@ -375,6 +381,40 @@ func _fit_name_phone(font: Font) -> void:
 func _name_lines(font: Font, fs: int) -> int:
 	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_GRAPHEME_BOUND
 	return roundi(font.get_multiline_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, _name_w, fs, -1, flags).y / font.get_height(fs))
+
+
+func set_markers(kinds: Array) -> void:
+	if kinds == markers:
+		return
+	markers = kinds
+	queue_redraw()
+
+
+## 데스크톱: 닉네임 줄 왼쪽 끝이 마커 줄이 차지하는 폭(마커 뒤 간격 4 포함). 없으면 0
+func _markers_width() -> float:
+	if markers.is_empty():
+		return 0.0
+	return (markers.size() * (MARKER_DESK + MARKER_GAP) + 2.0) * k
+
+
+## 마커 사각(좌석 로컬 좌표, markers 와 같은 순서). 데스크톱은 닉네임 줄 왼쪽 끝에서 오른쪽으로, 폰은 아바타 원 오른쪽 위 모서리에서 왼쪽으로 늘어선다(마지막 것이 모서리)
+func marker_rects() -> Array:
+	var out: Array = []
+	var n := markers.size()
+	for i in n:
+		if desk:
+			var side := MARKER_DESK * k
+			var m := (8.0 if hero_slot else 6.0) * k
+			out.append(Rect2(m + i * (side + MARKER_GAP * k), 2.0 * k + (name_row(hero_slot) * k - side) / 2.0, side, side))
+		else:
+			out.append(Rect2(_phone_x0 - 2.0 - MARKER_PHONE - (n - 1 - i) * (MARKER_PHONE + MARKER_GAP), 3.0, MARKER_PHONE, MARKER_PHONE))
+	return out
+
+
+func _draw_markers() -> void:
+	var rects := marker_rects()
+	for i in rects.size():
+		draw_texture_rect(MARKER_TEXTURES[markers[i]], rects[i], false, _dim if desk else Color.WHITE)
 
 
 func _empty_rect() -> Rect2:
@@ -651,6 +691,7 @@ func _draw() -> void:
 	_style.set_corner_radius_all(int(size.y / 2.0))
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(Vector2(size.y / 2.0, size.y / 2.0), (size.y - 14.0) / 2.0, _avatar_color, 1.0)
+	_draw_markers()
 	if timer_left >= 0.0:
 		_draw_timer_bar(timer_bar_rect())
 
@@ -694,5 +735,6 @@ func _draw_desk() -> void:
 	_style.set_corner_radius_all(radius)
 	_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
 	_draw_avatar(_avatar_c, _avatar_r, _avatar_color * Color(1, 1, 1, _dim.a), _dim.a, true)
+	_draw_markers()
 	if timer_left >= 0.0:
 		_draw_timer_bar(timer_bar_rect())

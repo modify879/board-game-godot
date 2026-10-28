@@ -7,7 +7,7 @@ var failures := 0
 
 func _seat(no: int, user: int, status := "ACTIVE") -> Dictionary:
 	return {"seatNo": float(no), "userId": float(user), "stack": 1000.0, "status": status,
-		"presence": "CONNECTED", "totalContributed": 0.0, "leaveReserved": false}
+		"presence": "CONNECTED", "totalContributed": 0.0, "streetBet": 0.0, "leaveReserved": false}
 
 
 func _view(seq: int, seats: Array, extra := {}) -> Dictionary:
@@ -456,6 +456,16 @@ func _ready() -> void:
 	table._handle_public(_view(391, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN", "tableName": "친구들 방", "pots": []}))
 	check(not table.pots_label.visible and table.qa_state().pot_labels.is_empty(), "팟 0개면 사이드 팟 줄 없음")
 
+	# 베팅 칸은 서버 streetBet 을 읽는다. 올인 런아웃(streetBet 0, 팟만 있음)엔 베팅 칸이 없다
+	var bet_seats := [_seat(1, 7), _seat(2, 8)]
+	bet_seats[0]["streetBet"] = 500.0
+	bet_seats[0]["totalContributed"] = 900.0 # 앞 스트리트에서 400 은 팟으로 갔다 — 칸에는 streetBet 만
+	table._handle_public(_view(392, bet_seats, {"handInProgress": true, "toActSeatNo": 2.0, "street": "TURN"}))
+	check(table.bet_boxes[0].visible and (table.bet_boxes[0].get_child(1) as Label).text == "500" and not table.bet_boxes[1].visible, "streetBet 만 베팅 칸에 보인다")
+	var run_seats := [_seat(1, 7, "ALL_IN"), _seat(2, 8, "ALL_IN")]
+	table._handle_public(_view(393, run_seats, {"handInProgress": true, "toActSeatNo": null, "street": "TURN", "pot": 1300.0, "pots": [{"amount": 900.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 400.0, "eligibleSeatNos": [1.0]}]}))
+	check(not table.bet_boxes[0].visible and not table.bet_boxes[1].visible and table.pots_label.visible, "올인 런아웃: streetBet 0 이면 베팅 칸 없고 사이드 팟 줄은 보인다")
+
 	# 마지막 행동 배지: lastAction 이 있으면 정산 뒤(handInProgress=false)에도 남고, null 이면 숨는다
 	var acted := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
 	acted[0]["lastAction"] = "RAISE_TO"
@@ -482,20 +492,15 @@ func _ready() -> void:
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 4500.0}, 3, 7, false, "qauser2") == "좌석 2 qauser2  -500", "핸드 기록: 타인·닉네임·손실")
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5100.0}, 3, -1, true, "qauser2") == "좌석 2 qauser2 (회원 #8)  +100", "핸드 기록: 관리자 닉네임")
 
-	# 3b. 블라인드 마커 — 핸드 중에만, 해당 좌석 곁(캡슐 중심에서 가까운 곳)에
+	# 3b. 블라인드 마커 — 핸드 중에만, 해당 좌석 안에(헤즈업은 D+SB 가 한 좌석에 D, SB 순)
 	var bl := {"handInProgress": true, "buttonSeatNo": 1.0, "smallBlindSeatNo": 1.0, "bigBlindSeatNo": 2.0}
 	table._handle_public(_view(3000, [_seat(1, 7), _seat(2, 8)], bl))
-	var near_ok := true
-	for pair: Array in [[table.sb_marker, 1], [table.bb_marker, 2]]:
-		var bsn: Control = table.seat_nodes[pair[1] - 1]
-		near_ok = near_ok and pair[0].visible and (pair[0].position + pair[0].size / 2.0).distance_to(bsn.position + bsn.size / 2.0) < 160.0
-	check(near_ok, "SB·BB 마커가 핸드 중 해당 좌석 곁에 보인다")
-	check(not Rect2(table.dealer_marker.position, table.dealer_marker.size).intersects(Rect2(table.sb_marker.position, table.sb_marker.size)), "헤즈업 D·SB 마커가 겹치지 않는다")
+	check(table.seat_nodes[0].markers == [0, 1] and table.seat_nodes[1].markers == [2], "헤즈업 마커: 1번 D·SB, 2번 BB")
 	var qb: Dictionary = table.qa_state()
 	check(qb.sb_seat_no == 1 and qb.bb_seat_no == 2, "qa_state sb_seat_no·bb_seat_no")
 	table._handle_public(_view(3001, [_seat(1, 7), _seat(2, 8)], bl.merged({"handInProgress": false}, true)))
 	qb = table.qa_state()
-	check(not table.sb_marker.visible and not table.bb_marker.visible and qb.sb_seat_no == -1 and qb.bb_seat_no == -1, "핸드 밖에서는 SB·BB 마커 숨김")
+	check(table.seat_nodes[0].markers == [0] and table.seat_nodes[1].markers.is_empty() and qb.sb_seat_no == -1 and qb.bb_seat_no == -1, "핸드 밖에서는 D 만 남고 SB·BB 마커 숨김")
 
 	# currentHand → 족보 문구
 	table._handle_public(_view(3100, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))

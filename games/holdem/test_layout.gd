@@ -23,7 +23,7 @@ var seq := 0
 
 func _seat(no: int, user: int, status := "ACTIVE", extra := {}) -> Dictionary:
 	var s := {"seatNo": float(no), "userId": float(user), "stack": 1000.0, "status": status,
-		"presence": "CONNECTED", "totalContributed": 0.0, "leaveReserved": false}
+		"presence": "CONNECTED", "totalContributed": 0.0, "streetBet": 0.0, "leaveReserved": false}
 	s.merge(extra, true)
 	return s
 
@@ -66,7 +66,7 @@ func _ready() -> void:
 		table.settings_close.pressed.emit()
 		for n in [2, 9]:
 			for hero in [1, 5, 0]: # 0 = 관전
-				for state in ["preflop", "showdown", "sidepots"]:
+				for state in ["preflop", "showdown", "sidepots", "runout"]:
 					await _run_case(table, sz, n, hero, state)
 		worst = true # 모든 좌석이 12자 최악 닉네임
 		for hero in [5, 0]:
@@ -87,8 +87,12 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		table.nickname_cache[user] = WORST[i % WORST.size()] if worst else "플레이어%d" % no
 		var status := "ACTIVE"
 		var extra := {}
+		if state == "runout":
+			extra["totalContributed"] = 5000.0
+			status = "ALL_IN"
 		if state == "preflop" or state == "sidepots":
 			extra["totalContributed"] = 180000.0 if i % 2 == 1 else 200.0 # 넓은 금액 문구도 본다
+			extra["streetBet"] = extra["totalContributed"]
 		else: # 배지 최악: 3개 다(예약·올인·끊김), 하나, 올인
 			if i % 3 == 0:
 				extra["leaveReserved"] = true
@@ -106,7 +110,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 	var hole := ["As", "Kd"]
 	if state != "showdown":
 		view_extra = {"handInProgress": true, "pot": 3000.0, "toActSeatNo": float(hero if hero > 0 else nos[0])}
-		if state == "sidepots": # 팟 3개(최악 폭: 큰 금액)
+		if state == "sidepots" or state == "runout": # 팟 3개(최악 폭: 큰 금액). runout = 올인 런아웃: 모두 올인, streetBet 0 — 베팅 칸 없이 사이드 팟 줄만
 			view_extra.pots = [{"amount": 1234567.0, "eligibleSeatNos": [1.0, 2.0, 3.0]}, {"amount": 1234567.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 1234567.0, "eligibleSeatNos": [1.0]}]
 	else:
 		var payouts := []
@@ -152,9 +156,15 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		var r := _collect(table, hero)
 		min_gap = minf(min_gap, r.gap)
 		for b: String in r.bad:
-			var msg := "btn=%d %s" % [d, b] if "dealer" in b else b # 딜러 위치와 무관한 위반은 한 번만
+			var msg := "btn=%d %s" % [d, b] if "마커" in b else b # 딜러 위치와 무관한 위반은 한 번만
 			if not bad.has(msg):
 				bad.append(msg)
+	if state == "runout": # 올인 런아웃: 베팅 칸은 하나도 없고 사이드 팟 줄은 보인다
+		for bb in table.bet_boxes:
+			if bb.visible:
+				bad.append("런아웃인데 베팅 칸이 보임")
+		if not table.pots_label.visible:
+			bad.append("런아웃인데 사이드 팟 줄이 안 보임")
 	var shown_gap := "%.1f" % min_gap
 	print("%-9s %-3d %-9s %-9s %8s" % ["%dx%d" % [sz.x, sz.y], n, "spec" if hero == 0 else str(hero), state, shown_gap])
 	check(bad.is_empty() and min_gap >= MIN_GAP, "%s (min capsule gap %s)%s" % [tag, shown_gap, "" if bad.is_empty() else ": " + "; ".join(bad.slice(0, 8)) + ("" if bad.size() <= 8 else " ... (+%d)" % (bad.size() - 8))])
@@ -206,9 +216,39 @@ func _name_bad(table: Control, sz: Vector2) -> Array:
 	return out
 
 
+## D·SB·BB 마커는 자기 좌석 패널·캡슐 안에 있고, 서로·닉네임 라벨·스택 글자와 안 겹치며, 공개 뷰의 버튼·블라인드 좌석과 일치해야 한다
+func _markers_bad(table: Control) -> Array:
+	var out: Array = []
+	var want := {}
+	var blinds := PublicView.blind_seats(table.public_view)
+	var btn = table.public_view.get("buttonSeatNo")
+	for pair: Array in [[0, int(btn) if btn != null else -1], [1, blinds.sb], [2, blinds.bb]]:
+		if PublicView.find_seat(table.public_view, pair[1]) != null:
+			want[pair[1]] = want.get(pair[1], []) + [pair[0]]
+	for no in range(1, 10):
+		var s: Control = table.seat_nodes[no - 1]
+		if s.markers != want.get(no, []):
+			out.append("seat%d 마커 %s (기대 %s)" % [no, s.markers, want.get(no, [])])
+		var panel := Rect2(s.global_position, s.size)
+		var rects: Array = s.marker_rects().map(func(r: Rect2) -> Rect2: return Rect2(s.global_position + r.position, r.size))
+		for i in rects.size():
+			var r: Rect2 = rects[i]
+			if not panel.grow(0.5).encloses(r):
+				out.append("seat%d 마커 %d 가 패널 밖 %s (패널 %s)" % [no, s.markers[i], _s(r), _s(panel)])
+			if s.name_label.visible and _in(r).intersects(_in(s.name_label.get_global_rect())):
+				out.append("seat%d 마커 %d x 닉네임 %s %s" % [no, s.markers[i], _s(r), _s(s.name_label.get_global_rect())])
+			if s.stack_label.visible and _in(r).intersects(_in(s.stack_label.get_global_rect())):
+				out.append("seat%d 마커 %d x 스택 %s" % [no, s.markers[i], _s(r)])
+			for j in range(i + 1, rects.size()):
+				if _in(r).intersects(_in(rects[j])):
+					out.append("seat%d 마커 %d x %d 겹침" % [no, s.markers[i], s.markers[j]])
+	return out
+
+
 func _collect_view(table: Control, hero: int) -> Dictionary:
 	var r := _collect_view2(table, hero)
 	r.bad.append_array(_name_bad(table, table.get_global_rect().size))
+	r.bad.append_array(_markers_bad(table))
 	r.bad.append_array(_actions_bad(table, hero))
 	return r
 
@@ -314,11 +354,6 @@ func _collect_view2(table: Control, hero: int) -> Dictionary:
 			items.append({"o": o, "k": "timer", "r": Rect2(s.global_position + s.timer_bar_rect().position, s.timer_bar_rect().size)})
 		if table.bet_boxes[no - 1].visible:
 			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
-	if table.dealer_marker.visible:
-		items.append({"o": "dealer", "k": "dealer", "r": table.dealer_marker.get_global_rect()})
-	for pair: Array in [["dealer-sb", table.sb_marker], ["dealer-bb", table.bb_marker]]: # 딜러와 같은 종류(o 가 달라 마커끼리 겹침도 본다)
-		if pair[1].visible:
-			items.append({"o": pair[0], "k": "dealer", "r": pair[1].get_global_rect()})
 	for c: Control in table.board_card_rects:
 		if c.visible:
 			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})
@@ -519,9 +554,6 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 					bad.append("%s/%s x %s %s %s" % [o, inner[i].n, inner[j].n, _s(inner[i].r), _s(inner[j].r)])
 		if table.bet_boxes[no - 1].visible:
 			items.append({"o": o, "k": "bet", "r": table.bet_boxes[no - 1].get_global_rect()})
-	for pair: Array in [["dealer", table.dealer_marker], ["dealer-sb", table.sb_marker], ["dealer-bb", table.bb_marker]]:
-		if pair[1].visible:
-			items.append({"o": pair[0], "k": "marker", "r": pair[1].get_global_rect()})
 	for c: Control in table.board_card_rects:
 		if c.visible:
 			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})
@@ -568,19 +600,6 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 				var bgap := _gap(it.r, panels[own])
 				if bgap > 14.0 * table.k:
 					bad.append("%s/bet 이 자기 패널에서 멂 (%.0f)" % [it.o, bgap])
-	for pair: Array in [["dealer", table.dealer_marker, 0], ["dealer-sb", table.sb_marker, 1], ["dealer-bb", table.bb_marker, 2]]:
-		if not pair[1].visible:
-			continue
-		var seat_no: int = int(table.public_view.get("buttonSeatNo")) if pair[2] == 0 else int(PublicView.blind_seats(table.public_view)["sb" if pair[2] == 1 else "bb"])
-		var near := _nearest_panel((pair[1] as Control).get_global_rect(), panels)
-		if near != seat_no:
-			bad.append("%s 마커의 가장 가까운 패널이 seat%d (주인 seat%d)" % [pair[0], near, seat_no])
-	for pair: Array in [["dealer", table.dealer_marker, 0], ["dealer-sb", table.sb_marker, 1], ["dealer-bb", table.bb_marker, 2]]: # 마커는 자기 패널 바로 곁(틈 12px 이내)
-		if pair[1].visible:
-			var own_no: int = int(table.public_view.get("buttonSeatNo")) if pair[2] == 0 else int(PublicView.blind_seats(table.public_view)["sb" if pair[2] == 1 else "bb"])
-			var mgap := _gap((pair[1] as Control).get_global_rect(), panels[own_no])
-			if mgap > 12.0 * table.k:
-				bad.append("%s 마커가 자기 패널에서 멂 (%.0f)" % [pair[0], mgap])
 	if table.pot_row.visible:
 		bad.append("데스크톱에서 PotRow 가 보임")
 	if table.action_bg.get_index() > table.bottom_region.get_index() or table.my_cards_box.get_index() < table.seat_nodes[8].get_index():
@@ -589,9 +608,6 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 		bad.append("데스크톱 HandRank 가 보이지 않음")
 	if table.hand_text_pill.visible:
 		bad.append("데스크톱에서 폰 족보 알약이 보임")
-	for m: Control in [table.dealer_marker, table.sb_marker, table.bb_marker]:
-		if m.visible and m.size.x < 24.0 * table.k:
-			bad.append("마커가 너무 작음 %s" % m.size)
 	var gap := INF
 	var keys := panels.keys()
 	for i in keys.size():

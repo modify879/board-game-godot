@@ -126,14 +126,8 @@ func _init() -> void:
 	var zero: Dictionary = fold_win.duplicate(true)
 	zero.result.payouts[0].amount = 0
 	check(not pv.can_show_hand(zero, 10) and not pv.can_show_hand({}, 10), "can_show_hand 지급 0·결과 없음 false")
-	check(pv.street_base({"street": "PREFLOP", "seats": seats}).is_empty(), "street_base 프리플랍은 비어 있음")
-	var base: Dictionary = pv.street_base(view)
-	check(base == {1: 300, 4: 100, 7: 500, 8: 0}, "street_base 플랍은 totalContributed")
-	check(pv.street_bet({"seatNo": 1, "totalContributed": 450}, base) == 150, "street_bet 차이")
-	check(pv.street_bet({"seatNo": 1, "totalContributed": 200}, base) == 0, "street_bet 0 으로 자름")
-	check(pv.street_bet({"seatNo": 2, "totalContributed": 200}, base) == 200, "street_bet base 없으면 전액")
-	var bet_view := {"seats": [{"seatNo": 1, "totalContributed": 450}, {"seatNo": 7, "totalContributed": 800}]}
-	check(pv.current_max_bet(bet_view, base) == 300 and pv.current_max_bet({}, {}) == 0, "current_max_bet")
+	check(pv.street_bet({"seatNo": 1, "streetBet": 150.0}) == 150, "street_bet 서버 streetBet 을 그대로 읽음")
+	check(pv.street_bet({"seatNo": 1, "streetBet": null}) == 0 and pv.street_bet({"seatNo": 1}) == 0, "street_bet null·없음 = 0")
 	var al := func(extra: Dictionary) -> String: return pv.action_label({"status": "ACTIVE"}.merged(extra, true))
 	check(al.call({"lastAction": "FOLD"}) == "폴드" and al.call({"lastAction": "CHECK"}) == "체크", "action_label 폴드·체크")
 	check(al.call({"lastAction": "CALL"}) == "콜" and al.call({"lastAction": "RAISE_TO"}) == "레이즈", "action_label 콜·레이즈")

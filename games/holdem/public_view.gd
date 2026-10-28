@@ -93,25 +93,10 @@ static func can_show_hand(view: Dictionary, user_id: int) -> bool:
 	return false
 
 
-## 이 스트리트에 이 좌석이 건 금액. 공개 뷰엔 totalContributed(핸드 누적)만 있어 스트리트 시작 값과의 차로 구한다
-static func street_bet(seat: Dictionary, base: Dictionary) -> int:
-	return maxi(int(seat.totalContributed) - int(base.get(int(seat.seatNo), 0)), 0)
-
-
-## 스트리트 시작 시점의 누적 베팅(좌석 번호 → 금액)
-static func street_base(view: Dictionary) -> Dictionary:
-	var base := {}
-	if view.get("street", "") != "PREFLOP": # 프리플랍은 블라인드부터 베팅이라 0 에서 센다
-		for seat in view.get("seats", []):
-			base[int(seat.seatNo)] = int(seat.totalContributed)
-	return base
-
-
-static func current_max_bet(view: Dictionary, base: Dictionary) -> int:
-	var best := 0
-	for seat in view.get("seats", []):
-		best = maxi(best, street_bet(seat, base))
-	return best
+## 이 좌석이 지금 열린 베팅 라운드에 넣은 칩(블라인드 포함). 서버 `streetBet` 을 그대로 읽는다 — 열린 라운드가 없으면(올인 런아웃·핸드 끝·미참가) 0, 없거나 null 도 0
+static func street_bet(seat: Dictionary) -> int:
+	var v = seat.get("streetBet")
+	return 0 if v == null else int(v)
 
 
 ## 딜 순서: 버튼 왼쪽부터 ACTIVE·ALL_IN 좌석 번호
