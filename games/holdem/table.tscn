@@ -297,6 +297,7 @@ unique_name_in_owner = true
 layout_mode = 2
 min_value = 200.0
 step = 100.0
+alignment = 1
 
 [node name="PlusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
 unique_name_in_owner = true
