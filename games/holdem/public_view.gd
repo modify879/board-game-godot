@@ -1,6 +1,7 @@
 extends RefCounted
 
 const Cards := preload("res://games/holdem/cards.gd")
+const Fmt := preload("res://core/format.gd")
 ## 공개 뷰(public_view) 순수 조회·계산. 노드·Api·시계에 기대지 않고 전부 인자로 받는다(헤드리스 점검용).
 
 
@@ -201,3 +202,14 @@ static func result_banner(view: Dictionary) -> Dictionary:
 	if sub.size() >= 2:
 		return {"title": "스플릿 · " + text if text != "" else "스플릿", "sub": sub}
 	return {"title": text if text != "" else "승리", "sub": sub}
+
+
+## 사이드 팟 문구 ["메인 3,000", "사이드 1 1,200", ...]. 서버 pots(메인 먼저, 지난 스트리트에서 모인 칩만 — 이번 스트리트 베팅은 없다)가 둘 이상일 때만, 아니면 [] (Total 만 보인다)
+static func pot_labels(view: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var pots: Array = view.get("pots", [])
+	if pots.size() < 2:
+		return out
+	for i in pots.size():
+		out.append("%s %s" % ["메인" if i == 0 else "사이드 %d" % i, Fmt.comma(int(pots[i].amount))])
+	return out

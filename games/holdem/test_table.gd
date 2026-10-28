@@ -430,6 +430,13 @@ func _ready() -> void:
 		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
 	check(settled, "첫 뷰(재연결)는 도는 연출을 끊고 노드를 scale 1 / alpha 1 로 맞춘다")
 
+	# 방 이름·사이드 팟 문구
+	table._handle_public(_view(390, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN", "pot": 1300.0, "tableName": "친구들 방", "pots": [{"amount": 900.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 400.0, "eligibleSeatNos": [1.0]}]}))
+	check(table.name_label.text == "· 친구들 방" and table.qa_state().table_name == "친구들 방", "방 이름 표시·qa_state table_name")
+	check(table.qa_state().pot_labels == ["메인 900", "사이드 1 400"] and table.pots_label.visible and table.pots_label.text.contains("사이드 1 400"), "사이드 팟 2개 문구")
+	table._handle_public(_view(391, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN", "tableName": "친구들 방", "pots": []}))
+	check(not table.pots_label.visible and table.qa_state().pot_labels.is_empty(), "팟 0개면 사이드 팟 줄 없음")
+
 	# 마지막 행동 배지: lastAction 이 있으면 정산 뒤(handInProgress=false)에도 남고, null 이면 숨는다
 	var acted := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
 	acted[0]["lastAction"] = "RAISE_TO"

@@ -44,6 +44,7 @@ const PHONE_MARKER := 24.0 # 폰 D·SB·BB 칩 크기
 const D_MARKER := 26.0 # D·SB·BB 칩(모두 같은 크기)
 const D_BOARD_CARD := Vector2(64, 88)
 const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
+const D_POTS_W := 400.0 # 사이드 팟 줄 최대 폭(넘으면 …)
 const D_TOTAL_TOP := 371.0 # Total 상자 윗변(보드 아래)
 const D_ACTION := Rect2(836, 476, 374, 196) # 행동 패널(내 패널 오른쪽)
 const D_BAR := Rect2(16, 534, 394, 130) # 참가·일어서기 등 버튼 줄(내 패널 왼쪽 아래)
@@ -52,6 +53,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 
 @onready var back_button: Button = %BackButton
 @onready var title_label: Label = %TitleLabel
+@onready var name_label: Label = %NameLabel # 방 이름(" · 이름"). 좁으면 글자를 줄이고 그래도 모자라면 이름만 …
 @onready var status_label: Label = %StatusLabel
 @onready var board_box: HBoxContainer = %Board
 @onready var board_label: Label = %BoardLabel
@@ -60,9 +62,8 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var center_box: VBoxContainer = %Center
 @onready var pot_row: HBoxContainer = %PotRow
 @onready var pot_label: Label = %PotLabel
+@onready var pots_label: Label = %PotsLabel # 사이드 팟이 있을 때 "메인 … · 사이드 1 …". 폰: 팟 줄 오른쪽, 데스크톱: Total 상자 아래
 @onready var bottom_region: MarginContainer = %BottomRegion
-@onready var half_pot_button: Button = %HalfPotButton
-@onready var pot_button: Button = %PotButton
 @onready var all_in_button: Button = %AllInButton
 @onready var my_cards_box: HBoxContainer = %MyCards
 @onready var error_label: Label = %ErrorLabel
@@ -118,7 +119,7 @@ var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드
 var desktop := false # 데스크톱 배치가 적용돼 있다(_apply_mode). compact 의 반대 — 노드를 옮겨 둔 상태
 var k := 1.0 # 데스크톱 배율
 var _fold_armed := false # 공짜 체크가 가능할 때 폴드를 한 번 눌러 "정말 폴드?" 로 바뀐 상태
-@onready var preset_row: HBoxContainer = %PresetRow # ½팟·팟·올인 줄. 폰: 줄1, 슬라이더 줄2(전체 폭), −·값·+ 줄3(RaiseBox)
+@onready var preset_row: HBoxContainer = %PresetRow # 폰 전용 줄(올인·−·값·+). 폰: 줄1, 슬라이더 줄2(전체 폭), 폴드·체크·레이즈 줄3. 데스크톱은 비어 숨긴다
 var action_bg: Panel # 데스크톱 행동 패널 바탕
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
 var street_base_key := ""
@@ -227,8 +228,6 @@ func _ready() -> void:
 	raise_spin.value_changed.connect(_on_raise_spin_changed)
 	board_card_rects = board_box.get_children()
 	my_card_rects = my_cards_box.get_children()
-	half_pot_button.pressed.connect(_apply_preset.bind(0.5))
-	pot_button.pressed.connect(_apply_preset.bind(1.0))
 	all_in_button.pressed.connect(func() -> void: raise_slider.value = raise_slider.max_value)
 	felt.add_theme_stylebox_override("panel", felt_style)
 	felt_style.bg_color = FELT_COLOR
@@ -239,6 +238,7 @@ func _ready() -> void:
 		motion.kill_real()
 		_render_seats())
 	bottom_region.resized.connect(_fit_bottom_width)
+	name_label.get_parent().resized.connect(_update_table_name)
 	raise_box.visibility_changed.connect(_sync_preset_row)
 	info_label.text = "SB %s / BB %s" % [Format.comma(Rules.BIG_BLIND / 2), Format.comma(Rules.BIG_BLIND)]
 	_build_seats()
@@ -420,7 +420,6 @@ func _apply_mode() -> void:
 	if want == desktop:
 		return
 	desktop = want
-	var presets: Array = [half_pot_button, pot_button, all_in_button]
 	if want: # 데스크톱: 슬라이더를 RaiseBox 안으로 넣어 −·+ 와 한 줄로
 		raise_slider.reparent(raise_box, false)
 		raise_box.move_child(raise_slider, 0)
@@ -428,9 +427,10 @@ func _apply_mode() -> void:
 		raise_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		raise_slider.custom_minimum_size = Vector2(24, 0)
 		raise_spin.size_flags_horizontal = Control.SIZE_FILL
-		for n: Control in [minus_button, raise_spin, plus_button]: # 데스크톱: 슬라이더 오른쪽에 −·값·+
+		raise_spin.custom_minimum_size.x = 60 # 슬라이더 폭을 남기려 좁힌다
+		for n: Control in [minus_button, raise_spin, plus_button, all_in_button]: # 데스크톱: 슬라이더 오른쪽에 −·값·+·올인
 			n.reparent(raise_box, false)
-		preset_row.add_theme_constant_override("separation", 8)
+		all_in_button.size_flags_horizontal = Control.SIZE_FILL
 		bottom_region.reparent(felt_area, false)
 		bottom_bar.reparent(felt_area, false)
 		felt_area.move_child(action_bg, bottom_region.get_index() - 1) # 바탕이 행동 패널 바로 아래(위에 그리면 버튼이 흐려진다)
@@ -438,6 +438,8 @@ func _apply_mode() -> void:
 		top_bar.add_theme_constant_override("margin_top", 8)
 		top_bar.add_theme_constant_override("margin_bottom", 4)
 		pot_row.hide() # 팟은 Total 상자가 보인다
+		pots_label.reparent(felt_area, false)
+		felt_area.move_child(pots_label, motion.get_index())
 	else:
 		bottom_region.reparent(vbox, false)
 		vbox.move_child(bottom_region, -1)
@@ -448,12 +450,12 @@ func _apply_mode() -> void:
 		raise_slider.size_flags_horizontal = Control.SIZE_FILL
 		raise_slider.custom_minimum_size = Vector2(0, 44)
 		raise_spin.size_flags_horizontal = Control.SIZE_FILL
-		for n: Control in [minus_button, raise_spin, plus_button]: # 폰: 프리셋 줄 오른쪽에 −·값·+
+		raise_spin.custom_minimum_size.x = 72
+		for n: Control in [all_in_button, minus_button, raise_spin, plus_button]: # 폰: 한 줄에 올인·−·값·+
 			n.reparent(preset_row, false)
-		preset_row.add_theme_constant_override("separation", 6)
-		for b: Button in presets:
-			b.custom_minimum_size.y = 44
-			b.remove_theme_font_size_override("font_size")
+		all_in_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		all_in_button.custom_minimum_size.y = 44
+		all_in_button.remove_theme_font_size_override("font_size")
 		for b: Button in [minus_button, plus_button]:
 			b.custom_minimum_size = Vector2(44, 44)
 			b.add_theme_font_size_override("font_size", 24)
@@ -467,6 +469,9 @@ func _apply_mode() -> void:
 		top_bar.add_theme_constant_override("margin_bottom", 8)
 		pot_row.show()
 		total_box.hide()
+		pots_label.reparent(pot_row, false)
+		pots_label.custom_minimum_size = Vector2.ZERO
+		pots_label.add_theme_font_size_override("font_size", 12)
 		bottom_bar.custom_minimum_size = Vector2.ZERO
 		felt_style.set_border_width_all(FELT_RIM)
 		for box: BoxContainer in bet_boxes:
@@ -490,7 +495,7 @@ func _apply_mode() -> void:
 
 func _sync_preset_row() -> void:
 	if preset_row != null:
-		preset_row.visible = raise_box.visible
+		preset_row.visible = raise_box.visible and not desktop
 		raise_slider.visible = raise_box.visible
 
 
@@ -574,6 +579,8 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
 	total_box.reset_size()
 	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
+	pots_label.add_theme_font_size_override("font_size", int(round(15.0 * k)))
+	_layout_pots_label()
 	_place_board_label()
 	# 행동 패널·버튼 줄
 	bottom_region.custom_minimum_size = Vector2.ZERO
@@ -583,9 +590,8 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	bottom_region.size = D_ACTION.size * k
 	bottom_bar.position = off + D_BAR.position * k
 	bottom_bar.size = D_BAR.size * k
-	for b: Button in [half_pot_button, pot_button, all_in_button]:
-		b.custom_minimum_size.y = 30.0 * k
-		b.add_theme_font_size_override("font_size", int(round(16.0 * k)))
+	all_in_button.custom_minimum_size.y = 30.0 * k
+	all_in_button.add_theme_font_size_override("font_size", int(round(16.0 * k)))
 	for b: Button in [minus_button, plus_button]:
 		b.custom_minimum_size = Vector2(30.0, 30.0) * k
 		b.add_theme_font_size_override("font_size", int(round(18.0 * k)))
@@ -778,6 +784,7 @@ func _handle_public(body: Dictionary) -> void:
 	if _to_act_seat_no() != _my_seat_no():
 		my_available_actions = null
 	_update_status_label()
+	_update_table_name()
 	_show_cards(board_card_rects, public_view.get("board", []))
 	_update_board_label()
 	_update_pot()
@@ -1030,7 +1037,7 @@ func _motion_snapshot() -> Dictionary:
 	for i in 9:
 		var box: Control = bet_boxes[i]
 		if box.visible:
-			snap.boxes.append({"center": box.position + box.size / 2.0, "text": (box.get_child(1) as Label).text})
+			snap.boxes.append({"center": box.position + box.size / 2.0, "text": (box.get_child(1) as Label).text, "pile": (box.get_child(0) as Marker).pile})
 		var sn: Control = seat_nodes[i]
 		if sn.shown_codes == ["back", "back"]:
 			snap.backs[i + 1] = [_seat_card_rect(i + 1, 0), _seat_card_rect(i + 1, 1)]
@@ -1049,9 +1056,17 @@ func _pot_center() -> Vector2:
 	return center_box.position + Vector2(center_box.size.x / 2.0, 14.0)
 
 
-func _chip_ghost(text: String) -> Control:
+## 칩 고스트: 데스크톱은 금액만큼 카지노 칩 더미(pile), 폰은 평평한 칩 아이콘
+func _chip_ghost(text: String, amount := 0) -> Control:
 	var g: BoxContainer = bet_boxes[0].duplicate()
 	(g.get_child(1) as Label).text = text
+	var chip: Marker = g.get_child(0)
+	chip.pile = amount if desktop else 0
+	if desktop and amount > 0:
+		var ps := Marker.pile_size(amount, k)
+		chip.custom_minimum_size = Vector2(maxf(ps.x, D_BET_W * k), ps.y)
+		chip.size = chip.custom_minimum_size
+		(g.get_child(1) as Label).custom_minimum_size.x = chip.size.x
 	g.show()
 	g.size = g.get_combined_minimum_size()
 	return g
@@ -1067,7 +1082,7 @@ func _play_motion(prev: Dictionary) -> void:
 	# 팟으로 쓸어 담기: 스트리트가 바뀌거나 결과가 오면 직전에 보이던 베팅 박스가 팟으로 간다
 	if not prev.boxes.is_empty() and ((same_hand and street != prev.street) or (prev.result == null and result != null)):
 		for b in prev.boxes:
-			motion.fly(_chip_ghost(b.text), b.center, pot, Motion.BET_TO_POT, 0.0, true)
+			motion.fly(_chip_ghost(b.text, b.pile), b.center, pot, Motion.BET_TO_POT, 0.0, true)
 	# 베팅 팝: 같은 스트리트에서 금액이 늘었다
 	if same_hand and hip and prev.hip and street == prev.street:
 		for seat in seats:
@@ -1087,16 +1102,17 @@ func _play_motion(prev: Dictionary) -> void:
 				for r: Rect2 in prev.backs[n]:
 					var c := r.get_center()
 					motion.fly(motion.card_ghost("back", r.size), c, c.lerp(geo.center, 0.3), Motion.FOLD_FLY, 0.0, true, Tween.EASE_IN)
-	# 승자에게 팟을 밀어 준다(베팅 쓸어 담기가 끝난 뒤)
+	# 승자에게 팟을 밀어 준다(베팅 쓸어 담기가 있었다면 끝난 뒤, 없으면 승리 효과음과 같은 순간)
 	if prev.result == null and result != null:
+		var push_delay: float = Motion.BET_TO_POT if not prev.boxes.is_empty() else 0.0
 		for payout in result.get("payouts", []):
 			var n := int(payout.seatNo)
 			if int(payout.amount) <= 0 or not _seat_held_by(n, payout.get("userId")):
 				continue
 			var sn: Control = seat_nodes[n - 1]
-			var land: float = Motion.BET_TO_POT + Motion.PUSH_FLY
+			var land: float = push_delay + Motion.PUSH_FLY
 			var board_rect := Rect2(board_box.global_position - motion.global_position, board_box.size) # 지나가는 동안은 보드 위에서 숨긴다
-			motion.fly(_chip_ghost("+" + Format.comma(int(payout.amount))), pot, sn.position + sn.size / 2.0, Motion.PUSH_FLY, Motion.BET_TO_POT, true, Tween.EASE_IN_OUT, Tween.TRANS_QUAD, board_rect)
+			motion.fly(_chip_ghost("+" + Format.comma(int(payout.amount)), int(payout.amount)), pot, sn.position + sn.size / 2.0, Motion.PUSH_FLY, push_delay, true, Tween.EASE_IN_OUT, Tween.TRANS_QUAD, board_rect)
 			if _find_seat(n) != null:
 				motion.pulse(sn, land)
 				motion.appear(sn.payout_label, land, false, Motion.PAYOUT_FADE)
@@ -1165,6 +1181,8 @@ func qa_state() -> Dictionary:
 		countdown = maxf((next_hand_due_ticks - Time.get_ticks_msec()) / 1000.0, 0.0)
 	return {
 		"table_id": table_id,
+		"pot_labels": PublicView.pot_labels(public_view),
+		"table_name": str(public_view.get("tableName", "")),
 		"last_public_seq": last_public_seq,
 		"my_seat_no": _my_seat_no(),
 		"hand_in_progress": public_view.get("handInProgress", false),
@@ -1222,6 +1240,24 @@ func _payout_for(seat_no: int) -> int:
 	return PublicView.payout_for(public_view, seat_no)
 
 
+## 상단 바의 방 이름. id 는 그대로 두고 이름만 줄인다 — 이름이 남은 폭보다 길면 글자를 12 까지 줄이고, 그래도 넘치면 …
+func _update_table_name() -> void:
+	var name_text := str(public_view.get("tableName", ""))
+	name_label.text = "· " + name_text if name_text != "" else ""
+	name_label.remove_theme_font_size_override("font_size") # 이전에 줄인 값에서 다시 시작
+	var font := name_label.get_theme_font("font")
+	var size := name_label.get_theme_font_size("font_size")
+	var row: HBoxContainer = name_label.get_parent()
+	var other := 0.0
+	for c: Control in row.get_children():
+		if c != name_label and c.visible:
+			other += c.get_combined_minimum_size().x
+	var room := row.size.x - other - row.get_theme_constant("separation") * (row.get_child_count() - 1)
+	while size > 12 and font.get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > room:
+		size -= 1
+	name_label.add_theme_font_size_override("font_size", size)
+
+
 func _update_status_label() -> void:
 	if waiting and table_id == 0:
 		status_label.text = "방을 만드는 중"
@@ -1257,6 +1293,20 @@ func _update_pot() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	total_box.visible = desktop and hip
 	total_label.text = Format.comma(pot)
+	var pots := PublicView.pot_labels(public_view)
+	pots_label.text = "  ·  ".join(pots)
+	pots_label.visible = not pots.is_empty() and (desktop or show_pot) # 데스크톱은 결과 중에도 남는다(서버가 최종 구성을 유지)
+	if desktop and total_box.size.y > 0.0:
+		_layout_pots_label()
+
+
+## 데스크톱: 문구 폭이 바뀌므로 Total 상자 아래 가운데에 다시 놓는다
+func _layout_pots_label() -> void:
+	var fs := pots_label.get_theme_font_size("font_size")
+	var tw := pots_label.get_theme_font("font").get_string_size(pots_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	pots_label.custom_minimum_size = Vector2(minf(tw + 2.0, D_POTS_W * k), 0)
+	pots_label.reset_size()
+	pots_label.position = total_box.position + Vector2((total_box.size.x - pots_label.size.x) / 2.0, total_box.size.y + 4.0 * k)
 
 
 func _update_board_label() -> void:
@@ -1632,10 +1682,6 @@ func _track_street_base() -> void:
 	street_base = PublicView.street_base(public_view)
 
 
-func _current_max_bet() -> int:
-	return PublicView.current_max_bet(public_view, street_base)
-
-
 func _update_turn_key() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	if hip and not last_hand_in_progress:
@@ -1777,14 +1823,6 @@ func _update_action_bar() -> void:
 	_set_action_bar_disabled(action_pending)
 
 
-## ½ 팟·팟: 현재 최고 베팅(좌석별 스트리트 베팅의 최대) + 비율 × (팟 + 콜 금액). 계산은 Rules.preset_raise_to
-func _apply_preset(fraction: float) -> void:
-	if my_available_actions == null:
-		return
-	raise_slider.value = Rules.preset_raise_to(fraction, _current_max_bet(), int(public_view.get("pot", 0)),
-		int(my_available_actions.get("callAmount", 0)), int(raise_slider.min_value), int(raise_slider.max_value))
-
-
 func _update_raise_button_label() -> void:
 	var v := int(raise_slider.value)
 	var is_bet: bool = my_available_actions != null and my_available_actions.get("canCheck", false) and public_view.get("street", "") != "PREFLOP"
@@ -1796,8 +1834,6 @@ func _set_action_bar_disabled(disabled: bool) -> void:
 	check_call_button.disabled = disabled
 	raise_button.disabled = disabled
 	raise_slider.editable = not disabled
-	half_pot_button.disabled = disabled
-	pot_button.disabled = disabled
 	all_in_button.disabled = disabled
 	raise_spin.editable = not disabled
 	minus_button.disabled = disabled

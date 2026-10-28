@@ -64,13 +64,6 @@ func _init() -> void:
 	check("이후에 앉을 수" in rules.buy_in_blocked_text({"walletBalance": 100.0, "minBuyIn": 4000.0, "obligationExpiresAt": "2026-01-01T10:00:00Z"}), "의무 시각 안내")
 	check(rules.buy_in_blocked_text({"walletBalance": 4000.0, "minBuyIn": 4000.0, "obligationExpiresAt": null}) == "", "지갑이 충분하면 안내 없음")
 
-	# preset_raise_to: 현재 최고 베팅 + f × (팟 + 콜), 100 단위, [min, max] 로 자름
-	check(rules.preset_raise_to(0.5, 200, 600, 200, 400, 5000) == 600, "프리셋 ½ 팟 일반")
-	check(rules.preset_raise_to(1.0, 200, 600, 200, 400, 5000) == 1000, "프리셋 팟 일반")
-	check(rules.preset_raise_to(0.5, 200, 100, 200, 500, 5000) == 500, "프리셋 하한으로 올림")
-	check(rules.preset_raise_to(1.0, 200, 600, 200, 400, 800) == 800, "프리셋 상한(올인)으로 내림")
-	check(rules.preset_raise_to(0.5, 0, 650, 0, 200, 5000) == 300, "프리셋 100 단위 내림 (325 -> 300)")
-	check(rules.preset_raise_to(0.5, 0, 750, 0, 200, 5000) == 400, "프리셋 100 단위 올림 (375 -> 400)")
 
 	# public_view — 공개 뷰 순수 조회·계산
 	var pv := preload("res://games/holdem/public_view.gd")
@@ -97,6 +90,9 @@ func _init() -> void:
 	check(pv.find_shown_hand(view, 1) == null and pv.payout_for(view, 1) == 0, "결과 없으면 null·0")
 	var taken := {"seats": [{"seatNo": 1, "userId": 99}], "result": res}
 	check(pv.find_shown_hand(taken, 1) == null and pv.payout_for(taken, 1) == 0, "다른 사람이 앉으면 shown·payout 무시")
+	# pot_labels: 팟이 둘 이상일 때만
+	check(pv.pot_labels({}).is_empty() and pv.pot_labels({"pots": []}).is_empty() and pv.pot_labels({"pots": [{"amount": 900.0, "eligibleSeatNos": [1.0, 2.0]}]}).is_empty(), "pot_labels 0·1개면 []")
+	check(pv.pot_labels({"pots": [{"amount": 3000.0}, {"amount": 1200.0}, {"amount": 500.0}]}) == ["메인 3,000", "사이드 1 1,200", "사이드 2 500"], "pot_labels 메인·사이드 문구")
 	# result_banner
 	var bseats := [{"seatNo": 1, "userId": 10}, {"seatNo": 4, "userId": 11}]
 	var bn := func(shown_hands: Array, payouts: Array, s: Array = bseats) -> Dictionary: return pv.result_banner({"seats": s, "result": {"shownHands": shown_hands, "payouts": payouts}})

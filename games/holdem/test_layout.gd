@@ -66,7 +66,7 @@ func _ready() -> void:
 		table.settings_close.pressed.emit()
 		for n in [2, 9]:
 			for hero in [1, 5, 0]: # 0 = 관전
-				for state in ["preflop", "showdown"]:
+				for state in ["preflop", "showdown", "sidepots"]:
 					await _run_case(table, sz, n, hero, state)
 		worst = true # 모든 좌석이 12자 최악 닉네임
 		for hero in [5, 0]:
@@ -87,7 +87,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		table.nickname_cache[user] = WORST[i % WORST.size()] if worst else "플레이어%d" % no
 		var status := "ACTIVE"
 		var extra := {}
-		if state == "preflop":
+		if state == "preflop" or state == "sidepots":
 			extra["totalContributed"] = 180000.0 if i % 2 == 1 else 200.0 # 넓은 금액 문구도 본다
 		else: # 배지 최악: 3개 다(예약·올인·끊김), 하나, 올인
 			if i % 3 == 0:
@@ -104,8 +104,10 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		seats.append(_seat(no, user, status, extra))
 	var view_extra := {}
 	var hole := ["As", "Kd"]
-	if state == "preflop":
+	if state != "showdown":
 		view_extra = {"handInProgress": true, "pot": 3000.0, "toActSeatNo": float(hero if hero > 0 else nos[0])}
+		if state == "sidepots": # 팟 3개(최악 폭: 큰 금액)
+			view_extra.pots = [{"amount": 1234567.0, "eligibleSeatNos": [1.0, 2.0, 3.0]}, {"amount": 1234567.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 1234567.0, "eligibleSeatNos": [1.0]}]
 	else:
 		var payouts := []
 		var shown := []
@@ -135,7 +137,7 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		if first: # 개인 뷰·행동 막대는 한 번만 먹이고 레이아웃이 가라앉길 기다린다
 			if hero > 0:
 				var priv := {"seq": float(seq), "holeCards": hole, "currentHand": HAND}
-				if state == "preflop":
+				if state != "showdown":
 					priv["availableActions"] = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
 				table._handle_private(priv)
 			await get_tree().process_frame
@@ -257,6 +259,8 @@ func _collect_view2(table: Control, hero: int) -> Dictionary:
 	if table.pot_row.modulate.a > 0.0: # 칩 아이콘 + 글자만(줄 자체는 중앙 박스 너비 전체)
 		var pr: Rect2 = table.pot_row.get_child(0).get_global_rect().merge(table.pot_label.get_global_rect())
 		items.append({"o": "center", "k": "pot", "r": pr})
+		if table.pots_label.visible:
+			items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
 	if table.board_label.text != "": # 결과 배너(큰 글자+작은 줄) — 보드 카드와는 겹쳐도 된다(위에 얹는다)
 		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
 	if hero > 0 and not table.hand_text_pill.visible:
@@ -449,6 +453,8 @@ func _collect_desktop(table: Control, hero: int) -> Dictionary:
 			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})
 	if table.total_box.visible:
 		items.append({"o": "center", "k": "total", "r": table.total_box.get_global_rect()})
+	if table.pots_label.visible:
+		items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
 	if table.board_label.text != "":
 		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
 	items.append({"o": "ui", "k": "action", "r": table.bottom_region.get_global_rect()})
