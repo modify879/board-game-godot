@@ -237,6 +237,8 @@ func _markers_bad(table: Control) -> Array:
 		var rects: Array = s.marker_rects().map(func(r: Rect2) -> Rect2: return Rect2(s.global_position + r.position, r.size))
 		for i in rects.size():
 			var r: Rect2 = rects[i]
+			if not panel.grow(-(ceil(4.0 * s.k) + 2.0 * s.k)).encloses(r) and s.desk:
+				out.append("seat%d 마커 %d 가 패널 안쪽 사각 밖 %s" % [no, s.markers[i], _s(r) + " 패널 " + _s(panel) + " k " + str(s.k)])
 			if not panel.grow(0.5).encloses(r):
 				out.append("seat%d 마커 %d 가 패널 밖 %s (패널 %s)" % [no, s.markers[i], _s(r), _s(panel)])
 			if s.name_label.visible and _in(r).intersects(_in(s.name_label.get_global_rect())):
@@ -249,10 +251,26 @@ func _markers_bad(table: Control) -> Array:
 	return out
 
 
+## 내 패널 칩 추가 버튼(데스크톱)은 테두리 안쪽 사각(테두리 + 2·k 안) 안에 있어야 한다 — 차례 금색 테두리를 가리지 않는다
+func _add_chips_bad(table: Control) -> Array:
+	var b: Control = table.add_chips_button
+	if not table.desktop or not b.visible:
+		return []
+	var me: int = table._my_seat_no()
+	if me == -1:
+		return []
+	var s: Control = table.seat_nodes[me - 1]
+	var inner := Rect2(s.global_position, s.size).grow(-(ceil(4.0 * s.k) + 2.0 * s.k))
+	if not inner.encloses(b.get_global_rect()):
+		return ["칩 추가 버튼이 패널 안쪽 사각 밖 %s (안쪽 %s)" % [_s(b.get_global_rect()), _s(inner)]]
+	return []
+
+
 func _collect_view(table: Control, hero: int) -> Dictionary:
 	var r := _collect_view2(table, hero)
 	r.bad.append_array(_name_bad(table, table.get_global_rect().size))
 	r.bad.append_array(_markers_bad(table))
+	r.bad.append_array(_add_chips_bad(table))
 	r.bad.append_array(_actions_bad(table, hero))
 	return r
 

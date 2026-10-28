@@ -15,9 +15,12 @@ const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
 const AVATAR_COLORS := [Color("8FC9DC"), Color("93BEE6"), Color("A3B5EA"), Color("B9A8E6"), Color("E6A8C4"), Color("9FD6C2")]
 const WARN_SECONDS := 5.0
-const MARKER_TEXTURES := [preload("res://games/holdem/assets/chips/chip_dealer.png"), preload("res://games/holdem/assets/chips/chip_smallBlind.png"), preload("res://games/holdem/assets/chips/chip_bigBlind.png")] # D·SB·BB
-const MARKER_DESK := 19.0 # 데스크톱 마커 한 변(설계 좌표, × k)
-const MARKER_PHONE := 18.0 # 폰 마커 한 변(px)
+const MARKER_LABELS := ["D", "SB", "BB"]
+const MARKER_FILL := [Color("FFFFFF"), Color("7A4FC0"), Color("E8B84A")] # D 흰색 · SB 보라 · BB 금색
+const MARKER_TEXT := [Color("1A1D24"), Color("FFFFFF"), Color("1A1D24")]
+var _marker_font: Font = preload("res://core/ui/theme.tres").get_font("font", "LabelBadge") # 테마의 굵은 글꼴
+const MARKER_DESK := 20.0 # 데스크톱 마커 한 변(설계 좌표, × k)
+const MARKER_PHONE := 22.0 # 폰 마커 한 변(px)
 const MARKER_GAP := 2.0 # 마커 사이 간격(설계 좌표)
 const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
 const NAME_MIN_PHONE := 10 # 닉네임 글자 최소 크기(폰, px). 한 줄에 안 들어오면 두 줄로 줄바꿈한다(캡슐을 못 넓힌다: 9인 세로 화면에서 옆 좌석과 겹친다)
@@ -395,7 +398,12 @@ func set_markers(kinds: Array) -> void:
 func _markers_width() -> float:
 	if markers.is_empty():
 		return 0.0
-	return (markers.size() * (MARKER_DESK + MARKER_GAP) + 2.0) * k
+	return (markers.size() * (MARKER_DESK + MARKER_GAP) + 2.0 + _marker_x0() - (8.0 if hero_slot else 6.0)) * k # 마커 줄 시작이 m 보다 안쪽이면 그만큼 더
+
+
+## 데스크톱 마커 줄의 왼쪽 시작(설계 좌표): 차례 테두리(4)+3 안쪽(7)과 패널 여백 중 큰 쪽
+func _marker_x0() -> float:
+	return maxf(8.0 if hero_slot else 6.0, 7.0)
 
 
 ## 마커 사각(좌석 로컬 좌표, markers 와 같은 순서). 데스크톱은 닉네임 줄 왼쪽 끝에서 오른쪽으로, 폰은 아바타 원 오른쪽 위 모서리에서 왼쪽으로 늘어선다(마지막 것이 모서리)
@@ -405,8 +413,7 @@ func marker_rects() -> Array:
 	for i in n:
 		if desk:
 			var side := MARKER_DESK * k
-			var m := (8.0 if hero_slot else 6.0) * k
-			out.append(Rect2(m + i * (side + MARKER_GAP * k), 2.0 * k + (name_row(hero_slot) * k - side) / 2.0, side, side))
+			out.append(Rect2(_marker_x0() * k + i * (side + MARKER_GAP * k), 6.5 * k, side, side)) # 위 6.5·k: 테두리 안쪽
 		else:
 			out.append(Rect2(_phone_x0 - 2.0 - MARKER_PHONE - (n - 1 - i) * (MARKER_PHONE + MARKER_GAP), 3.0, MARKER_PHONE, MARKER_PHONE))
 	return out
@@ -414,8 +421,21 @@ func marker_rects() -> Array:
 
 func _draw_markers() -> void:
 	var rects := marker_rects()
+	var fs := int(round(11.0 * k)) if desk else 11
+	var a := _dim.a if desk else 1.0
 	for i in rects.size():
-		draw_texture_rect(MARKER_TEXTURES[markers[i]], rects[i], false, _dim if desk else Color.WHITE)
+		var r: Rect2 = rects[i]
+		var kind: int = markers[i]
+		var c := r.get_center()
+		var fill: Color = MARKER_FILL[kind]
+		fill.a = a
+		draw_circle(c, r.size.x / 2.0, fill.darkened(0.45)) # 1.5px 짙은 테두리
+		draw_circle(c, r.size.x / 2.0 - 1.5, fill)
+		var txt: String = MARKER_LABELS[kind]
+		var ts := _marker_font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var tc: Color = MARKER_TEXT[kind]
+		tc.a = a
+		draw_string(_marker_font, Vector2(c.x - ts.x / 2.0, c.y - _marker_font.get_height(fs) / 2.0 + _marker_font.get_ascent(fs)), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, tc)
 
 
 func _empty_rect() -> Rect2:

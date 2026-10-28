@@ -1403,13 +1403,12 @@ func _place_add_chips() -> void:
 	if me == -1:
 		return
 	var seat_node: Control = seat_nodes[me - 1]
-	var sz := Vector2(ADD_CHIPS_W * k, 24.0 * k) if desktop else Vector2(56.0, 44.0)
+	var sz := Vector2(ADD_CHIPS_W * k, 20.0 * k) if desktop else Vector2(56.0, 44.0)
 	add_chips_button.custom_minimum_size = sz
 	add_chips_button.size = sz
 	add_chips_button.add_theme_font_size_override("font_size", int(round(14.0 * k)) if desktop else 16)
-	if desktop: # 닉네임 줄(위 여백 2·k + 줄 높이 26·k) 세로 가운데, 패널 오른쪽 안쪽 여백 8·k
-		var row_h := SeatScript.name_row(true) * k
-		add_chips_button.position = seat_node.position + Vector2(seat_node.size.x - 8.0 * k - sz.x, 2.0 * k + (row_h - sz.y) / 2.0)
+	if desktop: # 차례 테두리(4·k)를 가리지 않게 위·오른쪽에서 7·k 안쪽(테두리 + 3·k). 버튼이 좌석보다 위에 그려지므로 안쪽 사각 안에 둔다
+		add_chips_button.position = seat_node.position + Vector2(seat_node.size.x - 8.0 * k - sz.x, 7.0 * k)
 		return
 	var x := seat_node.position.x - sz.x - 4.0 # 폰: 캡슐은 작아 안에 못 들어간다 — 캡슐 왼쪽 가장자리에 붙인다(오른쪽은 행동 토큰·지급액 자리)
 	var cy := seat_node.position.y + seat_node.size.y / 2.0
