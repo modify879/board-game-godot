@@ -209,6 +209,13 @@ func _ready() -> void:
 	plus_button.pressed.connect(_step_raise.bind(1))
 	var blank := Image.create(1, 1, false, Image.FORMAT_RGBA8) # 투명 1px — 작은 위아래 화살표 대신 − / + 버튼을 쓴다
 	raise_spin.add_theme_icon_override("updown", ImageTexture.create_from_image(blank))
+	# 버튼 자리를 없애 필드와 + 사이 간격을 − 쪽과 맞춘다(Godot 4.4+ 는 버튼을 필드 바깥 오른쪽에 그린다)
+	raise_spin.add_theme_constant_override("buttons_width", 0)
+	raise_spin.add_theme_constant_override("field_and_buttons_separation", 0)
+	raise_spin.add_theme_constant_override("set_min_buttons_width_from_icons", 0)
+	var no_style := StyleBoxEmpty.new()
+	for style_name in ["up_background", "up_background_hovered", "up_background_pressed", "up_background_disabled", "down_background", "down_background_hovered", "down_background_pressed", "down_background_disabled", "field_and_buttons_separator", "up_down_buttons_separator"]:
+		raise_spin.add_theme_stylebox_override(style_name, no_style)
 	raise_spin.custom_minimum_size.x = 72
 	check_call_button.pressed.connect(_on_check_call_pressed)
 	raise_button.pressed.connect(_on_raise_pressed)
