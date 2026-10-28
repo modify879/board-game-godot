@@ -40,6 +40,7 @@ const D_ANGLES := [90.0, 155.0, 189.7, 221.0, 255.7, 284.3, 318.5, 349.0, 383.0]
 const D_BET_H := 56.0 # 베팅 칸 대략 높이(더미 + 금액). 패널 곁 자리 계산용
 const BET_OUT := 5.0 # 베팅 칸과 자기 패널 가장자리 사이 틈
 const D_BET_W := 64.0 # 베팅 칸 최소 폭(기둥·금액이 더 넓으면 그만큼 넓어진다)
+const PHONE_MARKER := 24.0 # 폰 D·SB·BB 칩 크기
 const D_MARKER := 26.0 # D·SB·BB 칩(모두 같은 크기)
 const D_BOARD_CARD := Vector2(64, 88)
 const D_BOARD_TOP := 275.0 # 보드 윗변(안쪽 타원 띠 안, 펠트 중심보다 조금 아래)
@@ -117,7 +118,7 @@ var compact := false # 논리 너비 700 미만(세로 폰)이면 좌석·카드
 var desktop := false # 데스크톱 배치가 적용돼 있다(_apply_mode). compact 의 반대 — 노드를 옮겨 둔 상태
 var k := 1.0 # 데스크톱 배율
 var _fold_armed := false # 공짜 체크가 가능할 때 폴드를 한 번 눌러 "정말 폴드?" 로 바뀐 상태
-var preset_row: HBoxContainer # 데스크톱 행동 패널의 ½팟·팟·올인 줄(폰에서는 RaiseBox 안)
+@onready var preset_row: HBoxContainer = %PresetRow # ½팟·팟·올인 줄. 폰: 줄1, 슬라이더 줄2(전체 폭), −·값·+ 줄3(RaiseBox)
 var action_bg: Panel # 데스크톱 행동 패널 바탕
 var street_base := {} # seatNo -> 이 스트리트 시작 때의 totalContributed. 공개 뷰엔 스트리트별 베팅이 없어 차이로 구한다
 var street_base_key := ""
@@ -146,6 +147,9 @@ var nickname_fetching := {} # userId -> true while request in flight
 
 var stomp_connected := false
 var waiting := false
+var was_my_turn := false # 직전 뷰에서 내 차례였다(차례 시작 알림용)
+var tab_alert_on := false # Web 탭 제목을 바꿔 둔 상태
+var prev_tab_title := ""
 var resume_event_seen := false # 탭 복귀 뒤 join-queue 이벤트를 받았다 — 서버가 아직 대기열에 두고 있다는 뜻
 var leave_room_after_stand := false # 핸드 후 방 나가기 의도. 개인 뷰의 leaveReservation 이 오면 그것을 따라 재접속해도 복원되고, 핸드 비참가자는 개인 뷰가 없어 이 메모리 값이 전부다 — 재접속하면 사라져 관전자로 남는다. 일어선 뒤엔 개인 뷰가 안 오므로 마지막 값으로 목록행을 정한다
 var sit_popup_gen := 0 # 착석 팝업을 열 때마다 올린다 — 늦게 온 지갑 응답을 거른다
@@ -235,12 +239,6 @@ func _ready() -> void:
 		motion.kill_real()
 		_render_seats())
 	bottom_region.resized.connect(_fit_bottom_width)
-	preset_row = HBoxContainer.new()
-	preset_row.name = "PresetRow"
-	preset_row.add_theme_constant_override("separation", 8)
-	preset_row.hide()
-	action_bar.add_child(preset_row)
-	action_bar.move_child(preset_row, 0)
 	raise_box.visibility_changed.connect(_sync_preset_row)
 	info_label.text = "SB %s / BB %s" % [Format.comma(Rules.BIG_BLIND / 2), Format.comma(Rules.BIG_BLIND)]
 	_build_seats()
@@ -264,6 +262,7 @@ func _exit_tree() -> void:
 	Stomp.closed.disconnect(_on_stomp_closed)
 	Stomp.resumed.disconnect(_on_stomp_resumed)
 	Stomp.disconnect_ws()
+	_set_tab_alert(false)
 
 
 func _open_settings() -> void:
@@ -341,11 +340,13 @@ func _build_seats() -> void:
 	action_bg.add_theme_stylebox_override("panel", bg_style)
 	action_bg.hide()
 	felt_area.add_child(action_bg)
-	dealer_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22))
+	dealer_marker = _marker(Marker.Kind.DEALER, Vector2(PHONE_MARKER, PHONE_MARKER))
 	dealer_marker.hide()
 	felt_area.add_child(dealer_marker)
-	sb_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22), "SB", Color(0.62, 0.80, 1.0)) # D 와 구별되게 푸른 기
-	bb_marker = _marker(Marker.Kind.DEALER, Vector2(22, 22), "BB", Color(1.0, 0.72, 0.62))
+	sb_marker = _marker(Marker.Kind.DEALER, Vector2(PHONE_MARKER, PHONE_MARKER), "SB", Color(0.62, 0.80, 1.0))
+	bb_marker = _marker(Marker.Kind.DEALER, Vector2(PHONE_MARKER, PHONE_MARKER), "BB", Color(1.0, 0.72, 0.62))
+	for i in 3: # 폰·데스크톱 모두 같은 카지노 칩 그림(크기만 다르다)
+		[dealer_marker, sb_marker, bb_marker][i].texture = MARKER_TEXTURES[i]
 	for m: Control in [sb_marker, bb_marker]:
 		m.hide()
 		felt_area.add_child(m)
@@ -353,6 +354,7 @@ func _build_seats() -> void:
 		var seat_node: Control = SeatScene.instantiate()
 		seat_node.name = "Seat%d" % seat_no # QA 브리지 키(Seat3/NameLabel)
 		felt_area.add_child(seat_node)
+		seat_node.empty_clicked.connect(_open_sit_popup) # 관전 중 빈 자리 = 참가 버튼과 같은 흐름
 		seat_nodes.append(seat_node)
 	hand_text_pill = Label.new()
 	hand_text_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -419,14 +421,20 @@ func _apply_mode() -> void:
 		return
 	desktop = want
 	var presets: Array = [half_pot_button, pot_button, all_in_button]
-	if want:
+	if want: # 데스크톱: 슬라이더를 RaiseBox 안으로 넣어 −·+ 와 한 줄로
+		raise_slider.reparent(raise_box, false)
+		raise_box.move_child(raise_slider, 0)
+		raise_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		raise_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		raise_slider.custom_minimum_size = Vector2(24, 0)
+		raise_spin.size_flags_horizontal = Control.SIZE_FILL
+		for n: Control in [minus_button, raise_spin, plus_button]: # 데스크톱: 슬라이더 오른쪽에 −·값·+
+			n.reparent(raise_box, false)
+		preset_row.add_theme_constant_override("separation", 8)
 		bottom_region.reparent(felt_area, false)
 		bottom_bar.reparent(felt_area, false)
 		felt_area.move_child(action_bg, bottom_region.get_index() - 1) # 바탕이 행동 패널 바로 아래(위에 그리면 버튼이 흐려진다)
 		felt_area.move_child(my_cards_box, motion.get_index()) # 내 큰 카드는 좌석 패널 위(아래에 깔리면 패널 바탕에 흐려진다)
-		for b: Button in presets:
-			b.reparent(preset_row, false)
-			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		top_bar.add_theme_constant_override("margin_top", 8)
 		top_bar.add_theme_constant_override("margin_bottom", 4)
 		pot_row.hide() # 팟은 Total 상자가 보인다
@@ -435,18 +443,22 @@ func _apply_mode() -> void:
 		vbox.move_child(bottom_region, -1)
 		bottom_bar.reparent(bottom_box, false)
 		bottom_box.move_child(bottom_bar, -1)
-		for i in presets.size():
-			var b: Button = presets[i]
-			b.reparent(raise_box, false)
-			raise_box.move_child(b, i)
-			b.size_flags_horizontal = Control.SIZE_FILL
-			b.custom_minimum_size.y = 36
+		raise_slider.reparent(action_bar, false) # 슬라이더는 전체 폭 한 줄(프리셋 줄 아래)
+		action_bar.move_child(raise_slider, 1)
+		raise_slider.size_flags_horizontal = Control.SIZE_FILL
+		raise_slider.custom_minimum_size = Vector2(0, 44)
+		raise_spin.size_flags_horizontal = Control.SIZE_FILL
+		for n: Control in [minus_button, raise_spin, plus_button]: # 폰: 프리셋 줄 오른쪽에 −·값·+
+			n.reparent(preset_row, false)
+		preset_row.add_theme_constant_override("separation", 6)
+		for b: Button in presets:
+			b.custom_minimum_size.y = 44
 			b.remove_theme_font_size_override("font_size")
 		for b: Button in [minus_button, plus_button]:
-			b.custom_minimum_size = Vector2(44, 48)
+			b.custom_minimum_size = Vector2(44, 44)
 			b.add_theme_font_size_override("font_size", 24)
 		for b: Button in [fold_button, check_call_button, raise_button]:
-			b.custom_minimum_size.y = 52
+			b.custom_minimum_size.y = 44
 			b.remove_theme_font_size_override("font_size")
 		bottom_region.custom_minimum_size = Vector2(0, 206)
 		bottom_region.add_theme_constant_override("margin_top", 6)
@@ -468,9 +480,8 @@ func _apply_mode() -> void:
 			amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			amount.custom_minimum_size = Vector2.ZERO
 		for m: Control in [dealer_marker, sb_marker, bb_marker]:
-			m.texture = null
-			m.custom_minimum_size = Vector2(22, 22)
-			m.size = Vector2(22, 22)
+			m.custom_minimum_size = Vector2(PHONE_MARKER, PHONE_MARKER)
+			m.size = Vector2(PHONE_MARKER, PHONE_MARKER)
 			m.queue_redraw()
 	info_box.visible = want
 	_sync_preset_row()
@@ -479,7 +490,8 @@ func _apply_mode() -> void:
 
 func _sync_preset_row() -> void:
 	if preset_row != null:
-		preset_row.visible = desktop and raise_box.visible
+		preset_row.visible = raise_box.visible
+		raise_slider.visible = raise_box.visible
 
 
 func _sync_action_bg() -> void:
@@ -772,6 +784,7 @@ func _handle_public(body: Dictionary) -> void:
 	_render_seats()
 	_update_buttons()
 	_update_action_bar()
+	_check_my_turn()
 	if have_view and hand_counter - prev.hand <= 1:
 		_play_motion(prev)
 	_play_sounds(prev_view)
@@ -1554,6 +1567,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 	var bet_box: BoxContainer = bet_boxes[seat_no - 1]
 	bet_box.hide()
 	var seat: Variant = _find_seat(seat_no)
+	seat_node.set_clickable(seat == null and _can_join())
 	if seat == null:
 		var left_shown: Variant = _find_shown_hand(seat_no) # 정산 때 일어선 승자가 보여 준 패
 		if left_shown != null:
@@ -1633,6 +1647,30 @@ func _update_turn_key() -> void:
 		last_turn_key = turn_key
 
 
+## 내 차례가 막 시작됐을 때 한 번만 알린다(소리 + Web 탭 제목). 같은 차례의 뷰 갱신·관전 중에는 울리지 않는다
+func _check_my_turn() -> void:
+	var mine: bool = _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no() and public_view.get("handInProgress", false)
+	if mine and not was_my_turn:
+		sfx.play("turn")
+		_set_tab_alert(true)
+	elif was_my_turn and not mine:
+		_set_tab_alert(false)
+	was_my_turn = mine
+
+
+## Web 탭 제목을 "▶ 내 차례" 로 바꾸고 끝나면 원래 제목으로 되돌린다
+func _set_tab_alert(on: bool) -> void:
+	if not OS.has_feature("web"):
+		return
+	if on:
+		if not tab_alert_on:
+			prev_tab_title = str(JavaScriptBridge.eval("document.title", true))
+		JavaScriptBridge.eval("document.title = %s" % JSON.stringify("▶ 내 차례 · #%d" % table_id), true)
+	elif tab_alert_on:
+		JavaScriptBridge.eval("document.title = %s" % JSON.stringify(prev_tab_title), true)
+	tab_alert_on = on
+
+
 func _update_turn_timer() -> void:
 	var to_act := _to_act_seat_no()
 	var hip: bool = public_view.get("handInProgress", false)
@@ -1685,12 +1723,24 @@ func _update_buttons() -> void:
 	add_chips_button.disabled = not can_add or add_chips_pending
 	if not can_add:
 		add_chips_box.hide() # 판이 시작되거나 일어서면 열려 있던 입력을 닫는다
-	join_button.visible = not seated and not waiting and not retry_pending
+	join_button.visible = _can_join_visible()
+	for n: Control in seat_nodes:
+		n.set_clickable(n.empty and _can_join())
 	join_button.disabled = not stomp_connected or table_id == 0
 	cancel_request_button.visible = waiting
 	cancel_request_button.disabled = table_id == 0
 	back_button.disabled = seated or waiting
 	back_button.tooltip_text = "일어선 뒤 나갈 수 있습니다" if back_button.disabled else ""
+
+
+## 참가 버튼이 보이는 상태(관전 중이고 대기열 밖)
+func _can_join_visible() -> bool:
+	return not _is_seated() and not waiting and not retry_pending
+
+
+## 참가 버튼을 누를 수 있는 상태 — 빈 자리 클릭도 이때만 먹는다
+func _can_join() -> bool:
+	return _can_join_visible() and stomp_connected and table_id != 0
 
 
 # --- action bar ---

@@ -251,60 +251,67 @@ text = ""
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PresetRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
 theme_override_constants/separation = 6
+
+[node name="HalfPotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "½ 팟"
+
+[node name="PotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "팟"
+
+[node name="AllInButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "올인"
+
+[node name="MinusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "−"
+
+[node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(88, 0)
+min_value = 200.0
+step = 100.0
+alignment = 1
+
+[node name="PlusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "+"
+
+[node name="RaiseSlider" type="HSlider" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+min_value = 200.0
+step = 100.0
 
 [node name="RaiseBox" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
-
-[node name="HalfPotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "½ 팟"
-
-[node name="PotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "팟"
-
-[node name="AllInButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "올인"
-
-[node name="RaiseSlider" type="HSlider" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(24, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-min_value = 200.0
-step = 100.0
-
-[node name="MinusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(44, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "−"
-
-[node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-layout_mode = 2
-min_value = 200.0
-step = 100.0
-alignment = 1
-
-[node name="PlusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(44, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "+"
 
 [node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
 layout_mode = 2
@@ -312,7 +319,7 @@ theme_override_constants/separation = 16
 
 [node name="FoldButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"ButtonDanger"
@@ -320,7 +327,7 @@ text = "폴드"
 
 [node name="CheckCallButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"ButtonSuccess"
@@ -328,7 +335,7 @@ text = "체크"
 
 [node name="RaiseButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"ButtonPrimary"

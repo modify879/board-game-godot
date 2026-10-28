@@ -21,6 +21,7 @@ const STREAMS := {
 	"voice_raise": preload("res://games/holdem/assets/sounds/voice_raise.mp3"),
 	"voice_allin": preload("res://games/holdem/assets/sounds/voice_allin.mp3"),
 }
+const TURN_PATH := "res://games/holdem/assets/sounds/turn_alert.ogg" # 내 차례 알림(Kenney Digital Audio twoTone1, CC0)
 const DEAL_STREAMS := [
 	preload("res://games/holdem/assets/sounds/card-slide-1.ogg"),
 	preload("res://games/holdem/assets/sounds/card-slide-2.ogg"),
@@ -36,6 +37,7 @@ var sfx_on := true # 음성 아닌 모든 소리(카드·칩·셔플·비프)
 var voice_on := true # voice_* 딜러 음성
 var silent := false # 헤드리스 점검에서는 소리를 내지 않는다
 var played: Array = [] # 재생 요청 기록(점검용)
+var _turn_stream: AudioStream # 파일이 없으면 null — 소리만 건너뛴다(기록은 남긴다)
 var _players: Array = []
 var _next := 0
 
@@ -49,6 +51,8 @@ func _ready() -> void:
 			voice_on = sfx_on
 		sfx_on = bool(cfg.get_value("sound", "sfx_on", sfx_on))
 		voice_on = bool(cfg.get_value("sound", "voice_on", voice_on))
+	if ResourceLoader.exists(TURN_PATH):
+		_turn_stream = load(TURN_PATH)
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -57,16 +61,18 @@ func _ready() -> void:
 
 ## volume 은 선형. 안 주면 효과음 기본값(목소리는 1.0, 비프는 원본 그대로)
 func play(sound: String, volume := -1.0) -> void:
-	if not STREAMS.has(sound) or not (voice_on if sound.begins_with("voice_") else sfx_on):
+	if not (STREAMS.has(sound) or sound == "turn") or not (voice_on if sound.begins_with("voice_") else sfx_on):
 		return
 	played.append(sound)
 	if silent:
 		return
+	if sound == "turn" and _turn_stream == null:
+		return
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
-	p.stream = DEAL_STREAMS.pick_random() if sound == "deal" else STREAMS[sound]
+	p.stream = DEAL_STREAMS.pick_random() if sound == "deal" else _turn_stream if sound == "turn" else STREAMS[sound]
 	if volume < 0.0:
-		volume = 1.0 if sound == "beep" or sound.begins_with("voice_") else EFFECT_VOLUME
+		volume = 1.0 if sound == "beep" or sound == "turn" or sound.begins_with("voice_") else EFFECT_VOLUME
 	p.volume_db = linear_to_db(volume)
 	p.play()
 

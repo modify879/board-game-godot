@@ -25,7 +25,11 @@ var avatar_left := true # desk 일 때 아바타 열이 왼쪽(바깥쪽이 왼�
 var hero_slot := false # desk 일 때 아래 가운데 큰 패널
 var k := 1.0 # desk 크기 배율
 var token_center := Vector2.ZERO # 행동 토큰(BadgeAction) 중심 — 좌석 로컬 좌표, table.gd 가 정한다(데스크톱·폰 모두)
+signal empty_clicked ## 관전자가 빈 자리를 눌렀다 — table.gd 가 참가 흐름을 연다
+
 var empty := true
+var clickable := false # 빈 자리를 누를 수 있다(관전 중·대기열 밖). table.gd 가 정한다
+var hovered := false
 var is_me := false
 var to_act := false
 var badge_side := 0 # 배지 줄이 캡슐보다 넓으면 넘치는 쪽: 1 = 오른쪽, -1 = 왼쪽, 0 = 양쪽(table.gd 가 화면 가운데 반대쪽으로 정한다)
@@ -106,6 +110,12 @@ static func desk_columns(hero: bool, left: bool, kk: float) -> Dictionary:
 
 
 func _ready() -> void:
+	mouse_entered.connect(func() -> void:
+		hovered = true
+		queue_redraw())
+	mouse_exited.connect(func() -> void:
+		hovered = false
+		queue_redraw())
 	_pill(badge_all_in, ACCENT, ON_ACCENT)
 	_pill(badge_presence, Color(0.33, 0.36, 0.40), TEXT)
 	_pill(badge_leave, SURFACE_RAISED, TEXT_MUTED, BORDER)
@@ -358,8 +368,51 @@ func _name_lines(font: Font, fs: int) -> int:
 
 
 func _empty_rect() -> Rect2:
-	var s := Vector2(size.x * 0.62, size.y * 0.55)
+	var s := size * 0.6 if desk else Vector2(size.x * 0.62, size.y * 0.55)
 	return Rect2((size - s) / 2.0, s)
+
+
+## 누를 수 있는 빈 자리: 손가락 커서 + 마우스를 받는다. 아니면 마우스를 지나친다
+func set_clickable(on: bool) -> void:
+	clickable = on
+	mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if on else Control.CURSOR_ARROW
+	if not on:
+		hovered = false
+	queue_redraw()
+
+
+## 빈 자리는 그려진 자리표시(_empty_rect)만 마우스를 받는다 — 패널 전체를 덮지 않는다
+func _has_point(point: Vector2) -> bool:
+	return _empty_rect().has_point(point) if empty else Rect2(Vector2.ZERO, size).has_point(point)
+
+
+func _gui_input(event: InputEvent) -> void:
+	var mb := event as InputEventMouseButton
+	if clickable and empty and mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+		accept_event()
+		empty_clicked.emit()
+
+
+## 빈 자리 자리표시: 낮은 대비의 점선(데스크톱) 또는 캡슐(폰). 누를 수 있으면 마우스를 올릴 때 강조
+func _draw_empty_slot() -> void:
+	var er := _empty_rect()
+	var hot := clickable and hovered
+	var line := Color(ACCENT, 0.8) if hot else (Color(TEXT_MUTED, 0.4) if desk else Color(BORDER, 0.3))
+	if desk:
+		if hot:
+			draw_rect(er, Color(ACCENT, 0.08))
+		var w := maxf(1.0, k)
+		var c := [er.position, er.position + Vector2(er.size.x, 0), er.end, er.position + Vector2(0, er.size.y)]
+		for i in 4:
+			draw_dashed_line(c[i], c[(i + 1) % 4], line, w, 6.0 * k)
+	else:
+		_style.bg_color = Color(ACCENT, 0.1) if hot else Color(SURFACE, 0.2)
+		_style.set_border_width_all(1)
+		_style.border_color = line
+		_style.set_corner_radius_all(int(er.size.y / 2.0))
+		_style.draw(get_canvas_item(), er)
+	empty_label.add_theme_color_override("font_color", ACCENT if hot else Color(TEXT_MUTED, 0.55))
 
 
 func _pill(l: Label, bg: Color, fg: Color, border := Color(0, 0, 0, 0)) -> void:
@@ -388,7 +441,7 @@ func show_empty(seat_no: int, cards: Array = [], category := "") -> void:
 	for l: Control in [initial, name_label, stack_label, badge_all_in, badge_presence, badge_leave, badge_action, payout_label, fold_label, hand_rank]:
 		l.hide()
 	_badge_count = 0
-	empty_label.text = "빈 자리 %d" % seat_no
+	empty_label.text = "빈 자리"
 	empty_label.show()
 	_set_cards(cards)
 	_set_pill(category)
@@ -580,12 +633,7 @@ func _draw() -> void:
 		_draw_desk()
 		return
 	if empty:
-		var er := _empty_rect()
-		_style.bg_color = Color(SURFACE, 0.4)
-		_style.set_border_width_all(1)
-		_style.border_color = Color(BORDER, 0.6)
-		_style.set_corner_radius_all(int(er.size.y / 2.0))
-		_style.draw(get_canvas_item(), er)
+		_draw_empty_slot()
 		return
 	_style.bg_color = SURFACE
 	_style.set_border_width_all(3 if to_act else 2)
@@ -628,11 +676,7 @@ func _draw_avatar(c: Vector2, r: float, col: Color, a: float, square := false) -
 func _draw_desk() -> void:
 	var radius := int(10.0 * k)
 	if empty:
-		_style.bg_color = Color(SURFACE, 0.4)
-		_style.set_border_width_all(1)
-		_style.border_color = Color(BORDER, 0.6)
-		_style.set_corner_radius_all(radius)
-		_style.draw(get_canvas_item(), Rect2(Vector2.ZERO, size))
+		_draw_empty_slot()
 		return
 	_style.bg_color = Color(SURFACE.r, SURFACE.g, SURFACE.b, SURFACE.a * _dim.a)
 	_style.set_border_width_all(int(ceil((4.0 if to_act else 2.0) * k)))
