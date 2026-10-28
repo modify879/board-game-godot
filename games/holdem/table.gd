@@ -106,9 +106,6 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var info_label: Label = %InfoLabel
 @onready var total_box: PanelContainer = %TotalBox
 @onready var total_label: Label = %TotalLabel
-@onready var call_key: Label = %CallKey
-@onready var call_label: Label = %CallLabel
-@onready var call_spacer: Control = %CallSpacer
 
 var seat_nodes: Array = [] # seat_nodes[seatNo - 1] -> seat.tscn. 위치는 _layout 이 절대 좌표로 정한다
 var bet_boxes: Array = [] # bet_boxes[seatNo - 1] -> BoxContainer(폰 가로·데스크톱 세로)(칩 아이콘 + 금액)
@@ -551,12 +548,10 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0 * k, hc.y)
 	var hero_cd: Rect2 = SeatScript.desk_columns(true, true, k).cards # 내 큰 카드는 안쪽(카드) 열 가운데
 	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, (8.0 + SeatScript.name_row(true)) * k)
-	# Total / Call 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
+	# Total 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
 	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
-	for l: Label in [total_label, call_label]:
-		l.add_theme_font_size_override("font_size", int(round(22.0 * k)))
-	for l: Label in [call_key, %TotalKey]:
-		l.add_theme_font_size_override("font_size", int(round(18.0 * k)))
+	total_label.add_theme_font_size_override("font_size", int(round(22.0 * k)))
+	%TotalKey.add_theme_font_size_override("font_size", int(round(18.0 * k)))
 	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
 	total_box.reset_size()
 	total_box.position = off + Vector2(D_CENTER.x * k - total_box.size.x / 2.0, D_TOTAL_TOP * k)
@@ -1242,11 +1237,6 @@ func _update_pot() -> void:
 	var hip: bool = public_view.get("handInProgress", false)
 	total_box.visible = desktop and hip
 	total_label.text = Format.comma(pot)
-	var my_turn: bool = hip and my_available_actions != null and _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no()
-	var call_amount := int(my_available_actions.get("callAmount", 0) if my_turn and my_available_actions.get("callAmount") != null else 0)
-	call_label.text = Format.comma(call_amount) if call_amount > 0 else ""
-	for n: Control in [call_spacer, call_key, call_label]:
-		n.visible = call_amount > 0
 
 
 func _update_board_label() -> void:

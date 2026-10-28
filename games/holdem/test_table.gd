@@ -484,17 +484,6 @@ func _ready() -> void:
 	table._drop_private()
 	check(table.my_hand_text == "", "개인 뷰를 버리면 문구도 지운다")
 
-	# Call 행: 내 차례이고 callAmount > 0 일 때만
-	table._handle_public(_view(3200, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
-	table._handle_private({"seq": 920000.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}})
-	check(table.call_label.visible and table.call_key.visible and table.call_label.text == "200", "Call 행: callAmount 200 이면 보인다")
-	table._handle_private({"seq": 920001.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}})
-	check(not table.call_label.visible and not table.call_key.visible and table.call_label.text == "", "Call 행: callAmount 0 이면 숨김")
-	table._handle_private({"seq": 920002.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": true, "callAmount": null, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}})
-	check(not table.call_label.visible, "Call 행: callAmount null 이면 숨김")
-	table._handle_public(_view(3201, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0, "board": ["As", "Kd", "2c"]}))
-	table._handle_private({"seq": 920003.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}})
-	check(not table.call_label.visible, "Call 행: 내 차례가 아니면 숨김")
 	if table.desktop: # 바탕은 행동 패널 아래, 내 큰 카드는 좌석 패널 위(거꾸로면 흐려 보인다)
 		check(table.action_bg.get_index() < table.bottom_region.get_index() and table.my_cards_box.get_index() > table.seat_nodes[8].get_index(), "데스크톱 그리기 순서: 행동 바탕 < 행동 패널, 좌석 < 내 카드")
 
