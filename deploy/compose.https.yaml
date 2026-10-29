@@ -1,0 +1,9 @@
+# 자체 서명 HTTPS — 외부 접속용. Godot Web 은 localhost 가 아니면 secure context(https) 가 필요하다
+# 사용: docker compose -f compose.yaml -f compose.https.yaml up -d  (QA 프로젝트에는 붙이지 않는다)
+services:
+  web:
+    ports:
+      - "${WEB_TLS_PORT:-8443}:443"
+    volumes:
+      - ./https/https.conf:/etc/nginx/conf.d/https.conf:ro
+      - ./https/certs:/etc/nginx/certs:ro

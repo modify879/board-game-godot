@@ -17,7 +17,10 @@ Godot 은 PATH 에 없다. 프로젝트 루트에서 `--path .` 로 실행한다
 rm -f build/web/index.{wasm,pck,js}.gz && /mnt/c/Users/jsm/.godot/Godot.exe --headless --path . --export-release "Web" build/web/index.html && gzip -kf9 build/web/index.{wasm,pck,js}   # Web 빌드 + 미리 압축. 꼭 함께 — nginx gzip_static 은 .gz 가 있으면 그것을 보내 옛 빌드가 나간다
 .claude/skills/web-qa/run_all.sh   # 전체 점검: 헤드리스 전부 + (바뀌었으면) Web 빌드 + QA 시나리오(:8001). 끝에 표와 소요 시간. QA 시나리오는 데스크톱 → 폰 순으로 돌되 폰은 화면 배치 시나리오만(`--desktop`·`--phone` 이면 그 크기만). 한 게임만: run_all.sh --game holdem / 일부만: --only 4,5(번호는 시나리오가 늘면 밀린다)
 (cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose up -d)              # http://localhost:8000 (같은 origin 프록시)
+(cd deploy && SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8080 docker compose -f compose.yaml -f compose.https.yaml up -d)   # 위 + 외부용 https://modify95.iptime.org:8443 (자체 서명). 외부(localhost 아님)는 https 여야 Godot 이 뜬다
+mkdir -p deploy/https/certs && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=modify95.iptime.org" -addext "subjectAltName=DNS:modify95.iptime.org,DNS:localhost,IP:127.0.0.1" -keyout deploy/https/certs/key.pem -out deploy/https/certs/cert.pem   # 위 인증서(저장소에 넣지 않는다)
 (cd deploy && WEB_PORT=8001 SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8081 docker compose -p board-game-qa-web up -d)   # QA 전용 http://localhost:8001 → QA 서버 :8081(짧은 대기). 사용자용 :8000 과 분리
+(cd deploy && WEB_PORT=8001 WEB_TLS_PORT=8444 SERVER_UPSTREAM=$(hostname -I | awk '{print $1}'):8081 docker compose -p board-game-qa-web -f compose.yaml -f compose.https.yaml up -d)   # 위 + 외부용 https://modify95.iptime.org:8444. 포트가 8001 이 아니라 QA 브리지(4배속)는 꺼진다 — 사람이 QA 서버로 해 보는 용도, 자동 QA 는 계속 :8001
 ```
 
 nginx(`deploy`) 컨테이너는 사용자가 계속 띄워 두고 쓴다. 검증이 끝나도 `docker compose down`·`docker rm`·`stop` 하지 않는다 — 내려가 있으면 위 명령으로 다시 띄운다
