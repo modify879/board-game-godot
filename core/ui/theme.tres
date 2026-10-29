@@ -1,9 +1,17 @@
-[gd_resource type="Theme" load_steps=36 format=3]
+[gd_resource type="Theme" load_steps=40 format=3]
 
 [ext_resource type="FontFile" path="res://core/ui/fonts/Pretendard-Regular.woff2" id="1_font"]
 
-[sub_resource type="FontVariation" id="bold"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoColorEmoji.woff2" id="2_emoji"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoSansJP-Han.woff2" id="3_han"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoSansArabic-Regular.woff2" id="4_arabic"]
+
+[sub_resource type="FontVariation" id="main"]
 base_font = ExtResource("1_font")
+fallbacks = [ExtResource("3_han"), ExtResource("4_arabic"), ExtResource("2_emoji")]
+
+[sub_resource type="FontVariation" id="bold"]
+base_font = SubResource("main")
 variation_embolden = 0.6
 
 [sub_resource type="StyleBoxFlat" id="b_n"]
@@ -23,12 +31,12 @@ content_margin_right = 16
 content_margin_bottom = 11
 
 [sub_resource type="StyleBoxFlat" id="b_h"]
-bg_color = Color(0.1725, 0.2118, 0.2667, 1)
+bg_color = Color(0.2039, 0.2431, 0.3020, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.1961, 0.2353, 0.2902, 1)
+border_color = Color(0.2471, 0.2902, 0.3608, 1)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
@@ -103,12 +111,12 @@ content_margin_right = 16
 content_margin_bottom = 11
 
 [sub_resource type="StyleBoxFlat" id="pr_h"]
-bg_color = Color(0.9412, 0.7882, 0.3922, 1)
+bg_color = Color(0.9725, 0.8353, 0.4314, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
-border_color = Color(0.9412, 0.7882, 0.3922, 1)
+border_color = Color(0.9725, 0.8353, 0.4314, 1)
 corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
@@ -517,13 +525,14 @@ content_margin_right = 8
 content_margin_bottom = 1
 
 [resource]
-default_font = ExtResource("1_font")
+default_font = SubResource("main")
 default_font_size = 20
 Button/styles/normal = SubResource("b_n")
 Button/styles/hover = SubResource("b_h")
 Button/styles/pressed = SubResource("b_p")
 Button/styles/disabled = SubResource("b_d")
 Button/styles/focus = SubResource("b_f")
+Button/styles/hover_pressed = SubResource("b_h")
 Button/colors/font_color = Color(0.9098, 0.9255, 0.9490, 1)
 Button/colors/font_hover_color = Color(0.9098, 0.9255, 0.9490, 1)
 Button/colors/font_pressed_color = Color(0.9098, 0.9255, 0.9490, 1)
@@ -533,6 +542,7 @@ Button/colors/font_disabled_color = Color(0.4196, 0.4588, 0.5176, 1)
 ButtonPrimary/base_type = &"Button"
 ButtonPrimary/styles/normal = SubResource("pr_n")
 ButtonPrimary/styles/hover = SubResource("pr_h")
+ButtonPrimary/styles/hover_pressed = SubResource("pr_h")
 ButtonPrimary/styles/pressed = SubResource("pr_p")
 ButtonPrimary/styles/focus = SubResource("pr_f")
 ButtonPrimary/colors/font_color = Color(0.1020, 0.0784, 0.0196, 1)
@@ -543,6 +553,7 @@ ButtonPrimary/colors/font_focus_color = Color(0.1020, 0.0784, 0.0196, 1)
 ButtonDanger/base_type = &"Button"
 ButtonDanger/styles/normal = SubResource("dg_n")
 ButtonDanger/styles/hover = SubResource("dg_h")
+ButtonDanger/styles/hover_pressed = SubResource("dg_h")
 ButtonDanger/styles/pressed = SubResource("dg_p")
 ButtonDanger/styles/focus = SubResource("dg_f")
 ButtonDanger/colors/font_color = Color(1.0000, 1.0000, 1.0000, 1)
@@ -553,6 +564,7 @@ ButtonDanger/colors/font_focus_color = Color(1.0000, 1.0000, 1.0000, 1)
 ButtonSuccess/base_type = &"Button"
 ButtonSuccess/styles/normal = SubResource("sc_n")
 ButtonSuccess/styles/hover = SubResource("sc_h")
+ButtonSuccess/styles/hover_pressed = SubResource("sc_h")
 ButtonSuccess/styles/pressed = SubResource("sc_p")
 ButtonSuccess/styles/focus = SubResource("sc_f")
 ButtonSuccess/colors/font_color = Color(1.0000, 1.0000, 1.0000, 1)
@@ -565,6 +577,13 @@ OptionButton/styles/hover = SubResource("b_h")
 OptionButton/styles/pressed = SubResource("b_p")
 OptionButton/styles/disabled = SubResource("b_d")
 OptionButton/styles/focus = SubResource("b_f")
+OptionButton/styles/hover_pressed = SubResource("b_h")
+CheckButton/styles/normal = SubResource("b_n")
+CheckButton/styles/hover = SubResource("b_h")
+CheckButton/styles/pressed = SubResource("b_n")
+CheckButton/styles/hover_pressed = SubResource("b_h")
+CheckButton/styles/disabled = SubResource("b_d")
+CheckButton/styles/focus = SubResource("b_f")
 OptionButton/colors/font_color = Color(0.9098, 0.9255, 0.9490, 1)
 OptionButton/colors/font_hover_color = Color(0.9098, 0.9255, 0.9490, 1)
 OptionButton/colors/font_pressed_color = Color(0.9098, 0.9255, 0.9490, 1)

@@ -7,7 +7,7 @@ var failures := 0
 
 func _seat(no: int, user: int, status := "ACTIVE") -> Dictionary:
 	return {"seatNo": float(no), "userId": float(user), "stack": 1000.0, "status": status,
-		"presence": "CONNECTED", "totalContributed": 0.0, "leaveReserved": false}
+		"presence": "CONNECTED", "totalContributed": 0.0, "streetBet": 0.0, "leaveReserved": false}
 
 
 func _view(seq: int, seats: Array, extra := {}) -> Dictionary:
@@ -45,6 +45,12 @@ func _ready() -> void:
 	table.my_available_actions = {"canCheck": true, "callAmount": 0.0, "minRaiseTo": null}
 	table._update_action_bar()
 	check(table.action_bar.visible, "action bar visible on my turn")
+	check(not table.fold_button.disabled and not table.check_button.disabled and table.call_button.disabled and table.call_button.text == "콜", "공짜 체크: 폴드·체크 활성, 콜 비활성('콜')")
+	table.my_available_actions = {"canCheck": true, "callAmount": null, "minRaiseTo": null} # 실서버는 콜할 게 없으면 null
+	table._update_action_bar()
+	check(table.call_button.disabled and table.call_button.text == "콜" and not table.check_button.disabled, "callAmount null: 콜 비활성('콜')")
+	check(table.raise_button.disabled and table.all_in_button.disabled and not table.raise_slider.editable and table.raise_button.text == "레이즈", "레이즈 불가: 레이즈·올인·슬라이더 비활성(숨기지 않는다)")
+	check(table.check_button.visible and table.call_button.visible and table.raise_button.visible and table.all_in_button.visible and table.raise_slider.visible, "못 쓰는 버튼도 보인다(자리 고정)")
 	var qs: Dictionary = table.qa_state()
 	check(qs.to_act_seat == 1 and qs.hand_in_progress and qs.board.size() == 3 and qs.seats.size() == 2 and qs.available_actions == ["CHECK", "FOLD"], "qa_state 기본 필드")
 	var names_ok := true
@@ -68,7 +74,7 @@ func _ready() -> void:
 	table.nickname_cache[8] = "qauser8" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(9, [_seat(1, 7), _seat(2, 8)], {"result": result}))
 	check(table._payout_for(2) == 500, "payout for seat 2 held by same user")
-	check(table.board_label.text == "승리: qauser8 +500", "board_label shows winner nickname: '%s'" % table.board_label.text)
+	check(table.board_label.text == "qauser8 +500", "board_label shows winner nickname: '%s'" % table.board_label.text)
 	table._handle_public(_view(10, [_seat(1, 7), _seat(2, 9)], {"result": result}))
 	check(table._payout_for(2) == 0, "payout ignored when seat taken by another user")
 	check(table.board_label.text == "", "board_label empty when winner left: '%s'" % table.board_label.text)
@@ -146,12 +152,16 @@ func _ready() -> void:
 	# 9. 턴 타이머: turnRemainingMs 로 매 뷰마다 재동기화, null 이면 숨김
 	var seat1: Control = table.seat_nodes[0]
 	var turn_extra := {"handInProgress": true, "toActSeatNo": 1.0, "street": "RIVER"}
-	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0})))
+	table._handle_public(_view(15, seats, turn_extra.merged({"turnRemainingMs": 31000.0, "turnTimeoutMs": 40000.0})))
 	table._update_turn_timer()
 	check(absf(seat1.timer_left - 31.0) < 0.5, "turn timer from turnRemainingMs: %.2f" % seat1.timer_left)
-	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0})))
+	table._handle_public(_view(16, seats, turn_extra.merged({"turnRemainingMs": 20000.0, "turnTimeoutMs": 40000.0})))
 	table._update_turn_timer()
 	check(absf(seat1.timer_left - 20.0) < 0.5, "same-turn view re-syncs timer: %.2f" % seat1.timer_left)
+	check(absf(seat1.timer_total - 40.0) < 0.01, "turn timer total from turnTimeoutMs")
+	table._handle_public(_view(161, seats, turn_extra.merged({"turnRemainingMs": 20000.0, "turnTimeoutMs": null})))
+	table._update_turn_timer()
+	check(seat1.timer_left < 0.0, "null turnTimeoutMs hides timer")
 	table._handle_public(_view(17, seats, turn_extra.merged({"turnRemainingMs": null})))
 	table._update_turn_timer()
 	check(seat1.timer_left < 0.0, "null turnRemainingMs hides timer")
@@ -261,6 +271,17 @@ func _ready() -> void:
 	var null_cat := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 1.0, "userId": 7.0, "holeCards": ["As", "Kd"], "category": null}]}
 	table._handle_public(_view(105, [_seat(1, 7), _seat(2, 8)], {"result": null_cat}))
 	check(not table.show_hand_button.visible and table._find_shown_hand(1) != null, "null category shown hand renders")
+	# 앞면 카드(공개 패)·내 큰 카드가 있는 좌석은 행동 글자를 숨기고, 뒷면 카드 좌석은 보인다
+	var fx_seats := [_seat(1, 7), _seat(2, 8)]
+	fx_seats[0]["lastAction"] = "CHECK"
+	fx_seats[1]["lastAction"] = "CHECK"
+	var showdown2 := {"payouts": showdown.payouts, "shownHands": [{"seatNo": 2.0, "userId": 8.0, "holeCards": ["Qh", "Jh"], "category": "PAIR"}]}
+	table._handle_public(_view(105.5, fx_seats, {"result": showdown2}))
+	check(not table.seat_nodes[1].badge_action.visible and not table.seat_nodes[0].badge_action.visible, "result: 공개 패·내 좌석의 행동 글자 숨김")
+	table._handle_public(_view(105.6, fx_seats, {"handInProgress": true, "toActSeatNo": 1.0}))
+	check(table.seat_nodes[1].badge_action.visible, "핸드 중 뒷면 카드 좌석은 행동 글자 보임")
+	table._handle_public(_view(105.7, fx_seats, {"result": showdown2}))
+	check(table.banner_bg.visible and table.banner_bg.size.x > 0.0, "결과 배너 뒤판이 보임")
 	table._handle_public(_view(106, [_seat(1, 7)]))
 	# SHOW_NOT_ALLOWED 로 거부되면 그 판 동안 다른 뷰가 와도 숨기고, 새 판의 폴드 승리에서는 다시 보인다
 	table._handle_public(_view(107, [_seat(1, 7), _seat(2, 8)], {"result": fold_result}))
@@ -278,8 +299,22 @@ func _ready() -> void:
 	table.add_chips_pending = false
 	table._handle_public(_view(2000, [my_seat]))
 	check(table.add_chips_button.visible and not table.add_chips_button.disabled, "add chips enabled between hands")
+	check(table.add_chips_button.text == "+ 칩" and table.add_chips_button.size.x >= (40.0 if table.desktop else 56.0) and table.add_chips_button.size.y >= (20.0 if table.desktop else 44.0) and table.add_chips_button.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "add chips '+ 칩' text, size and pointing cursor")
+	var my_stack: Label = table.seat_nodes[0].stack_label
+	check(my_stack.mouse_filter == Control.MOUSE_FILTER_STOP and my_stack.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "my stack label clickable between hands")
+	var stack_click := InputEventMouseButton.new()
+	stack_click.button_index = MOUSE_BUTTON_LEFT
+	stack_click.pressed = true
+	my_stack.gui_input.emit(stack_click) # 칩 추가 입력을 연다(버튼과 같은 흐름: 요청이 시작되면 대기 중)
+	check(table.add_chips_pending and table.add_chips_button.disabled, "stack stack_click starts the add-chips flow")
+	table.add_chips_pending = false
+	table.add_chips_gen += 1 # 날아간 조회 응답은 버린다
 	table._handle_public(_view(2001, [my_seat], {"handInProgress": true}))
 	check(table.add_chips_button.disabled, "add chips disabled during hand")
+	check(my_stack.mouse_filter == Control.MOUSE_FILTER_IGNORE and my_stack.mouse_default_cursor_shape == Control.CURSOR_ARROW, "my stack label not clickable during hand")
+	table.add_chips_pending = false
+	my_stack.gui_input.emit(stack_click)
+	check(not table.add_chips_pending, "stack stack_click ignored during hand")
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
 	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
 	my_seat.stack = 20000.0
@@ -288,36 +323,58 @@ func _ready() -> void:
 	my_seat.stack = 1000.0
 	table._handle_public(_view(2004, [_seat(2, 8)]))
 	check(not table.add_chips_button.visible, "add chips hidden when not seated")
+	check(table.seat_nodes[0].stack_label.mouse_filter == Control.MOUSE_FILTER_IGNORE, "stack label not clickable when not seated (spectator)")
 	table._handle_public(_view(2005, [my_seat]))
 	table.add_chips_pending = true
 	table._update_buttons()
 	check(table.add_chips_button.disabled, "add chips disabled while request pending")
 	table.add_chips_pending = false
 
-	# 14c. 나가기 예약: 핸드 중에도 일어서기가 켜져 있고(예약 문구), 예약되면 취소 버튼으로 바뀐다
+	# 14b2. 관전 → 착석: 1번 좌석 패널이 일반에서 큰 내 패널로 바뀐다(데스크톱만 크기가 있다)
+	table._handle_public(_view(2006, [_seat(1, 100), _seat(2, 8)]))
+	check(not table.seat_nodes[0].hero_slot and not table.my_cards_box.visible, "spectator: seat 1 normal panel")
+	table._handle_public(_view(2007, [my_seat, _seat(2, 8)]))
+	check(table.seat_nodes[0].hero_slot == table.desktop, "seated at seat 1: hero panel (desktop)")
+	table._handle_public(_view(2008, [_seat(1, 100), _seat(2, 8)]))
+	check(not table.seat_nodes[0].hero_slot, "unseated: back to normal panel")
+	table._handle_public(_view(2009, [my_seat]))
+
+	# 14c. 뒤로가기 메뉴: 앉아 있으면 항상 켜져 있고 누르면 메뉴(핸드 중이면 "핸드 후"), 예약되면 버튼 문구가 바뀌고 메뉴는 취소·변경을 준다
 	table._handle_public(_view(2010, [my_seat], {"handInProgress": true}))
-	check(table.stand_button.visible and not table.stand_button.disabled, "stand enabled during hand")
-	check(table.stand_button.text == "핸드 후 관전" and table.leave_room_button.visible and table.leave_room_button.text == "핸드 후 방 나가기" and not table.cancel_leave_button.visible, "two buttons during hand, cancel hidden")
+	check(not table.back_button.disabled and table.back_button.text == "← 방 목록" and not table.leave_menu.visible, "back enabled while seated, menu closed")
+	table.back_button.pressed.emit()
+	check(table.leave_menu.visible and table.menu_spectate.visible and table.menu_leave.visible and not table.menu_cancel_reservation.visible and table.menu_close.visible, "menu in hand: spectate/leave/close")
+	check(table.menu_spectate.text == "핸드 후 관전" and table.menu_leave.text == "핸드 후 나가기", "menu texts during hand")
+	table.menu_close.pressed.emit()
+	check(not table.leave_menu.visible and not table.leave_backdrop.visible, "menu close hides")
 	var reserved_seat := _seat(1, 7)
 	reserved_seat["leaveReserved"] = true
+	table.back_button.pressed.emit()
 	table._handle_public(_view(2011, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
-	check(not table.stand_button.visible and table.cancel_leave_button.visible, "reserved: stand hidden, cancel visible")
+	check(table.back_button.text == "관전 예약됨" and not table.menu_spectate.visible and table.menu_leave.visible and table.menu_cancel_reservation.visible and table.menu_leave.text == "나가기로 변경", "reserved spectate: cancel + switch to leave")
+	table.menu_close.pressed.emit()
 	var other_reserved := _seat(2, 8)
 	other_reserved["leaveReserved"] = true
 	table._handle_public(_view(2012, [my_seat, other_reserved], {"handInProgress": true}))
-	check(table.stand_button.visible and not table.cancel_leave_button.visible, "other seat reserved leaves my buttons alone")
+	check(table.back_button.text == "← 방 목록" and not table.back_button.disabled, "other seat reserved leaves my back button alone")
 	table._handle_public(_view(2013, [my_seat]))
-	check(table.stand_button.text == "일어서기" and table.leave_room_button.text == "방 나가기" and table.leave_room_button.visible, "stand/leave texts between hands")
+	table.back_button.pressed.emit()
+	check(table.menu_spectate.text == "관전" and table.menu_leave.text == "나가기" and table.menu_spectate.visible and table.menu_leave.visible and not table.menu_cancel_reservation.visible, "menu texts between hands")
+	table._handle_public(_view(2013, [_seat(2, 8)]))
+	check(not table.leave_menu.visible and not table.back_button.disabled, "unseated: menu closes, back stays enabled (-> list)")
+	table._handle_public(_view(2013, [my_seat]))
 	# 14d. 방 나가기 의도: 202 → 예약 뷰에서 취소 문구·내 배지가 의도를 따르고, 취소하면 의도가 꺼진다
 	table._handle_public(_view(2014, [my_seat], {"handInProgress": true}))
 	table._apply_stand_result({"ok": true, "status": 202}, true)
 	check(table.leave_room_after_stand, "202 with leave_room sets intent")
 	table._handle_public(_view(2015, [reserved_seat, _seat(2, 8)], {"handInProgress": true}))
-	check(table.cancel_leave_button.text == "나가기 예약됨 · 취소" and not table.leave_room_button.visible, "cancel text for leave-room intent")
+	table.back_button.pressed.emit()
+	check(table.back_button.text == "나가기 예약됨" and table.menu_spectate.visible and table.menu_spectate.text == "관전으로 변경" and not table.menu_leave.visible and table.menu_cancel_reservation.visible, "leave-room intent: button text, switch to spectate")
+	table.menu_close.pressed.emit()
 	check(table.seat_nodes[0].badge_leave.visible and table.seat_nodes[0].badge_leave.text == "나가기 예약", "my badge: 나가기 예약")
 	table.leave_room_after_stand = false
 	table._handle_public(_view(2016, [reserved_seat, other_reserved], {"handInProgress": true}))
-	check(table.cancel_leave_button.text == "관전 예약됨 · 취소" and table.seat_nodes[0].badge_leave.text == "관전 예약", "spectate intent texts")
+	check(table.back_button.text == "관전 예약됨" and table.seat_nodes[0].badge_leave.text == "관전 예약", "spectate intent texts")
 	check(table.seat_nodes[1].badge_leave.visible and table.seat_nodes[1].badge_leave.text == "일어서기 예약", "other badge neutral")
 	table.leave_room_after_stand = true
 	table.public_view = _view(2017, [reserved_seat])
@@ -368,7 +425,7 @@ func _ready() -> void:
 		"shownHands": [{"seatNo": 2.0, "userId": 99.0, "holeCards": ["As", "Kd"], "category": null}]}
 	table.nickname_cache[99] = "winner99" # 네트워크 없이 닉네임을 정해 둔다
 	table._handle_public(_view(200, [_seat(1, 7)], {"result": left_result}))
-	check(table.board_label.text == "승리: winner99 +300", "빈 자리 승자 닉네임·지급액 표시: '%s'" % table.board_label.text)
+	check(table.board_label.text == "winner99 +300", "빈 자리 승자 닉네임·지급액 표시: '%s'" % table.board_label.text)
 	check(table._find_shown_hand(2) != null, "빈 자리 승자 패 찾음")
 	check(table.seat_nodes[1].shown_codes.size() == 2, "빈 자리에 보여 준 패 카드 그림")
 	table._handle_public(_view(201, [_seat(1, 7), _seat(2, 77)], {"result": left_result}))
@@ -406,6 +463,39 @@ func _ready() -> void:
 		settled = settled and r.scale == Vector2.ONE and r.modulate.a == 1.0
 	check(settled, "첫 뷰(재연결)는 도는 연출을 끊고 노드를 scale 1 / alpha 1 로 맞춘다")
 
+	# 방 이름·사이드 팟 문구
+	table._handle_public(_view(390, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN", "pot": 1300.0, "tableName": "친구들 방", "pots": [{"amount": 900.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 400.0, "eligibleSeatNos": [1.0]}]}))
+	check(table.name_label.text == "· 친구들 방" and table.qa_state().table_name == "친구들 방", "방 이름 표시·qa_state table_name")
+	check(table.qa_state().pot_labels == ["메인 900", "사이드 1 400"] and table.pots_label.visible and table.pots_label.text.contains("사이드 1 400"), "사이드 팟 2개 문구")
+	table._handle_public(_view(391, duo, {"handInProgress": true, "toActSeatNo": 1.0, "street": "TURN", "tableName": "친구들 방", "pots": []}))
+	check(not table.pots_label.visible and table.qa_state().pot_labels.is_empty(), "팟 0개면 사이드 팟 줄 없음")
+
+	# 베팅 칸은 서버 streetBet 을 읽는다. 올인 런아웃(streetBet 0, 팟만 있음)엔 베팅 칸이 없다
+	var bet_seats := [_seat(1, 7), _seat(2, 8)]
+	bet_seats[0]["streetBet"] = 500.0
+	bet_seats[0]["totalContributed"] = 900.0 # 앞 스트리트에서 400 은 팟으로 갔다 — 칸에는 streetBet 만
+	table._handle_public(_view(392, bet_seats, {"handInProgress": true, "toActSeatNo": 2.0, "street": "TURN"}))
+	check(table.bet_boxes[0].visible and (table.bet_boxes[0].get_child(1) as Label).text == "500" and not table.bet_boxes[1].visible, "streetBet 만 베팅 칸에 보인다")
+	var run_seats := [_seat(1, 7, "ALL_IN"), _seat(2, 8, "ALL_IN")]
+	table._handle_public(_view(393, run_seats, {"handInProgress": true, "toActSeatNo": null, "street": "TURN", "pot": 1300.0, "pots": [{"amount": 900.0, "eligibleSeatNos": [1.0, 2.0]}, {"amount": 400.0, "eligibleSeatNos": [1.0]}]}))
+	check(not table.bet_boxes[0].visible and not table.bet_boxes[1].visible and table.pots_label.visible, "올인 런아웃: streetBet 0 이면 베팅 칸 없고 사이드 팟 줄은 보인다")
+
+	# 마지막 행동 배지: lastAction 이 있으면 정산 뒤(handInProgress=false)에도 남고, null 이면 숨는다
+	var acted := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
+	acted[0]["lastAction"] = "RAISE_TO"
+	acted[1]["lastAction"] = "FOLD"
+	acted[2]["lastAction"] = "CALL"
+	table.have_view = false
+	table._handle_public(_view(400, acted, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	var sn: Array = table.seat_nodes
+	check(sn[0].badge_action.visible and sn[0].badge_action.text == "레이즈" and sn[1].badge_action.text == "폴드" and sn[2].badge_action.text == "콜" and sn[2].badge_all_in.visible, "행동 배지 문구")
+	check(table.qa_state().seats[0].last_action == "레이즈", "qa_state last_action")
+	table._handle_public(_view(401, acted, {"handInProgress": false}))
+	check(sn[0].badge_action.visible and sn[0].badge_action.text == "레이즈" and sn[1].badge_action.text == "폴드", "정산 뒤에도 lastAction 이 있으면 행동 배지 유지")
+	var cleared := [_seat(1, 7), _seat(2, 8), _seat(3, 9, "ALL_IN")]
+	table._handle_public(_view(402, cleared, {"handInProgress": true, "toActSeatNo": 1.0, "street": "PREFLOP"}))
+	check(not sn[0].badge_action.visible and not sn[1].badge_action.visible and not sn[2].badge_action.visible, "lastAction null 이면 행동 배지 숨김")
+
 	# 핸드 기록 좌석 문구
 	var hh := preload("res://games/holdem/hand_history.gd")
 	check(hh.player_text({"seatNo": 3.0, "userId": 7.0, "startingStack": 5000.0, "endingStack": 6200.0}, 3, 7, false) == "좌석 3 (D) 나  +1,200", "핸드 기록: 내 좌석·버튼·이익")
@@ -415,6 +505,159 @@ func _ready() -> void:
 	check(hh.player_text({"seatNo": 3.0, "userId": 7.0, "startingStack": 5000.0, "endingStack": 6200.0}, 3, 7, false, "qauser1") == "좌석 3 (D) qauser1 (나)  +1,200", "핸드 기록: 내 좌석·버튼·닉네임")
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 4500.0}, 3, 7, false, "qauser2") == "좌석 2 qauser2  -500", "핸드 기록: 타인·닉네임·손실")
 	check(hh.player_text({"seatNo": 2.0, "userId": 8.0, "startingStack": 5000.0, "endingStack": 5100.0}, 3, -1, true, "qauser2") == "좌석 2 qauser2 (회원 #8)  +100", "핸드 기록: 관리자 닉네임")
+
+	# 3b. 블라인드 마커 — 핸드 중에만, 해당 좌석 안에(헤즈업은 D+SB 가 한 좌석에 D, SB 순)
+	var bl := {"handInProgress": true, "buttonSeatNo": 1.0, "smallBlindSeatNo": 1.0, "bigBlindSeatNo": 2.0}
+	table._handle_public(_view(3000, [_seat(1, 7), _seat(2, 8)], bl))
+	check(table.seat_nodes[0].markers == [0, 1] and table.seat_nodes[1].markers == [2], "헤즈업 마커: 1번 D·SB, 2번 BB")
+	var qb: Dictionary = table.qa_state()
+	check(qb.sb_seat_no == 1 and qb.bb_seat_no == 2, "qa_state sb_seat_no·bb_seat_no")
+	table._handle_public(_view(3001, [_seat(1, 7), _seat(2, 8)], bl.merged({"handInProgress": false}, true)))
+	qb = table.qa_state()
+	check(table.seat_nodes[0].markers == [0] and table.seat_nodes[1].markers.is_empty() and qb.sb_seat_no == -1 and qb.bb_seat_no == -1, "핸드 밖에서는 D 만 남고 SB·BB 마커 숨김")
+
+	# currentHand → 족보 문구
+	table._handle_public(_view(3100, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
+	table._handle_private({"seq": 910000.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "PAIR", "tiebreakers": [14.0]}})
+	var hr: Label = table.seat_nodes[0].hand_rank
+	check(table.my_hand_text == "A 원페어" and table.qa_state().my_hand_text == "A 원페어", "개인 뷰 currentHand 가 문구로 저장된다")
+	check(hr.visible and hr.text == "A 원페어" or not table.desktop, "내 패널 HandRank 에 문구(데스크톱)")
+	check(table.hand_text_pill.visible == table.compact and (not table.compact or table.hand_text_pill.text == "A 원페어"), "폰 족보 알약은 폰에서만 보인다")
+	table._handle_private({"seq": 910001.0, "holeCards": ["As", "Ah"], "currentHand": null})
+	check(table.my_hand_text == "" and not hr.visible and not table.hand_text_pill.visible, "currentHand null 이면 문구·라벨 숨김")
+	table._handle_private({"seq": 910002.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "FLUSH", "tiebreakers": [14.0, 9.0]}})
+	table._drop_private()
+	check(table.my_hand_text == "", "개인 뷰를 버리면 문구도 지운다")
+
+	if table.desktop: # 바탕은 행동 패널 아래, 내 큰 카드는 좌석 패널 위(거꾸로면 흐려 보인다)
+		check(table.action_bg.get_index() < table.bottom_region.get_index() and table.my_cards_box.get_index() > table.seat_nodes[8].get_index(), "데스크톱 그리기 순서: 행동 바탕 < 행동 패널, 좌석 < 내 카드")
+
+	# 폴드 확인·± 스텝: 공짜 체크 가능이면 첫 누름은 보내지 않고, 두 번째가 보낸다
+	table._handle_public(_view(3300, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
+	table._handle_private({"seq": 920100.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}})
+	table.action_pending = false
+	table.fold_button.pressed.emit()
+	check(not table.action_pending and table.fold_button.text == "정말 폴드?", "폴드 확인: canCheck 면 첫 누름은 보내지 않고 문구가 바뀐다")
+	table.fold_button.pressed.emit()
+	check(table.action_pending and table.fold_button.text == "폴드", "폴드 확인: 두 번째 누름은 보낸다")
+	table.action_pending = false
+	table._handle_private({"seq": 920101.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}})
+	table.fold_button.pressed.emit()
+	check(table.action_pending, "폴드 확인: canCheck 가 아니면 바로 보낸다")
+	table.action_pending = false
+	table._update_action_bar()
+	check(table.check_button.disabled and not table.call_button.disabled and table.call_button.text == "콜 200" and not table.raise_button.disabled and not table.all_in_button.disabled and table.raise_slider.editable, "콜 200: 체크 비활성, 콜·레이즈·올인 활성")
+	table.raise_slider.value = 400
+	table.plus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 500 and int(table.raise_spin.value) == 500, "+ 버튼은 100 올린다")
+	table.minus_button.pressed.emit()
+	table.minus_button.pressed.emit()
+	table.minus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 400, "− 버튼은 최소 레이즈 밑으로 내려가지 않는다")
+	table.raise_slider.value = 950
+	table.plus_button.pressed.emit()
+	table.plus_button.pressed.emit()
+	check(int(table.raise_slider.value) == 1000, "+ 버튼은 최대 레이즈를 넘지 않는다")
+
+	# 효과음: 음소거 토글과 내 차례 마지막 5초 비프
+	check(not table.settings_popup.visible, "설정 팝업은 처음엔 닫혀 있다")
+	table.settings_button.pressed.emit()
+	check(table.settings_popup.visible and table.sfx_toggle.button_pressed and table.voice_toggle.button_pressed, "설정 버튼은 팝업을 열고 둘 다 켜져 있다")
+	table.sfx_toggle.button_pressed = false
+	check(not table.sfx.sfx_on and table.sfx.voice_on, "효과음 토글은 효과음만 끈다")
+	table.voice_toggle.button_pressed = false
+	check(not table.sfx.voice_on, "딜러 음성 토글은 음성을 끈다")
+	var cfg := ConfigFile.new()
+	check(cfg.load("user://holdem_settings.cfg") == OK and not bool(cfg.get_value("sound", "sfx_on")) and not bool(cfg.get_value("sound", "voice_on")), "두 설정은 파일에 저장된다")
+	var reloaded: Node = table.Sfx.new()
+	table.add_child(reloaded)
+	check(not reloaded.sfx_on and not reloaded.voice_on, "저장한 설정을 다시 읽는다")
+	reloaded.queue_free()
+	table.settings_close.pressed.emit()
+	check(not table.settings_popup.visible, "닫기 버튼은 팝업을 닫는다")
+	table.settings_button.pressed.emit()
+	var click := InputEventMouseButton.new()
+	click.pressed = true
+	table.settings_backdrop.gui_input.emit(click)
+	check(not table.settings_popup.visible, "배경을 누르면 팝업이 닫힌다")
+	table.sfx.set_sfx_on(true)
+	table.sfx.played.clear()
+	table.sfx.play("voice_call")
+	table.sfx.play("call")
+	check(table.sfx.played == ["call"], "음성만 끄면 음성은 안 나고 효과음은 난다")
+	table.sfx.set_sfx_on(false)
+	table.sfx.set_voice_on(true)
+	table.sfx.played.clear()
+	table.sfx.play("voice_call")
+	table.sfx.play("beep")
+	check(table.sfx.played == ["voice_call"], "효과음만 끄면 음성만 난다")
+	cfg.clear()
+	cfg.set_value("sound", "muted", true)
+	cfg.save("user://holdem_settings.cfg")
+	var migrated: Node = table.Sfx.new()
+	table.add_child(migrated)
+	check(not migrated.sfx_on and not migrated.voice_on, "옛 muted=true 는 둘 다 끈다")
+	migrated.queue_free()
+	cfg.set_value("sound", "muted", false)
+	cfg.save("user://holdem_settings.cfg")
+	var migrated2: Node = table.Sfx.new()
+	table.add_child(migrated2)
+	check(migrated2.sfx_on and migrated2.voice_on, "옛 muted=false 는 둘 다 켠다")
+	migrated2.queue_free()
+	table.sfx.set_sfx_on(true) # 설정 파일을 기본값으로 되돌린다
+	table.sfx.set_voice_on(true)
+	table.sfx.played.clear()
+	table.last_beep_sec = -1
+	for left in [6.0, 5.0, 4.6, 4.0, 3.5, 3.0, 2.0, 1.0, 0.5, 0.0]:
+		table._beep_tick(left, true)
+	check(table.sfx.played == ["beep", "beep", "beep", "beep", "beep"], "내 차례 5..1초에 한 번씩 비프(5·4·3·2·1)")
+	table.sfx.played.clear()
+	table._beep_tick(3.0, false)
+	table._beep_tick(-1.0, true)
+	check(table.sfx.played.is_empty(), "남의 차례·타이머 없음은 비프 없음")
+
+	# 내 차례 알림: 시작할 때 한 번만, 관전 중엔 없음
+	table._handle_public(_view(4000, [_seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
+	table.sfx.played.clear()
+	table._handle_public(_view(4001, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
+	check(not table.sfx.played.has("turn"), "남의 차례에는 내 차례 소리 없음")
+	table._handle_public(_view(4002, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	check(table.sfx.played.count("turn") == 1, "내 차례가 시작되면 소리 한 번")
+	table._handle_public(_view(4003, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
+	check(table.sfx.played.count("turn") == 1, "같은 차례의 뷰 갱신은 다시 울리지 않음")
+	table._handle_public(_view(4004, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
+	table._handle_public(_view(4005, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	check(table.sfx.played.count("turn") == 2, "차례가 다시 오면 다시 울림")
+	table.sfx.played.clear()
+	table._handle_public(_view(4006, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	table._handle_public(_view(4007, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
+	table._handle_public(_view(4008, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
+	check(not table.sfx.played.has("turn"), "관전 중에는 내 차례 소리 없음")
+
+	# 빈 자리 클릭: 관전 중이면 참가 팝업, 앉아 있으면 아무 일 없음
+	var empty_click := InputEventMouseButton.new()
+	empty_click.button_index = MOUSE_BUTTON_LEFT
+	empty_click.pressed = true
+	table.stomp_connected = true
+	table.waiting = false
+	table._handle_public(_view(4010, [_seat(2, 8)])) # 나는 관전
+	var empty_seat: Control = table.seat_nodes[2]
+	check(empty_seat.empty and empty_seat.clickable and empty_seat.mouse_default_cursor_shape == Control.CURSOR_POINTING_HAND, "관전 중 빈 자리는 눌러지고 손가락 커서")
+	check(not table.seat_nodes[1].clickable, "채워진 자리는 눌리지 않음")
+	table.sit_popup.hide()
+	empty_seat._gui_input(empty_click)
+	check(table.sit_popup.visible, "관전 중 빈 자리 클릭 = 참가 팝업")
+	table.sit_popup.hide()
+	table.sit_popup_gen += 1 # 진행 중 buy-in 응답은 버린다
+	table.waiting = true
+	table._update_buttons()
+	check(not empty_seat.clickable, "대기열 중에는 빈 자리를 누를 수 없음")
+	table.waiting = false
+	table._handle_public(_view(4011, [_seat(1, 7), _seat(2, 8)])) # 나는 착석
+	var empty_seat2: Control = table.seat_nodes[2]
+	check(empty_seat2.empty and not empty_seat2.clickable and empty_seat2.mouse_filter == Control.MOUSE_FILTER_IGNORE, "착석 중 빈 자리는 눌리지 않음")
+	empty_seat2._gui_input(empty_click)
+	check(not table.sit_popup.visible, "착석 중 빈 자리 클릭은 아무 일 없음")
 
 	get_tree().quit(1 if failures else 0)
 

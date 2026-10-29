@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://games/holdem/table.gd" id="1"]
 [ext_resource type="Script" path="res://games/holdem/marker.gd" id="2"]
+[ext_resource type="Texture2D" path="res://games/holdem/assets/chips/chipYellow.png" id="3"]
 
 [node name="Table" type="Control"]
 anchors_preset = 15
@@ -36,17 +37,44 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "← 방 목록"
 
-[node name="TitleLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="TitleBox" type="HBoxContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/TitleBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "#0"
 
-[node name="StatusLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+[node name="NameLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/TitleBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+text_overrun_behavior = 3
+text = ""
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
 horizontal_alignment = 2
 text = "대기 중 (2명 이상 필요)"
+
+[node name="SettingsButton" type="Button" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "설정"
+
+[node name="InfoBox" type="PanelContainer" parent="VBoxContainer/TopBar/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="InfoLabel" type="Label" parent="VBoxContainer/TopBar/HBoxContainer/InfoBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "SB 100 / BB 200"
 
 [node name="FeltArea" type="Control" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -74,18 +102,14 @@ mouse_filter = 2
 alignment = 1
 theme_override_constants/separation = 8
 
-[node name="PotChip" type="Control" parent="VBoxContainer/FeltArea/Center/PotRow"]
-custom_minimum_size = Vector2(24, 24)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-script = ExtResource("2")
-
-[node name="PotLabel" type="Label" parent="VBoxContainer/FeltArea/Center/PotRow"]
+[node name="PotsLabel" type="Label" parent="VBoxContainer/FeltArea/Center/PotRow"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
-text = "팟 0"
+mouse_filter = 2
+theme_override_font_sizes/font_size = 12
+horizontal_alignment = 1
+text_overrun_behavior = 3
 
 [node name="Board" type="HBoxContainer" parent="VBoxContainer/FeltArea/Center"]
 unique_name_in_owner = true
@@ -129,6 +153,15 @@ expand_mode = 1
 stretch_mode = 5
 texture_filter = 4
 
+[node name="AddChipsButton" type="Button" parent="VBoxContainer/FeltArea"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+custom_minimum_size = Vector2(56, 44)
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 16
+text = "+ 칩"
+
 [node name="BoardLabel" type="Label" parent="VBoxContainer/FeltArea"]
 unique_name_in_owner = true
 layout_mode = 0
@@ -160,9 +193,46 @@ expand_mode = 1
 stretch_mode = 5
 texture_filter = 4
 
+[node name="TotalBox" type="PanelContainer" parent="VBoxContainer/FeltArea"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+mouse_filter = 2
+
+[node name="Grid" type="GridContainer" parent="VBoxContainer/FeltArea/TotalBox"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 2
+columns = 3
+
+[node name="PotIcon" type="TextureRect" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+texture = ExtResource("3")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TotalKey" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+text = "Total"
+
+[node name="TotalLabel" type="Label" parent="VBoxContainer/FeltArea/TotalBox/Grid"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+horizontal_alignment = 2
+text = "0"
+
 [node name="BottomRegion" type="MarginContainer" parent="VBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 206)
+custom_minimum_size = Vector2(0, 240)
 layout_mode = 2
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 6
@@ -198,75 +268,100 @@ text = ""
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PresetRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
 theme_override_constants/separation = 6
+
+[node name="MinusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "−"
+
+[node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 200.0
+step = 100.0
+alignment = 1
+
+[node name="PlusButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/PresetRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "+"
+
+[node name="RaiseSlider" type="HSlider" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+min_value = 200.0
+step = 100.0
 
 [node name="RaiseBox" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 6
 
-[node name="HalfPotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "½ 팟"
-
-[node name="PotButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "팟"
-
-[node name="AllInButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "올인"
-
-[node name="RaiseSlider" type="HSlider" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(60, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-min_value = 200.0
-step = 100.0
-
-[node name="RaiseSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/RaiseBox"]
+[node name="ButtonRowTop" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 200.0
-step = 100.0
+theme_override_constants/separation = 6
 
-[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="FoldButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
+[node name="CheckActionButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRowTop"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"ButtonDanger"
-text = "폴드"
-
-[node name="CheckCallButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"ButtonSuccess"
 text = "체크"
 
+[node name="CallButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRowTop"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ButtonSuccess"
+text = "콜"
+
+[node name="AllInButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRowTop"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "올인"
+
+[node name="ButtonRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="FoldButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ButtonDanger"
+text = "폴드"
+
 [node name="RaiseButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/ActionBar/ButtonRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 52)
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"ButtonPrimary"
 text = "레이즈"
 
 [node name="Spacer" type="Control" parent="VBoxContainer/BottomRegion/Bottom"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
@@ -282,30 +377,6 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 text = "참가"
-
-[node name="StandButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "일어서기"
-
-[node name="LeaveRoomButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "방 나가기"
-
-[node name="CancelLeaveButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "나가기 예약됨 · 취소"
-
-[node name="AddChipsButton" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "칩 추가"
 
 [node name="AddChipsBox" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
 unique_name_in_owner = true
@@ -418,5 +489,120 @@ text = "확인"
 
 [node name="SitPopupCancel" type="Button" parent="SitPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
+layout_mode = 2
+text = "취소"
+
+[node name="SettingsPopup" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Backdrop" type="ColorRect" parent="SettingsPopup"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="CenterContainer" type="CenterContainer" parent="SettingsPopup"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="SettingsPopup/CenterContainer"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="SettingsPopup/CenterContainer/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SettingsTitle" type="Label" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "설정"
+
+[node name="SfxToggle" type="CheckButton" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "효과음"
+
+[node name="VoiceToggle" type="CheckButton" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "딜러 음성"
+
+[node name="SettingsClose" type="Button" parent="SettingsPopup/CenterContainer/PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "닫기"
+
+[node name="LeaveBackdrop" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeaveMenu" type="PanelContainer" parent="LeaveBackdrop"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="LeaveBackdrop/LeaveMenu"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LeaveBackdrop/LeaveMenu/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="MenuSpectate" type="Button" parent="LeaveBackdrop/LeaveMenu/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 44)
+layout_mode = 2
+text = "관전"
+
+[node name="MenuLeave" type="Button" parent="LeaveBackdrop/LeaveMenu/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 44)
+layout_mode = 2
+text = "나가기"
+
+[node name="MenuCancelReservation" type="Button" parent="LeaveBackdrop/LeaveMenu/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 44)
+layout_mode = 2
+text = "예약 취소"
+
+[node name="MenuClose" type="Button" parent="LeaveBackdrop/LeaveMenu/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 44)
 layout_mode = 2
 text = "취소"

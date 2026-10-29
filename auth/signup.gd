@@ -11,6 +11,8 @@ extends Control
 
 
 func _ready() -> void:
+	PasswordField.setup(password_edit)
+	PasswordField.setup(password_confirm_edit)
 	error_label.hide()
 	submit_button.pressed.connect(_on_submit_pressed)
 	back_button.pressed.connect(_on_back_pressed)

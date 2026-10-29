@@ -32,6 +32,11 @@ static func setup(tree: SceneTree) -> void:
 	JavaScriptBridge.eval("window.godotQa = {}; for (const f of ['state','press','set_text','set_value','refresh']) window.godotQa[f] = function(){ window.__godotQaRaw[f].apply(null, arguments); return window.__godotQaRaw.r; };")
 
 
+## QA 브리지가 켜져 있는가(Web QA 가 아니면 항상 false)
+static func is_active() -> bool:
+	return _tree != null
+
+
 static func _root() -> Node:
 	return _tree.current_scene
 

@@ -51,11 +51,3 @@ static func buy_in_blocked_text(data: Dictionary) -> String:
 	if data.get("obligationExpiresAt") != null:
 		text += "\n나간 지 30분 이내에는 나간 금액 이상으로 다시 앉아야 합니다. %s 이후에 앉을 수 있습니다" % Format.time(str(data.obligationExpiresAt))
 	return text
-
-
-## 레이즈 프리셋(½ 팟·팟): raise_to = 현재 최고 베팅 + 비율 × (팟 + 콜 금액). 팟은 현재 베팅을 포함한다.
-## 100 단위로 반올림한 뒤 [min_raise_to, max_raise_to] 로 자른다. 올인은 max_raise_to 를 그대로 쓴다
-static func preset_raise_to(fraction: float, current_max_bet: int, pot: int, to_call: int, min_raise_to: int, max_raise_to: int) -> int:
-	var raw := current_max_bet + fraction * (pot + to_call)
-	var snapped_to := int(round(raw / CHIP_UNIT)) * CHIP_UNIT
-	return clampi(snapped_to, min_raise_to, max_raise_to)

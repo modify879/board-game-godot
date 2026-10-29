@@ -236,7 +236,13 @@ def join(v, post_blind=True, timeout=30):
 
 
 def my_seat(v): return v.extra().get("my_seat_no", -1)
-def back_to_list(v): v.press("BackButton"); v.wait_scene("table_list.tscn", 15)
+def back_to_list(v): v.press("BackButton"); v.wait_scene("table_list.tscn", 15)  # 관전 중일 때만 곧바로 목록으로 간다(앉아 있으면 메뉴가 열린다)
+def check_or_call(e): return "CheckActionButton" if "CHECK" in e.get("available_actions", []) else "CallButton"  # 체크·콜은 따로 둔 고정 버튼 — 지금 가능한 쪽
+def open_leave_menu(v):
+    """앉은 채 뒤로가기를 눌러 메뉴를 연다(항목은 MenuSpectate·MenuLeave·MenuCancelReservation·MenuClose)"""
+    v.press("BackButton"); return v.wait_state(lambda s: v.vis(s, "LeaveMenu") and s, 5, "나가기 메뉴")
+def menu_press(v, key):
+    open_leave_menu(v); v.press(key)
 
 
 def attach(v, bot, bots):
@@ -250,7 +256,7 @@ def pump(v, s=None):
     if me != -1 and e.get("to_act_seat") == me and "FOLD" in e.get("available_actions", []):
         k = (me, e.get("street"), e.get("table_id"))
         if time.time() - v._pumped.get(k, 0) > 2:
-            v._pumped[k] = time.time(); v.try_press("CheckCallButton")
+            v._pumped[k] = time.time(); v.try_press(check_or_call(e))
 
 
 def wait_for(v, pred, timeout=60, what="뷰 조건", pump_=True):
@@ -375,10 +381,11 @@ def s4(c):
     v = hero(c, tid, bots); me = my_seat(v); nick = nickname(host.hero_uid(bots))
     fixed_hand(v, host, tid, lambda seats: deck_hero_wins(me, seats))
     s = v.wait_state(lambda s: hero_turn(s) and s, 30, "히어로 차례", pump=False)
-    assert all(v.vis(s, k) for k in ("FoldButton", "CheckCallButton", "ActionBar")), "행동 버튼이 안 보인다"
+    assert all(v.vis(s, k) for k in ("FoldButton", "CheckActionButton", "CallButton", "RaiseButton", "AllInButton", "ActionBar")), "행동 버튼이 안 보인다(비활성이어도 보여야 한다)"
     assert sorted(s["extra"]["my_hole_cards"]) == ["Ah", "As"], f"홀카드 {s['extra']['my_hole_cards']}"
-    assert v.text(s, "CheckCallButton") and not s["nodes"]["CheckCallButton"].get("disabled"), "체크/콜 버튼 문구/상태"
-    v.press("CheckCallButton"); n0 = len(host.results)
+    key = check_or_call(s["extra"]); other = "CallButton" if key == "CheckActionButton" else "CheckActionButton"
+    assert v.text(s, key) and not s["nodes"][key].get("disabled") and s["nodes"][other].get("disabled"), f"체크/콜 버튼 문구/상태: {key} 활성, {other} 비활성이어야 한다"
+    v.press(key); n0 = len(host.results)
     s = v.wait_state(lambda s: s["extra"]["winners"] and s, 60, "결과(승자)")  # 한 스냅샷에서 전부 판정한다(결과는 금방 지나간다)
     assert [w["seat_no"] for w in s["extra"]["winners"]] == [me], f"승자 {s['extra']['winners']} (기대 좌석 {me})"
     assert paid_seats(s) == [me], f"지급액이 보이는 좌석 {paid_seats(s)} (기대 {me})"
@@ -409,26 +416,25 @@ def _in_hand(c, name, n_bots=2):
 @scenario("나가기 예약 3종(관전/방 나가기/새로고침)", 170)
 def s6(c):
     tid, bots, ap, v = _in_hand(c, "S6")
-    s = v.state(); assert v.text(s, "StandButton") == "핸드 후 관전" and v.text(s, "LeaveRoomButton") == "핸드 후 방 나가기", f"버튼 문구 {v.text(s, 'StandButton')!r}/{v.text(s, 'LeaveRoomButton')!r}"
-    ap.slow(); v.press("StandButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼"); ap.fast()
-    assert "관전 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
+    s = open_leave_menu(v); assert v.text(s, "MenuSpectate") == "핸드 후 관전" and v.text(s, "MenuLeave") == "핸드 후 나가기" and v.vis(s, "MenuClose") and not v.vis(s, "MenuCancelReservation"), f"메뉴 문구 {v.text(s, 'MenuSpectate')!r}/{v.text(s, 'MenuLeave')!r}"
+    ap.slow(); v.press("MenuSpectate"); s = v.wait_state(lambda s: "관전 예약됨" in v.text(s, "BackButton") and s, 10, "관전 예약됨 버튼"); ap.fast()
+    assert not v.vis(s, "LeaveMenu"), "항목을 누른 뒤 메뉴가 닫히지 않았다"
     v.wait_state(lambda s: s["extra"]["my_seat_no"] == -1, 60, "핸드 후 일어섬")
     time.sleep(2); s = v.state()
     assert s["scene"].endswith("table.tscn") and v.vis(s, "JoinButton"), f"관전 후 화면 {s['scene']}"
     # 핸드 후 방 나가기
     rejoin(v); v.wait_state(in_hand_active, 40, "재참가 후 핸드"); ap.slow()
-    v.press("LeaveRoomButton"); ap.fast(); v.wait_scene("table_list.tscn", 60)
+    menu_press(v, "MenuLeave"); ap.fast(); v.wait_scene("table_list.tscn", 60)
     # 새로고침: 느린 봇 + 폴드로 핸드를 길게 둔다
     enter(v, tid, True)
     v.wait_state(in_hand_active, 60, "히어로 핸드")
     v.wait_state(lambda s: hero_turn(s) and s, 40, "히어로 차례", pump=False); ap.slow()  # 폴드 뒤 새로고침·재진입 동안 핸드가 살아 있게(얼리면 8초 차례 만료로 봇이 기립한다)
     v.press("FoldButton")
-    v.press("LeaveRoomButton"); s = v.wait_state(lambda s: v.vis(s, "CancelLeaveButton") and s, 10, "예약 취소 버튼")
-    assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), v.text(s, "CancelLeaveButton")
+    menu_press(v, "MenuLeave"); s = v.wait_state(lambda s: "나가기 예약됨" in v.text(s, "BackButton") and s, 10, "나가기 예약됨 버튼")
     v.reload(); v.wait_state(lambda s: s["scene"].endswith("lobby.tscn") or v.vis(s, "UsernameEdit"), 30, "새로고침 후 화면")  # 세션이 남아 있으면 로비, 아니면 로그인 폼
     if v.scene() == "login.tscn": v.login()
-    v.open_game(0); s = v.wait_state(lambda s: s["scene"].endswith("table.tscn") and v.vis(s, "CancelLeaveButton") and s, 20, "재진입 시 예약 취소 버튼")
-    assert "나가기 예약됨" in v.text(s, "CancelLeaveButton"), f"새로고침 뒤 문구 {v.text(s, 'CancelLeaveButton')!r}"
+    v.open_game(0); s = v.wait_state(lambda s: s["scene"].endswith("table.tscn") and "나가기 예약됨" in v.text(s, "BackButton") and s, 20, "재진입 시 나가기 예약됨 버튼")
+    assert "나가기 예약됨" in v.text(s, "BackButton"), f"새로고침 뒤 문구 {v.text(s, 'BackButton')!r}"
     ap.fast()
 s6.sizes = ("d",)
 
@@ -436,8 +442,8 @@ s6.sizes = ("d",)
 @scenario("예약 취소 -> 핸드 후에도 착석", 100)
 def s7(c):
     tid, bots, ap, v = _in_hand(c, "S7")
-    ap.slow(); v.press("StandButton"); v.wait_state(lambda s: v.vis(s, "CancelLeaveButton"), 10, "예약 취소 버튼")
-    v.press("CancelLeaveButton"); v.wait_state(lambda s: not v.vis(s, "CancelLeaveButton") and v.vis(s, "StandButton"), 10, "예약 취소됨"); ap.fast()
+    ap.slow(); menu_press(v, "MenuSpectate"); v.wait_state(lambda s: "예약됨" in v.text(s, "BackButton"), 10, "예약됨 버튼")
+    menu_press(v, "MenuCancelReservation"); v.wait_state(lambda s: "예약됨" not in v.text(s, "BackButton"), 10, "예약 취소됨"); ap.fast()
     v.wait_state(lambda s: not s["extra"]["hand_in_progress"], 60, "핸드 종료"); time.sleep(2); s = v.state()
     assert s["extra"]["my_seat_no"] != -1 and s["scene"].endswith("table.tscn"), f"취소했는데 일어섰다 seat={s['extra']['my_seat_no']}"
 s7.sizes = ("d",)

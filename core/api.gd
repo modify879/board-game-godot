@@ -73,6 +73,7 @@ var _js_ask_token := ""
 func _ready() -> void:
 	Screen.setup(get_window()) # 화면 크기에 맞춘 배율(core/ui/screen.gd)
 	QaBridge.setup(get_tree()) # QA 전용 window.godotQa(core/qa_bridge.gd). 조건이 안 맞으면 아무것도 하지 않는다
+	FocusVisible.setup(get_tree()) # 마우스·터치 뒤 포커스 링 숨김·손바닥 커서·터치 hover 제거(core/ui/focus_visible.gd)
 	EnvBadge.setup(self) # 서버 환경이 qa 면 "QA 서버" 배지(core/ui/env_badge.gd)
 	if OS.has_feature("web"):
 		_setup_tab_share()

@@ -59,6 +59,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 - 시나리오는 한 번에 한 개씩, 같은 qa 계정을 쓰므로 병렬로 돌리지 않는다. 재착석 의무로 바이인 하한이 계정마다 달라진다 — 바이인은 `EntrySpin` 의 min/기본값을 쓴다. 방 목록 로드(`BuyInInfo`)가 끝나기 전에 만들면 서버가 거부한다
 - 착석 중 `GameList` 로 목록에 들어가면 곧바로 테이블로 보낸다(앱 동작) — 새로고침 뒤 재진입 확인에 쓴다
 - Godot 캔버스는 DOM 이 없다 — 브리지 키로 누르고 `wait_state` 로 기다린다(sleep·스크린샷 비교 금지)
+- 홀덤 행동 버튼은 고정 자리다 — `FoldButton`·`CheckActionButton`·`CallButton`·`RaiseButton`·`AllInButton`(못 쓰는 것은 숨기지 않고 disabled). 체크/콜은 `extra.available_actions` 의 `CHECK`/`CALL` 로 고른다(`H.check_or_call`). 일어서기·방 나가기·예약 취소는 `BackButton` 을 눌러 연 `LeaveMenu` 의 `MenuSpectate`·`MenuLeave`·`MenuCancelReservation`·`MenuClose` 다(`H.open_leave_menu`·`H.menu_press`). 예약되면 `BackButton` 문구가 "관전 예약됨"/"나가기 예약됨" 이다. 관전 중 `BackButton` 은 곧바로 목록. 칩 추가는 `AddChipsButton`("+ 칩"; 데스크톱은 히어로 닉네임 줄 오른쪽 끝, 폰은 히어로 캡슐 왼쪽). 판 사이에는 히어로의 스택 라벨을 눌러도 연다
 - 일어난 뒤 재착석하면 재착석 의무로 바이인이 올라갈 수 있다. 핸드 중 일어서기는 즉시 퇴장이 아니라 나가기 예약이다
 - 실제 GPU 없음(SwiftShader), IME 없음(한글 직접 입력 불가)
 - `qa_speed`(기본 4)는 `Engine.time_scale` 이라 `create_timer`·`HTTPRequest.timeout` 도 그만큼 빨라진다 — QA 에서 HTTP 타임아웃(result=13)은 15초가 아니라 약 4초에 난다. 실측 시간이 필요하면 `--speed 1`
