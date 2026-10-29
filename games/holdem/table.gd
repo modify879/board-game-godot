@@ -61,8 +61,7 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var felt: Panel = %Felt
 @onready var center_box: VBoxContainer = %Center
 @onready var pot_row: HBoxContainer = %PotRow
-@onready var pot_label: Label = %PotLabel
-@onready var pots_label: Label = %PotsLabel # 사이드 팟이 있을 때 "메인 … · 사이드 1 …". 폰: 팟 줄 오른쪽, 데스크톱: Total 상자 아래
+@onready var pots_label: Label = %PotsLabel # 사이드 팟이 있을 때 "메인 … · 사이드 1 …". Total 상자 아래(폰·데스크톱 같다)
 @onready var bottom_region: MarginContainer = %BottomRegion
 @onready var all_in_button: Button = %AllInButton
 @onready var my_cards_box: HBoxContainer = %MyCards
@@ -509,8 +508,7 @@ func _apply_mode() -> void:
 		bottom_region.add_theme_constant_override("margin_bottom", 12)
 		top_bar.add_theme_constant_override("margin_top", 16)
 		top_bar.add_theme_constant_override("margin_bottom", 8)
-		pot_row.show()
-		total_box.hide()
+		pot_row.show() # 폰: Total 상자가 올라앉을 28px 빈 줄
 		_phone_pots_line()
 		bottom_bar.custom_minimum_size = Vector2.ZERO
 		felt_style.set_border_width_all(FELT_RIM)
@@ -692,6 +690,12 @@ func _layout() -> Dictionary:
 	board_box.custom_minimum_size = Vector2(block_w, card_h)
 	center_box.size = Vector2(maxf(block_w, 180.0), block_h)
 	center_box.position = Vector2(c.x - center_box.size.x / 2.0, block_top)
+	# 폰 Total 상자: 데스크톱과 같은 모양을 줄여, 가운데 묶음 맨 윗줄(28px) 가운데에 둔다
+	total_box.custom_minimum_size = Vector2.ZERO
+	total_label.add_theme_font_size_override("font_size", 15)
+	%TotalKey.add_theme_font_size_override("font_size", 13)
+	%PotIcon.custom_minimum_size = Vector2(16, 16)
+	_place_phone_total()
 	for r: TextureRect in my_card_rects:
 		r.custom_minimum_size = hc
 	my_cards_box.size = Vector2(2.0 * hc.x + 8.0, hc.y)
@@ -1259,16 +1263,22 @@ func _show_cards(rects: Array, codes: Array) -> void:
 func _update_pot() -> void:
 	var pot := int(public_view.get("pot", 0))
 	var show_pot: bool = public_view.get("handInProgress", false) and pot > 0
-	pot_row.modulate.a = 1.0 if show_pot else 0.0 # 숨겨도 자리는 유지 — 보드가 움직이지 않게
-	pot_label.text = "팟 %s" % Format.comma(pot)
 	var hip: bool = public_view.get("handInProgress", false)
-	total_box.visible = desktop and hip
+	total_box.visible = hip and (desktop or pot > 0) # 폰은 PotRow 빈 줄이 자리를 지켜 보드가 안 움직인다
 	total_label.text = Format.comma(pot)
 	var pots := PublicView.pot_labels(public_view)
 	pots_label.text = "  ·  ".join(pots)
 	pots_label.visible = not pots.is_empty() and (desktop or show_pot) # 데스크톱은 결과 중에도 남는다(서버가 최종 구성을 유지)
+	if not desktop and center_box.size.y > 0.0:
+		_place_phone_total()
 	if total_box.size.y > 0.0 if desktop else center_box.size.y > 0.0:
 		_layout_pots_label()
+
+
+## 폰: 금액 폭이 바뀌므로 Total 상자를 가운데 묶음 윗줄 가운데에 다시 놓는다
+func _place_phone_total() -> void:
+	total_box.reset_size()
+	total_box.position = center_box.position + Vector2((center_box.size.x - total_box.size.x) / 2.0, (28.0 - total_box.size.y) / 2.0)
 
 
 ## 데스크톱: 문구 폭이 바뀌므로 Total 상자 아래 가운데에 다시 놓는다

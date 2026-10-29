@@ -1,9 +1,17 @@
-[gd_resource type="Theme" load_steps=36 format=3]
+[gd_resource type="Theme" load_steps=40 format=3]
 
 [ext_resource type="FontFile" path="res://core/ui/fonts/Pretendard-Regular.woff2" id="1_font"]
 
-[sub_resource type="FontVariation" id="bold"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoColorEmoji.woff2" id="2_emoji"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoSansJP-Han.woff2" id="3_han"]
+[ext_resource type="FontFile" path="res://core/ui/fonts/NotoSansArabic-Regular.woff2" id="4_arabic"]
+
+[sub_resource type="FontVariation" id="main"]
 base_font = ExtResource("1_font")
+fallbacks = [ExtResource("3_han"), ExtResource("4_arabic"), ExtResource("2_emoji")]
+
+[sub_resource type="FontVariation" id="bold"]
+base_font = SubResource("main")
 variation_embolden = 0.6
 
 [sub_resource type="StyleBoxFlat" id="b_n"]
@@ -517,7 +525,7 @@ content_margin_right = 8
 content_margin_bottom = 1
 
 [resource]
-default_font = ExtResource("1_font")
+default_font = SubResource("main")
 default_font_size = 20
 Button/styles/normal = SubResource("b_n")
 Button/styles/hover = SubResource("b_h")

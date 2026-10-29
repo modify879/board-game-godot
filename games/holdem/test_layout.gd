@@ -207,14 +207,15 @@ func _name_bad(table: Control, sz: Vector2) -> Array:
 				out.append("seat%d 닉네임 두 줄에 안 들어감 %s (%.0f > %.0f)" % [no, l.text, ms.y, l.size.y])
 		if not table.desktop and l.get_global_rect().grow(-TOL).intersects(s.stack_label.get_global_rect().grow(-TOL)):
 			out.append("seat%d 닉네임 x 스택 %s %s" % [no, _s(l.get_global_rect()), _s(s.stack_label.get_global_rect())])
-		if not table.desktop and l.position.y < 0.0 or l.position.y + l.size.y > s.size.y:
-			out.append("seat%d 닉네임이 캡슐 밖 %s" % [no, _s(Rect2(l.position, l.size))])
+		if not table.desktop and not Rect2(Vector2.ZERO, s.size).grow(-5.0).encloses(Rect2(l.position, l.size)): # 캡슐 안쪽 = 테두리(최대 3) + 2px 안
+			out.append("seat%d 닉네임 라벨이 캡슐 안쪽 밖 %s (캡슐 %s)" % [no, _s(Rect2(l.position, l.size)), s.size])
 		var key := "%dx%d" % [sz.x, sz.y]
 		min_name_fs[key] = mini(min_name_fs.get(key, 999), fs)
 		if w > l.size.x + 0.5:
 			out.append("seat%d 닉네임 잘림 %s (%.0f > %.0f, fs %d)" % [no, l.text, w, l.size.x, fs])
-		if fs < s._name_min:
-			out.append("seat%d 닉네임 글자 %d < 최소 %d" % [no, fs, s._name_min])
+		var min_fs: int = s.NAME_MIN_PHONE_2LINE if l.autowrap_mode != TextServer.AUTOWRAP_OFF else s._name_min # 두 줄로 접으면 9px 까지
+		if fs < min_fs:
+			out.append("seat%d 닉네임 글자 %d < 최소 %d" % [no, fs, min_fs])
 		if l.clip_text or l.text_overrun_behavior != TextServer.OVERRUN_NO_TRIMMING:
 			out.append("seat%d 닉네임 라벨에 clip/말줄임" % no)
 	return out
@@ -379,11 +380,10 @@ func _collect_view2(table: Control, hero: int) -> Dictionary:
 	for c: Control in table.board_card_rects:
 		if c.visible:
 			items.append({"o": "center", "k": "board", "r": c.get_global_rect()})
-	if table.pot_row.modulate.a > 0.0: # 칩 아이콘 + 글자만(줄 자체는 중앙 박스 너비 전체)
-		var pr: Rect2 = table.pot_row.get_child(0).get_global_rect().merge(table.pot_label.get_global_rect())
-		items.append({"o": "center", "k": "pot", "r": pr})
-		if table.pots_label.visible:
-			items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
+	if table.total_box.visible: # 데스크톱과 같은 Total 상자(폰 크기)
+		items.append({"o": "center", "k": "pot", "r": table.total_box.get_global_rect()})
+	if table.pots_label.visible:
+		items.append({"o": "center", "k": "pots", "r": table.pots_label.get_global_rect()})
 	if table.board_label.text != "": # 결과 배너(큰 글자+작은 줄) — 보드 카드와는 겹쳐도 된다(위에 얹는다)
 		items.append({"o": "banner", "k": "label", "r": table.banner_title.get_global_rect().merge(table.board_label.get_global_rect())})
 	if table.add_chips_button.visible:

@@ -23,6 +23,9 @@ const MARKER_DESK := 20.0 # 데스크톱 마커 한 변(설계 좌표, × k)
 const MARKER_PHONE := 22.0 # 폰 마커 한 변(px)
 const MARKER_GAP := 2.0 # 마커 사이 간격(설계 좌표)
 const PHONE_TOKEN := 38.0 # 폰 행동 토큰 지름
+const NAME_MIN_PHONE_2LINE := 9 # 두 줄로 접을 때의 최소 글자 크기(px)
+const NAME_2LINE_TOP := 5.0 # 두 줄 닉네임 윗변: 캡슐 테두리(최대 3) + 여백 2
+const NAME_2LINE_RIGHT := 14.0 # 두 줄 닉네임 오른쪽 여백: 둥근 캡슐 끝이 위쪽에서 파고드는 만큼
 const NAME_MIN_PHONE := 10 # 닉네임 글자 최소 크기(폰, px). 한 줄에 안 들어오면 두 줄로 줄바꿈한다(캡슐을 못 넓힌다: 9인 세로 화면에서 옆 좌석과 겹친다)
 const NAME_MIN_DESK := 12.0 # 데스크톱 최소 크기(× k)
 
@@ -357,7 +360,8 @@ func _fit_name() -> void:
 	name_label.size.x = _name_w # 글자가 넓으면 라벨 최소 폭으로 커져 있던 것을 되돌린다
 
 
-## 폰: 한 줄로 최소 크기까지 줄여 보고, 그래도 넘치면 최소 크기 이상에서 두 줄에 들어가는 가장 큰 글자로 줄바꿈한다(위·아래로 캡슐 높이 안에서 스택 줄이 내려간다)
+## 폰: 한 줄로 최소 크기까지 줄여 보고, 그래도 넘치면 두 줄에 들어가는 가장 큰 글자(최소 NAME_MIN_PHONE_2LINE)로 줄바꿈한다.
+## 두 줄 라벨은 캡슐 안쪽(테두리 3 + 여백 2)에 들어앉고, 오른쪽은 둥근 끝이 파고드는 만큼 비운다. 스택 줄은 그 아래 남는 높이에 둔다
 func _fit_name_phone(font: Font) -> void:
 	var w := _name_w
 	var h := size.y
@@ -370,21 +374,24 @@ func _fit_name_phone(font: Font) -> void:
 		name_label.position = Vector2(_phone_x0, h / 2.0 - (19 if compact else 21))
 		name_label.size = Vector2(w, 20)
 		stack_label.position.y = h / 2.0 - 1
+		stack_label.size.y = 22
 	else:
+		var w2 := size.x - _phone_x0 - NAME_2LINE_RIGHT
 		fs = _name_fs
-		while fs > _name_min and _name_lines(font, fs) > 2:
+		while fs > NAME_MIN_PHONE_2LINE and _name_lines(font, fs, w2) > 2:
 			fs -= 1
 		name_label.add_theme_font_size_override("font_size", fs)
-		var lh := font.get_height(fs)
+		var lh := ceilf(font.get_height(fs))
 		name_label.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-		name_label.position = Vector2(_phone_x0, 3.0)
-		name_label.size = Vector2(w, 2.0 * lh)
-		stack_label.position.y = 3.0 + 2.0 * lh
+		name_label.position = Vector2(_phone_x0, NAME_2LINE_TOP)
+		name_label.size = Vector2(w2, 2.0 * lh)
+		stack_label.position.y = NAME_2LINE_TOP + 2.0 * lh
+		stack_label.size.y = h - NAME_2LINE_TOP - stack_label.position.y
 
 
-func _name_lines(font: Font, fs: int) -> int:
+func _name_lines(font: Font, fs: int, w: float) -> int:
 	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_GRAPHEME_BOUND
-	return roundi(font.get_multiline_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, _name_w, fs, -1, flags).y / font.get_height(fs))
+	return roundi(font.get_multiline_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT, w, fs, -1, flags).y / font.get_height(fs))
 
 
 func set_markers(kinds: Array) -> void:
