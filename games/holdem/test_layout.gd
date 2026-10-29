@@ -13,7 +13,7 @@ const TOL := 2.0 # 겹침 허용 깊이(px) — 테두리가 살짝 닿는 정�
 const ALLOWED := [["cap", "badge"], ["cap", "pill"], ["cards", "pill"], ["hero", "pill"], ["pot", "label"]]
 
 # 닉네임 최악(12자): 한글 2종·넓은 W·섞인 것. 좌석마다 돌려 쓴다
-const WORST := ["가나다라마바사아자차카타", "뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁", "WWWWWWWWWWWW", "QA유저WWWW가나다라"]
+const WORST := ["가나다라마바사아자차카타", "뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁뷁", "WWWWWWWWWWWW", "QA유저WWWW가나다라", "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌ"]
 
 var worst := false
 var min_name_fs := {} # 크기 라벨 -> 관찰한 최소 닉네임 글자 크기
@@ -209,6 +209,12 @@ func _name_bad(table: Control, sz: Vector2) -> Array:
 			out.append("seat%d 닉네임 x 스택 %s %s" % [no, _s(l.get_global_rect()), _s(s.stack_label.get_global_rect())])
 		if not table.desktop and not Rect2(Vector2.ZERO, s.size).grow(-5.0).encloses(Rect2(l.position, l.size)): # 캡슐 안쪽 = 테두리(최대 3) + 2px 안
 			out.append("seat%d 닉네임 라벨이 캡슐 안쪽 밖 %s (캡슐 %s)" % [no, _s(Rect2(l.position, l.size)), s.size])
+		if table.desktop: # 데스크톱: 라벨 사각형과 글자(기준선 위 ascent ~ 아래 descent)가 패널 안쪽(테두리 4k 안) 안에 있어야 한다
+			var inner := Rect2(Vector2.ZERO, s.size).grow(-ceil(4.0 * s.k))
+			var base := l.position.y + font.get_ascent(fs) # 위쪽 정렬: 기준선 = 라벨 위 + ascent
+			var glyph := Rect2(l.position.x, base - font.get_ascent(fs), l.size.x, font.get_ascent(fs) + font.get_descent(fs))
+			if not inner.encloses(Rect2(l.position, l.size)) or not inner.encloses(glyph):
+				out.append("seat%d 닉네임이 패널 안쪽 밖 라벨 %s 글자 %s 안쪽 %s" % [no, _s(Rect2(l.position, l.size)), _s(glyph), _s(inner)])
 		var key := "%dx%d" % [sz.x, sz.y]
 		min_name_fs[key] = mini(min_name_fs.get(key, 999), fs)
 		if w > l.size.x + 0.5:

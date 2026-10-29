@@ -11,6 +11,7 @@ extends Control
 
 
 func _ready() -> void:
+	PasswordField.setup(password_edit)
 	form.hide()
 	error_label.hide()
 	status_label.show()

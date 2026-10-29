@@ -340,6 +340,30 @@ func _init() -> void:
 	fb.free()
 	fv.free()
 
+	# PasswordField: 비밀번호 키보드·IME 토글·비ASCII 안내
+	var pf := preload("res://core/ui/password_field.gd")
+	var ime_log := []
+	pf.set_ime = func(on: bool) -> void: ime_log.append(on)
+	var box := VBoxContainer.new()
+	var pe := LineEdit.new()
+	box.add_child(pe)
+	root.add_child(box)
+	var pw_hint: Label = pf.setup(pe)
+	check(pe.virtual_keyboard_type == LineEdit.KEYBOARD_TYPE_PASSWORD, "PasswordField 비밀번호 키보드")
+	pe.focus_exited.emit()
+	check(ime_log.is_empty(), "PasswordField 포커스 안 들어갔으면 IME 복구 안 함")
+	pe.focus_entered.emit()
+	check(ime_log == [false], "PasswordField 포커스 들어가면 IME 끔")
+	pe.focus_exited.emit()
+	check(ime_log == [false, true], "PasswordField 포커스 나가면 IME 복구")
+	check(pe.get_index() + 1 == pw_hint.get_index() and not pw_hint.visible, "PasswordField 안내는 칸 아래·처음엔 숨김")
+	pe.text_changed.emit("ㅂㅈㄷㄱ1234")
+	check(pw_hint.visible, "PasswordField 한글이면 안내 보임")
+	pe.text_changed.emit("qwer1234")
+	check(not pw_hint.visible, "PasswordField 영문이면 안내 숨김")
+	box.free()
+	pf.set_ime = Callable() # 스파이 해제(정적 변수가 지역 배열을 붙들고 종료하지 않게)
+
 	quit(1 if failures else 0)
 
 

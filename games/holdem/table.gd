@@ -601,6 +601,7 @@ func _layout_desktop(hero_render: bool) -> Dictionary: # hero_render: 앉아 있
 	my_cards_box.position = (slots[0].panel as Rect2).position + Vector2(hero_cd.get_center().x - my_cards_box.size.x / 2.0, (8.0 + SeatScript.name_row(true)) * k)
 	# Total 상자와 결과 문구는 보드 아래 같은 자리(핸드 중엔 상자, 끝나면 결과 문구)
 	total_box.custom_minimum_size = Vector2(230.0 * k, 0)
+	%Grid.size_flags_horizontal = Control.SIZE_FILL
 	total_label.add_theme_font_size_override("font_size", int(round(22.0 * k)))
 	%TotalKey.add_theme_font_size_override("font_size", int(round(18.0 * k)))
 	%PotIcon.custom_minimum_size = Vector2(26, 26) * k
@@ -692,6 +693,7 @@ func _layout() -> Dictionary:
 	center_box.position = Vector2(c.x - center_box.size.x / 2.0, block_top)
 	# 폰 Total 상자: 데스크톱과 같은 모양을 줄여, 가운데 묶음 맨 윗줄(28px) 가운데에 둔다
 	total_box.custom_minimum_size = Vector2.ZERO
+	%Grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	total_label.add_theme_font_size_override("font_size", 15)
 	%TotalKey.add_theme_font_size_override("font_size", 13)
 	%PotIcon.custom_minimum_size = Vector2(16, 16)
@@ -1277,6 +1279,10 @@ func _update_pot() -> void:
 
 ## 폰: 금액 폭이 바뀌므로 Total 상자를 가운데 묶음 윗줄 가운데에 다시 놓는다
 func _place_phone_total() -> void:
+	total_box.custom_minimum_size = Vector2.ZERO
+	total_box.reset_size()
+	# 데스크톱처럼 옆 여백이 넉넉한 고정 최소 폭(데스크톱 230 × 폰 글자 비율 ≈ 0.68), 내용은 가운데
+	total_box.custom_minimum_size.x = maxf(158.0, total_box.size.x + 24.0)
 	total_box.reset_size()
 	total_box.position = center_box.position + Vector2((center_box.size.x - total_box.size.x) / 2.0, (28.0 - total_box.size.y) / 2.0)
 

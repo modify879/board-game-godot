@@ -213,8 +213,8 @@ func set_desktop(kk: float, hero: bool, left := true) -> void:
 	var m := (8.0 if hero else 6.0) * kk # 닉네임은 패널 맨 위, 좌우 여백만 남기고 폭 전체
 	var mw := _markers_width() # 마커가 있으면 닉네임은 남은 폭의 가운데
 	_name_w = size.x - 2.0 * m - mw - right_reserve
-	name_label.position = Vector2(m + mw, 2.0 * kk)
-	name_label.size = Vector2(_name_w, dy * kk)
+	name_label.position = Vector2(m + mw, 5.0 * kk) # 위 5·k = 테두리(차례 4k) + 1k, 아래는 아바타 위(dy+4)·k 에 맞닿는다
+	name_label.size = Vector2(_name_w, (dy - 1.0) * kk)
 	name_label.add_theme_font_size_override("font_size", _name_fs)
 	if hero:
 		stack_label.position = Vector2(cd.position.x, (93.0 + dy) * kk)
