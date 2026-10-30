@@ -380,7 +380,7 @@ def s4(c):
     tid, bots, _ = table(c, "S4", 2); host = bots[0]
     v = hero(c, tid, bots); me = my_seat(v); nick = nickname(host.hero_uid(bots))
     fixed_hand(v, host, tid, lambda seats: deck_hero_wins(me, seats))
-    s = v.wait_state(lambda s: hero_turn(s) and s, 30, "히어로 차례", pump=False)
+    s = v.wait_state(lambda s: hero_turn(s) and v.vis(s, "ActionBar") and s, 30, "히어로 차례(딜 연출 뒤 행동 막대)", pump=False)
     assert all(v.vis(s, k) for k in ("FoldButton", "CheckActionButton", "CallButton", "RaiseButton", "AllInButton", "ActionBar")), "행동 버튼이 안 보인다(비활성이어도 보여야 한다)"
     assert sorted(s["extra"]["my_hole_cards"]) == ["Ah", "As"], f"홀카드 {s['extra']['my_hole_cards']}"
     key = check_or_call(s["extra"]); other = "CallButton" if key == "CheckActionButton" else "CheckActionButton"

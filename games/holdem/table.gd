@@ -139,6 +139,8 @@ var my_codes: Array = [] # 지금 MyCards 에 그린 홀카드
 var my_codes_ticks := -100000 # my_codes 가 바뀐 시각 — 개인 뷰가 공개 뷰보다 먼저 올 때 딜 연출을 맞춘다
 var deal_plan := {} # seatNo -> [첫 장, 둘째 장] 딜 지연(초). 내 좌석은 홀카드가 올 때 쓴다
 var deal_plan_ticks := -100000
+var deal_bar_pending := false # 딜이 끝나면 _process 가 막대를 한 번 다시 그린다(타이머는 time_scale 을 타서 시계와 어긋난다)
+var deal_end_ticks := -1 # 이 시각까지 딜 연출 중 — 행동 막대·비프를 미룬다(연출 없이 그린 첫 뷰는 -1)
 var last_public_seq := -1
 var last_private_seq := -1
 var next_hand_due_ticks := -1 # nextHandInMs 를 받은 순간 기준의 시작 시각(get_ticks_msec). -1 이면 카운트다운 없음
@@ -299,10 +301,9 @@ func _on_backdrop_input(event: InputEvent) -> void:
 		settings_popup.hide()
 
 
-## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 딜은 좌석 하나(첫 바퀴)마다 한 번씩 DEAL_SOUND_GAP 간격으로.
+## 새 뷰가 오면 이전 뷰와 비교해 효과음을 낸다. 셔플은 SHUFFLE_SEC 만, 딜은 카드 한 장마다 한 번씩 날기 시작에 맞춰.
 ## 행동 목소리는 한 번에 가장 중요한 것 하나만(겹쳐 말하지 않게)
-const DEAL_SOUND_GAP := 0.1
-const DEAL_SOUND_VOLUME := 0.4
+const DEAL_SOUND_VOLUME := 0.2
 const VOICE_PRIORITY := ["allin", "raise", "bet", "call", "check", "fold"]
 
 
@@ -310,8 +311,10 @@ func _play_sounds(prev_view: Dictionary) -> void:
 	var events := PublicView.sound_events(prev_view, public_view)
 	for e: String in events:
 		if e == "deal":
-			for i in PublicView.deal_order(public_view).size():
-				get_tree().create_timer(i * DEAL_SOUND_GAP + Motion.DEAL_FLY).timeout.connect(sfx.play.bind("deal", DEAL_SOUND_VOLUME))
+			for at: float in PublicView.deal_starts(PublicView.deal_order(public_view).size()):
+				get_tree().create_timer(at).timeout.connect(sfx.play.bind("deal", DEAL_SOUND_VOLUME))
+		elif e == "shuffle":
+			sfx.play_for("shuffle", PublicView.SHUFFLE_SEC)
 		else:
 			sfx.play(e)
 	for v: String in VOICE_PRIORITY:
@@ -332,6 +335,9 @@ func _beep_tick(left: float, mine: bool) -> void:
 
 
 func _process(_delta: float) -> void:
+	if deal_bar_pending and not _dealing():
+		deal_bar_pending = false
+		_update_action_bar()
 	if not waiting and not public_view.get("handInProgress", false) and next_hand_due_ticks >= 0:
 		_update_status_label()
 	_update_turn_timer()
@@ -1100,6 +1106,8 @@ func _play_motion(prev: Dictionary) -> void:
 	# 딜: 새 판이면 딜러 다음 좌석부터 시계 방향으로 두 바퀴
 	if hip and hand_counter > prev.hand:
 		_plan_deal()
+		deal_end_ticks = deal_plan_ticks + int((PublicView.SHUFFLE_SEC + PublicView.DEAL_SEC) * 1000.0)
+		deal_bar_pending = true
 		for n in deal_plan:
 			if n == _my_seat_no():
 				continue
@@ -1107,8 +1115,8 @@ func _play_motion(prev: Dictionary) -> void:
 			for i in 2:
 				if sn.card_rects[i].visible:
 					var r := _seat_card_rect(n, i)
-					motion.fly(motion.card_ghost("back", r.size), geo.center, r.get_center(), Motion.DEAL_FLY, deal_plan[n][i])
-					motion.appear(sn.card_rects[i], deal_plan[n][i] + Motion.DEAL_FLY)
+					motion.fly(motion.card_ghost("back", r.size), geo.center, r.get_center(), PublicView.DEAL_FLY, deal_plan[n][i], false, Tween.EASE_OUT, Tween.TRANS_QUINT, Rect2(), Motion.DEAL_TILT)
+					motion.appear(sn.card_rects[i], deal_plan[n][i] + PublicView.DEAL_FLY)
 		if Time.get_ticks_msec() - my_codes_ticks < 1500: # 개인 뷰가 먼저 왔다
 			_deal_my_cards()
 
@@ -1117,8 +1125,9 @@ func _plan_deal() -> void:
 	deal_plan = {}
 	deal_plan_ticks = Time.get_ticks_msec()
 	var order := PublicView.deal_order(public_view)
+	var starts := PublicView.deal_starts(order.size())
 	for k in order.size():
-		deal_plan[order[k]] = [k * Motion.DEAL_STAGGER, (order.size() + k) * Motion.DEAL_STAGGER]
+		deal_plan[order[k]] = [starts[k], starts[order.size() + k]]
 
 
 ## 내 홀카드: 가운데에서 뒷면이 날아오고, 닿으면 뒤집힌다. 딜 계획이 있고(공개 뷰) 카드가 막 바뀌었을 때(개인 뷰) 한 번만
@@ -1129,13 +1138,14 @@ func _deal_my_cards() -> void:
 	var plan: Array = deal_plan[seat_no]
 	deal_plan.erase(seat_no)
 	var hc: Vector2 = geo.hc
+	var elapsed := (Time.get_ticks_msec() - deal_plan_ticks) / 1000.0 # 개인 뷰가 늦게 왔으면 그만큼 앞당긴다
 	for i in my_card_rects.size():
 		var r: Control = my_card_rects[i]
 		if not r.visible:
 			continue
 		var c: Vector2 = my_cards_box.position + Vector2(i * (hc.x + 8.0) + hc.x / 2.0, hc.y / 2.0)
-		motion.fly(motion.card_ghost("back", hc), geo.center, c, Motion.DEAL_FLY, plan[i])
-		motion.appear(r, plan[i] + Motion.DEAL_FLY, true)
+		motion.fly(motion.card_ghost("back", hc), geo.center, c, PublicView.DEAL_FLY, maxf(plan[i] - elapsed, 0.0), false, Tween.EASE_OUT, Tween.TRANS_QUINT, Rect2(), Motion.DEAL_TILT)
+		motion.appear(r, maxf(plan[i] - elapsed, 0.0) + PublicView.DEAL_FLY, true)
 
 
 ## QA 브리지(core/qa_bridge.gd)가 state().extra 로 읽는다. 표시 없이 현재 상태만 돌려준다
@@ -1644,11 +1654,10 @@ func _update_turn_key() -> void:
 		last_turn_key = turn_key
 
 
-## 내 차례가 막 시작됐을 때 한 번만 알린다(소리 + Web 탭 제목). 같은 차례의 뷰 갱신·관전 중에는 울리지 않는다
+## 내 차례가 막 시작됐을 때 한 번만 알린다(Web 탭 제목만 — 소리는 없다). 같은 차례의 뷰 갱신·관전 중에는 울리지 않는다
 func _check_my_turn() -> void:
 	var mine: bool = _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no() and public_view.get("handInProgress", false)
 	if mine and not was_my_turn:
-		sfx.play("turn")
 		_set_tab_alert(true)
 	elif was_my_turn and not mine:
 		_set_tab_alert(false)
@@ -1679,7 +1688,7 @@ func _update_turn_timer() -> void:
 		if seat_no == to_act:
 			hero_left = left if seat_no == _my_seat_no() else -1.0
 		seat_nodes[seat_no - 1].set_timer(left, turn_total_ms / 1000.0)
-	_beep_tick(hero_left, hero_left >= 0.0)
+	_beep_tick(hero_left, hero_left >= 0.0 and not _dealing())
 
 
 func _nickname_for(user_id: int) -> String:
@@ -1791,10 +1800,14 @@ func _can_join() -> bool:
 
 # --- action bar ---
 
+func _dealing() -> bool:
+	return Time.get_ticks_msec() < deal_end_ticks
+
+
 func _update_action_bar() -> void:
 	var seat_no := _my_seat_no()
 	var to_act := _to_act_seat_no()
-	var show_bar: bool = my_available_actions != null and seat_no != -1 and to_act == seat_no and public_view.get("handInProgress", false)
+	var show_bar: bool = not _dealing() and my_available_actions != null and seat_no != -1 and to_act == seat_no and public_view.get("handInProgress", false)
 	action_bar.visible = show_bar
 	_sync_action_bg()
 	if not show_bar:
