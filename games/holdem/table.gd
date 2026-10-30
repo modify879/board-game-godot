@@ -303,7 +303,7 @@ func _on_backdrop_input(event: InputEvent) -> void:
 ## 행동 목소리는 한 번에 가장 중요한 것 하나만(겹쳐 말하지 않게)
 const DEAL_SOUND_GAP := 0.1
 const DEAL_SOUND_VOLUME := 0.4
-const VOICE_PRIORITY := ["allin", "raise", "call", "check", "fold"]
+const VOICE_PRIORITY := ["allin", "raise", "bet", "call", "check", "fold"]
 
 
 func _play_sounds(prev_view: Dictionary) -> void:

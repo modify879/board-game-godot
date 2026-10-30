@@ -12,6 +12,7 @@ static func action_label(seat: Dictionary) -> String:
 		"CHECK": return "체크"
 		"CALL": return "콜"
 		"RAISE_TO": return "레이즈"
+		"BET": return "베팅"
 	return ""
 
 
@@ -110,8 +111,18 @@ static func deal_order(view: Dictionary) -> Array:
 	return order
 
 
+## 이 좌석이 prev→cur 사이에 행동했나. lastAction 은 핸드 내내 남아 같은 행동을 되풀이하면(스트리트마다 콜·체크) 안 바뀌므로, 내 차례였다가 넘어갔으면(핸드가 이어지거나 결과가 났을 때만 — 취소는 제외) 행동한 것으로 본다
+static func acted(prev: Dictionary, cur: Dictionary, seat: Dictionary, old: Dictionary) -> bool:
+	if seat.get("lastAction") != old.get("lastAction"):
+		return true
+	var no = seat.seatNo
+	return prev.get("toActSeatNo") != null and int(prev.toActSeatNo) == int(no) \
+			and (cur.get("toActSeatNo") == null or int(cur.toActSeatNo) != int(no)) \
+			and (cur.get("handInProgress", false) or cur.get("result") != null)
+
+
 ## 연속한 공개 뷰 둘의 차이로 효과음 이름 목록을 만든다. prev 가 비면(첫 뷰·재연결 뒤) []. 좌석은 userId 로 맞추고 주인이 바뀐 좌석은 건너뛴다.
-## 이름: shuffle·deal(새 판), board, call, raise, allin, check, fold, win
+## 이름: shuffle·deal(새 판), board, call, raise, bet, allin, check, fold, win
 static func sound_events(prev: Dictionary, cur: Dictionary) -> Array:
 	var out: Array = []
 	if prev.is_empty():
@@ -125,7 +136,7 @@ static func sound_events(prev: Dictionary, cur: Dictionary) -> Array:
 		if old == null or int(old.userId) != int(seat.userId):
 			continue
 		var act = seat.get("lastAction")
-		var acted: bool = act != old.get("lastAction")
+		var acted := acted(prev, cur, seat, old)
 		if seat.status == "ALL_IN" and old.status != "ALL_IN":
 			out.append("allin")
 		elif act == "FOLD" and acted or seat.status == "FOLDED" and old.status != "FOLDED":
@@ -136,6 +147,8 @@ static func sound_events(prev: Dictionary, cur: Dictionary) -> Array:
 			out.append("call")
 		elif acted and act == "RAISE_TO":
 			out.append("raise")
+		elif acted and act == "BET":
+			out.append("bet")
 	if prev.get("result") == null and cur.get("result") != null:
 		out.append("win")
 	return out

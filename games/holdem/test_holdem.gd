@@ -132,6 +132,7 @@ func _init() -> void:
 	check(al.call({"lastAction": "FOLD"}) == "폴드" and al.call({"lastAction": "CHECK"}) == "체크", "action_label 폴드·체크")
 	check(al.call({"lastAction": "CALL"}) == "콜" and al.call({"lastAction": "RAISE_TO"}) == "레이즈", "action_label 콜·레이즈")
 	check(al.call({"status": "ALL_IN", "lastAction": "CALL"}) == "콜" and al.call({"status": "ALL_IN"}) == "", "action_label 올인 좌석도 lastAction 만 본다")
+	check(al.call({"lastAction": "BET"}) == "베팅", "action_label 베팅")
 	check(al.call({}) == "" and al.call({"lastAction": null}) == "" and al.call({"lastAction": "X"}) == "", "action_label 없음·null·모르는 값은 빈 문자열")
 	check(pv.deal_order(view) == [7, 1], "deal_order 버튼 왼쪽부터, ACTIVE·ALL_IN 만")
 	check(pv.deal_order({"buttonSeatNo": 7, "seats": seats}) == [1, 7], "deal_order 버튼 바뀌면 회전")
@@ -161,12 +162,22 @@ func _init() -> void:
 	check(pv.sound_events(prev0.merged({"handInProgress": false}, true), prev0) == ["shuffle", "deal"], "sound_events 새 판")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL"}, true))) == ["call"], "sound_events 콜")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "RAISE_TO"}, true))) == ["raise"], "sound_events 레이즈")
+	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "BET"}, true))) == ["bet"], "sound_events 베팅")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CHECK"}, true))) == ["check"], "sound_events 체크")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "FOLD", "status": "FOLDED"}, true))) == ["fold"], "sound_events 폴드")
 	check(pv.sound_events(prev0, se.call(s0.merged({"lastAction": "CALL", "status": "ALL_IN"}, true))) == ["allin"], "sound_events 올인은 콜 대신")
 	check(pv.sound_events(prev0, se.call(s0, {"result": {"payouts": []}})) == ["win"], "sound_events 결과")
 	check(pv.sound_events(prev0, se.call(s0.merged({"userId": 8.0, "lastAction": "CALL"}, true))) == [], "sound_events 주인 바뀐 좌석 무시")
 	check(pv.sound_events(se.call(s0.merged({"lastAction": "CALL"}, true)), se.call(s0.merged({"lastAction": "CALL"}, true))) == [], "sound_events 변화 없으면 []")
+	# 되풀이 행동·오프닝 베팅
+	var sv := func(seat: Dictionary, extra := {}) -> Dictionary:
+		return se.call(seat, {"street": "FLOP", "toActSeatNo": null}.merged(extra, true))
+	var sc: Dictionary = s0.merged({"lastAction": "CALL"}, true)
+	var turn_prev: Dictionary = sv.call(sc, {"toActSeatNo": 1.0})
+	check(pv.sound_events(turn_prev, sv.call(sc, {"street": "TURN"})) == ["call"], "sound_events 다음 스트리트 같은 콜도 소리")
+	check(pv.sound_events(sv.call(s0.merged({"lastAction": "CHECK"}, true), {"toActSeatNo": 1.0}), sv.call(s0.merged({"lastAction": "CHECK"}, true))) == ["check"], "sound_events 체크→체크")
+	var cancel: Dictionary = sv.call(sc, {"handInProgress": false})
+	check(pv.sound_events(turn_prev, cancel) == [], "sound_events 핸드 취소는 행동 소리 없음")
 
 	quit(1 if failures else 0)
 
