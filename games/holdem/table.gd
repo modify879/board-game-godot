@@ -338,6 +338,7 @@ func _process(_delta: float) -> void:
 	if deal_bar_pending and not _dealing():
 		deal_bar_pending = false
 		_update_action_bar()
+		_render_seats() # 딜 중 숨겨 둔 내 족보 문구도 이제 보인다
 	if not waiting and not public_view.get("handInProgress", false) and next_hand_due_ticks >= 0:
 		_update_status_label()
 	_update_turn_timer()
@@ -1379,9 +1380,9 @@ func _render_seats() -> void:
 	_apply_mode()
 	var g := _layout() if compact else _layout_desktop(_my_seat_no() != -1)
 	geo = g
-	hand_text_pill.visible = compact and my_hand_text != "" and my_cards_box.visible
+	hand_text_pill.visible = compact and _shown_hand_text() != "" and my_cards_box.visible
 	if hand_text_pill.visible: # 내 큰 카드 바로 위 가운데
-		hand_text_pill.text = my_hand_text
+		hand_text_pill.text = _shown_hand_text()
 		hand_text_pill.reset_size()
 		hand_text_pill.position = Vector2(my_cards_box.position.x + (my_cards_box.size.x - hand_text_pill.size.x) / 2.0, my_cards_box.position.y - hand_text_pill.size.y - 3.0)
 	var hero := _my_seat_no() if _my_seat_no() != -1 else 1 # 회전 기준(관전은 1번 좌석이 아래 가운데, 일반 패널)
@@ -1631,7 +1632,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
 		"cards": [] if is_me else cards, # 내 카드는 아래 MyCards 가 크게 그린다
 		"category": category,
-		"hand_text": my_hand_text if is_me else "",
+		"hand_text": _shown_hand_text() if is_me else "",
 		"payout": _payout_for(seat_no),
 	})
 	var street_bet := PublicView.street_bet(seat)
@@ -1799,6 +1800,11 @@ func _can_join() -> bool:
 
 
 # --- action bar ---
+
+## 내 족보 문구는 딜 연출이 끝난 뒤에 보인다(카드가 아직 돌고 있는데 "K탑" 이 먼저 뜨지 않게)
+func _shown_hand_text() -> String:
+	return "" if _dealing() else my_hand_text
+
 
 func _dealing() -> bool:
 	return Time.get_ticks_msec() < deal_end_ticks
