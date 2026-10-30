@@ -9,6 +9,7 @@ const STREAMS := {
 	"board": preload("res://games/holdem/assets/sounds/card-place-1.ogg"),
 	"call": preload("res://games/holdem/assets/sounds/chip-lay-1.ogg"),
 	"raise": preload("res://games/holdem/assets/sounds/chip-lay-1.ogg"),
+	"bet": preload("res://games/holdem/assets/sounds/chip-lay-1.ogg"),
 	"allin": preload("res://games/holdem/assets/sounds/chips-stack-3.ogg"),
 	"check": preload("res://games/holdem/assets/sounds/click1.ogg"),
 	"fold": preload("res://games/holdem/assets/sounds/card-shove-1.ogg"),
@@ -20,6 +21,7 @@ const STREAMS := {
 	"voice_check": preload("res://games/holdem/assets/sounds/voice_check.mp3"),
 	"voice_call": preload("res://games/holdem/assets/sounds/voice_call.mp3"),
 	"voice_raise": preload("res://games/holdem/assets/sounds/voice_raise.mp3"),
+	"voice_bet": preload("res://games/holdem/assets/sounds/voice_bet.mp3"),
 	"voice_allin": preload("res://games/holdem/assets/sounds/voice_allin.mp3"),
 }
 const DEAL_STREAMS := [

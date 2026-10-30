@@ -12,7 +12,7 @@ const TEXT := Color(0.9098, 0.9255, 0.9490)
 const TEXT_MUTED := Color(0.6039, 0.6431, 0.6980)
 const ON_ACCENT := Color(0.1020, 0.0784, 0.0196)
 ## 행동 배지 바탕색(문구별). 폴드 회색·체크 파랑·콜 초록·레이즈 주황
-const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F")}
+const ACTION_COLORS := {"폴드": Color("5F6672"), "체크": Color("3B7DD8"), "콜": Color("2E9E5B"), "레이즈": Color("E07B1F"), "베팅": Color("E07B1F")}
 const AVATAR_COLORS := [Color("8FC9DC"), Color("93BEE6"), Color("A3B5EA"), Color("B9A8E6"), Color("E6A8C4"), Color("9FD6C2")]
 const WARN_SECONDS := 5.0
 const MARKER_LABELS := ["D", "SB", "BB"]
