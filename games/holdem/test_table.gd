@@ -616,23 +616,12 @@ func _ready() -> void:
 	table._beep_tick(-1.0, true)
 	check(table.sfx.played.is_empty(), "남의 차례·타이머 없음은 비프 없음")
 
-	# 내 차례 알림: 시작할 때 한 번만, 관전 중엔 없음
+	# 내 차례 알림: 소리는 없다(탭 제목은 Web 에서만 바뀌어 헤드리스로는 볼 수 없다)
 	table._handle_public(_view(4000, [_seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
 	table.sfx.played.clear()
 	table._handle_public(_view(4001, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
-	check(not table.sfx.played.has("turn"), "남의 차례에는 내 차례 소리 없음")
 	table._handle_public(_view(4002, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
-	check(table.sfx.played.count("turn") == 1, "내 차례가 시작되면 소리 한 번")
-	table._handle_public(_view(4003, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
-	check(table.sfx.played.count("turn") == 1, "같은 차례의 뷰 갱신은 다시 울리지 않음")
-	table._handle_public(_view(4004, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
-	table._handle_public(_view(4005, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
-	check(table.sfx.played.count("turn") == 2, "차례가 다시 오면 다시 울림")
-	table.sfx.played.clear()
-	table._handle_public(_view(4006, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
-	table._handle_public(_view(4007, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 2.0}))
-	table._handle_public(_view(4008, [_seat(1, 100), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0}))
-	check(not table.sfx.played.has("turn"), "관전 중에는 내 차례 소리 없음")
+	check(not table.sfx.played.has("turn"), "내 차례가 시작돼도 소리 없음")
 
 	# 빈 자리 클릭: 관전 중이면 참가 팝업, 앉아 있으면 아무 일 없음
 	var empty_click := InputEventMouseButton.new()

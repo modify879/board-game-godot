@@ -15,7 +15,6 @@ const STREAMS := {
 	"fold": preload("res://games/holdem/assets/sounds/card-shove-1.ogg"),
 	"win": preload("res://games/holdem/assets/sounds/chips-collide-2.ogg"),
 	"shuffle": preload("res://games/holdem/assets/sounds/card-shuffle.ogg"),
-	"turn": preload("res://games/holdem/assets/sounds/turn_alert.ogg"), # 내 차례 알림(Kenney Digital Audio twoTone1, CC0)
 	"beep": preload("res://games/holdem/assets/sounds/timer_beep.wav"),
 	"voice_fold": preload("res://games/holdem/assets/sounds/voice_fold.mp3"),
 	"voice_check": preload("res://games/holdem/assets/sounds/voice_check.mp3"),
@@ -69,7 +68,7 @@ func play(sound: String, volume := -1.0) -> void:
 	_next = (_next + 1) % _players.size()
 	p.stream = DEAL_STREAMS.pick_random() if sound == "deal" else STREAMS[sound]
 	if volume < 0.0:
-		volume = 1.0 if sound == "beep" or sound == "turn" or sound.begins_with("voice_") else EFFECT_VOLUME
+		volume = 1.0 if sound == "beep" or sound.begins_with("voice_") else EFFECT_VOLUME
 	p.volume_db = linear_to_db(volume)
 	p.play()
 

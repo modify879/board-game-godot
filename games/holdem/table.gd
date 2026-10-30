@@ -1644,11 +1644,10 @@ func _update_turn_key() -> void:
 		last_turn_key = turn_key
 
 
-## 내 차례가 막 시작됐을 때 한 번만 알린다(소리 + Web 탭 제목). 같은 차례의 뷰 갱신·관전 중에는 울리지 않는다
+## 내 차례가 막 시작됐을 때 한 번만 알린다(Web 탭 제목만 — 소리는 없다). 같은 차례의 뷰 갱신·관전 중에는 울리지 않는다
 func _check_my_turn() -> void:
 	var mine: bool = _my_seat_no() != -1 and _to_act_seat_no() == _my_seat_no() and public_view.get("handInProgress", false)
 	if mine and not was_my_turn:
-		sfx.play("turn")
 		_set_tab_alert(true)
 	elif was_my_turn and not mine:
 		_set_tab_alert(false)
