@@ -529,11 +529,20 @@ func _ready() -> void:
 
 	# currentHand → 족보 문구
 	table._handle_public(_view(3100, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
+	table.deal_end_ticks = -1 # 앞 시나리오의 새 판 딜 연출은 끝난 것으로
 	table._handle_private({"seq": 910000.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "PAIR", "tiebreakers": [14.0]}})
 	var hr: Label = table.seat_nodes[0].hand_rank
 	check(table.my_hand_text == "A 원페어" and table.qa_state().my_hand_text == "A 원페어", "개인 뷰 currentHand 가 문구로 저장된다")
 	check(hr.visible and hr.text == "A 원페어" or not table.desktop, "내 패널 HandRank 에 문구(데스크톱)")
 	check(table.hand_text_pill.visible == table.compact and (not table.compact or table.hand_text_pill.text == "A 원페어"), "폰 족보 알약은 폰에서만 보인다")
+	table.deal_end_ticks = Time.get_ticks_msec() + 5000 # 딜 연출 중엔 족보 문구를 숨기고, 끝나면 _process 가 다시 그려 보인다
+	table.deal_bar_pending = true
+	table._render_seats()
+	check(not hr.visible and not table.hand_text_pill.visible, "딜 연출 중엔 내 족보 문구 숨김")
+	table.deal_end_ticks = Time.get_ticks_msec() - 1
+	table._process(0.0)
+	check(not table.deal_bar_pending and table.hand_text_pill.visible == table.compact and (table.compact or (hr.visible and hr.text == "A 원페어")), "딜이 끝나면 내 족보 문구가 보인다")
+	table.deal_end_ticks = -1
 	table._handle_private({"seq": 910001.0, "holeCards": ["As", "Ah"], "currentHand": null})
 	check(table.my_hand_text == "" and not hr.visible and not table.hand_text_pill.visible, "currentHand null 이면 문구·라벨 숨김")
 	table._handle_private({"seq": 910002.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "FLUSH", "tiebreakers": [14.0, 9.0]}})
