@@ -3,6 +3,7 @@ extends Node
 
 const SETTINGS_PATH := "user://holdem_settings.cfg"
 const VOICES := 6
+const CUT_FADE := 0.15 # play_for 가 끝에서 줄이는 시간
 const EFFECT_VOLUME := 0.6 # 선형(약 -4.4 dB)
 const STREAMS := {
 	"deal": preload("res://games/holdem/assets/sounds/card-slide-3.ogg"), # 딜은 DEAL_STREAMS 중 무작위(이 항목은 키 확인용)
@@ -58,12 +59,12 @@ func _ready() -> void:
 
 
 ## volume 은 선형. 안 주면 효과음 기본값(목소리는 1.0, 비프는 원본 그대로)
-func play(sound: String, volume := -1.0) -> void:
+func play(sound: String, volume := -1.0) -> AudioStreamPlayer:
 	if not STREAMS.has(sound) or not (voice_on if sound.begins_with("voice_") else sfx_on):
-		return
+		return null
 	played.append(sound)
 	if silent:
-		return
+		return null
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
 	p.stream = DEAL_STREAMS.pick_random() if sound == "deal" else STREAMS[sound]
@@ -71,6 +72,18 @@ func play(sound: String, volume := -1.0) -> void:
 		volume = 1.0 if sound == "beep" or sound.begins_with("voice_") else EFFECT_VOLUME
 	p.volume_db = linear_to_db(volume)
 	p.play()
+	return p
+
+
+## 앞 seconds 초만 들려주고 마지막 FADE 동안 줄여 끈다(긴 원본을 자를 때)
+func play_for(sound: String, seconds: float, volume := -1.0) -> void:
+	var p := play(sound, volume)
+	if p == null:
+		return
+	var t := create_tween()
+	t.tween_interval(seconds - CUT_FADE)
+	t.tween_property(p, "volume_db", -60.0, CUT_FADE)
+	t.tween_callback(func() -> void: if p.stream == STREAMS[sound]: p.stop()) # 그 사이 다른 소리가 이 플레이어를 가져갔으면 건드리지 않는다
 
 
 func set_sfx_on(value: bool) -> void:

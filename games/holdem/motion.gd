@@ -5,8 +5,7 @@ extends Control
 
 const Cards := preload("res://games/holdem/cards.gd")
 
-const DEAL_FLY := 0.25 # 카드 한 장이 가운데에서 자리까지
-const DEAL_STAGGER := 0.05 # 딜 순서 간격
+const DEAL_TILT := 12.0 # 딜 카드가 날기 시작할 때의 기울기(도) — 닿을 때 0 으로 풀린다
 const FLIP := 0.2 # 카드 뒤집기(scale.x 0→1)
 const FLIP_STAGGER := 0.08 # 보드 카드 간격
 const BET_TO_POT := 0.35 # 베팅 칩 → 팟
@@ -47,11 +46,15 @@ func card_ghost(code: String, card_size: Vector2) -> TextureRect:
 	return r
 
 
-## 고스트를 from → to(중심 좌표)로 날린다. delay 동안은 숨겨 둔다. 끝나면 queue_free
-func fly(g: Control, from: Vector2, to: Vector2, dur: float, delay := 0.0, fade := false, ease_type := Tween.EASE_OUT, trans := Tween.TRANS_CUBIC, avoid := Rect2()) -> void:
+## 고스트를 from → to(중심 좌표)로 날린다(tilt 도에서 시작해 0 으로). delay 동안은 숨겨 둔다. 끝나면 queue_free
+func fly(g: Control, from: Vector2, to: Vector2, dur: float, delay := 0.0, fade := false, ease_type := Tween.EASE_OUT, trans := Tween.TRANS_CUBIC, avoid := Rect2(), tilt := 0.0) -> void:
 	add_child(g)
 	g.position = from - g.size / 2.0
 	var t := g.create_tween().set_parallel(true)
+	if tilt != 0.0: # 시작 각도에서 0 으로(위치와 같은 이징)
+		g.pivot_offset = g.size / 2.0
+		g.rotation_degrees = tilt
+		t.tween_property(g, "rotation_degrees", 0.0, dur).set_delay(delay).set_trans(trans).set_ease(ease_type)
 	if delay > 0.0:
 		g.hide()
 		t.tween_callback(g.show).set_delay(delay)

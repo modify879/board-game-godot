@@ -101,6 +101,21 @@ static func street_bet(seat: Dictionary) -> int:
 
 
 ## 딜 순서: 버튼 왼쪽부터 ACTIVE·ALL_IN 좌석 번호
+## 새 판 연출 시간표(초, 셔플 시작 = 0). 서버 첫 차례 여유(app.holdem.deal-grace, 3.5s)가 SHUFFLE_SEC + DEAL_SEC 를 덮어야 한다
+const SHUFFLE_SEC := 1.0 # 셔플 소리(원본 3.06초를 이 길이로 자른다)
+const DEAL_SEC := 2.0 # 딜 전체 — 인원과 무관하게 고정, 마지막 카드가 SHUFFLE_SEC + DEAL_SEC 에 닿는다
+const DEAL_FLY := 0.45 # 카드 한 장이 가운데에서 자리까지
+
+
+## 카드 n*2 장의 날기 시작 시각(딜 순서대로: 첫 바퀴 n 장 → 둘째 바퀴 n 장). 마지막 카드가 정확히 SHUFFLE_SEC + DEAL_SEC 에 닿는다
+static func deal_starts(n: int) -> Array:
+	var out: Array = []
+	var gap := (DEAL_SEC - DEAL_FLY) / maxf(2 * n - 1, 1)
+	for k in 2 * n:
+		out.append(SHUFFLE_SEC + k * gap)
+	return out
+
+
 static func deal_order(view: Dictionary) -> Array:
 	var dealer := int(view.get("buttonSeatNo", 0))
 	var order: Array = []

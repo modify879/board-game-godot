@@ -137,6 +137,14 @@ func _init() -> void:
 	check(pv.deal_order(view) == [7, 1], "deal_order 버튼 왼쪽부터, ACTIVE·ALL_IN 만")
 	check(pv.deal_order({"buttonSeatNo": 7, "seats": seats}) == [1, 7], "deal_order 버튼 바뀌면 회전")
 
+	# 딜 시간표: 인원과 무관하게 첫 카드 1.0초 시작, 마지막 카드 3.0초 착지
+	for n in [2, 9]:
+		var ds: Array = pv.deal_starts(n)
+		check(ds.size() == 2 * n and is_equal_approx(ds[0], 1.0), "deal_starts N=%d 카드 2N 장, 첫 장 1.0초" % n)
+		check(is_equal_approx(ds[-1] + pv.DEAL_FLY, 3.0), "deal_starts N=%d 마지막 카드 3.0초 착지" % n)
+		check(is_equal_approx(ds[1] - ds[0], (2.0 - 0.45) / (2 * n - 1)), "deal_starts N=%d 간격 (2.0-0.45)/(2N-1)" % n)
+	check(pv.deal_starts(0).is_empty(), "deal_starts 0명")
+
 	var bs := {"handInProgress": true, "smallBlindSeatNo": 2.0, "bigBlindSeatNo": 3.0}
 	check(pv.blind_seats(bs) == {"sb": 2, "bb": 3}, "blind_seats 보통")
 	check(pv.blind_seats({"handInProgress": true, "buttonSeatNo": 4.0, "smallBlindSeatNo": 4.0, "bigBlindSeatNo": 7.0}) == {"sb": 4, "bb": 7}, "blind_seats 헤즈업은 SB 가 버튼 좌석")
