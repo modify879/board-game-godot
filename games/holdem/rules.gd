@@ -49,5 +49,5 @@ static func buy_in_blocked_text(data: Dictionary) -> String:
 		return ""
 	var text := ErrorText.of("INSUFFICIENT_BALANCE")
 	if data.get("obligationExpiresAt") != null:
-		text += "\n나간 지 30분 이내에는 나간 금액 이상으로 다시 앉아야 합니다. %s 이후에 앉을 수 있습니다" % Format.time(str(data.obligationExpiresAt))
+		text += "\n나간 지 얼마 안 돼 나간 금액 이상으로 다시 앉아야 합니다. %s 이후에는 제한 없이 앉을 수 있습니다" % Format.time(str(data.obligationExpiresAt))
 	return text

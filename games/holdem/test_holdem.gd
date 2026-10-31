@@ -61,7 +61,7 @@ func _init() -> void:
 	check(rules.chip_add(150, 1000, 20000, 9000) == "CHIPS_NOT_UNIT", "칩 추가 단위")
 	check(rules.chip_add(2000, 1000, 20000, 1900) == "INSUFFICIENT_BALANCE", "칩 추가가 지갑 초과")
 	check(rules.buy_in_blocked_text({"walletBalance": 3900.0, "minBuyIn": 4000.0, "obligationExpiresAt": null}) == ErrorText.of("INSUFFICIENT_BALANCE"), "의무 없이 지갑 부족")
-	check("이후에 앉을 수" in rules.buy_in_blocked_text({"walletBalance": 100.0, "minBuyIn": 4000.0, "obligationExpiresAt": "2026-01-01T10:00:00Z"}), "의무 시각 안내")
+	check("제한 없이 앉을 수" in rules.buy_in_blocked_text({"walletBalance": 100.0, "minBuyIn": 4000.0, "obligationExpiresAt": "2026-01-01T10:00:00Z"}), "의무 시각 안내")
 	check(rules.buy_in_blocked_text({"walletBalance": 4000.0, "minBuyIn": 4000.0, "obligationExpiresAt": null}) == "", "지갑이 충분하면 안내 없음")
 
 

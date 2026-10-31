@@ -7,6 +7,11 @@ cd "$(dirname "$0")/../../.."          # 프로젝트 루트
 GODOT=/mnt/c/Users/jsm/.godot/Godot.exe
 PY=${QA_PY:-$HOME/.cache/web-qa-venv/bin/python}
 T0=$SECONDS; FAILED=()
+# 서버 점검: QA 서버(:8081)가 떠 있어야 한다(헤드리스·빌드보다 먼저, 아니면 바로 끝낸다)
+if ! curl -s -m 5 localhost:8081/api/server-info | grep -q '"environment":"qa"'; then
+  echo "QA 서버(:8081)가 안 떠 있다 — 서버 세션에 QA 서버 기동을 요청한다(서버 저장소 ./gradlew bootRun --args='--spring.profiles.active=qa'). 뜨면 curl -s localhost:8081/api/server-info 가 {\"environment\":\"qa\"}" >&2
+  exit 3
+fi
 if [ ! -x "$PY" ]; then
   uv venv "$(dirname "$(dirname "$PY")")" -q && uv pip install -q -p "$PY" playwright && "$PY" -m playwright install chromium || exit 2
 fi
