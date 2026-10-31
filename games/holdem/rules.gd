@@ -30,7 +30,7 @@ static func buy_in(amount: int, min_buy_in: int, max_buy_in: int, wallet := -1) 
 	return ""
 
 
-## 칩 추가: 음수·단위(AddChipsService.kt:42) → 0 초과·스택 상한(HoldemTable.kt:85-91) → 지갑(AddChipsService.kt:44-46) 순. 핸드 중 거부(HAND_IN_PROGRESS)는 버튼 상태로 막는다
+## 칩 추가: 음수·단위(AddChipsService.kt:42) → 0 초과·스택 상한(HoldemTable.kt:85-91) → 지갑(AddChipsService.kt:44-46) 순. 핸드 중에는 서버가 예약(202)으로 받으므로 같은 사전 검사를 쓴다(예약도 단위·0 은 400, 상한·잔액은 반영 시점에 서버가 자른다)
 static func chip_add(amount: int, stack: int, max_stack: int, wallet := -1) -> String:
 	if amount < 0:
 		return "CHIPS_NEGATIVE"

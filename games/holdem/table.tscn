@@ -378,12 +378,55 @@ visible = false
 layout_mode = 2
 text = "참가"
 
-[node name="AddChipsBox" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
+[node name="AddChipsBox" type="VBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="AddChipsSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+[node name="AddChipsTabs" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+layout_mode = 2
+
+[node name="AddChipsTabChips" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsTabs"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+text = "칩 추가"
+
+[node name="AddChipsTabDeposit" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsTabs"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+text = "지갑 충전"
+
+[node name="AddChipsNote" type="Label" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "관리자 승인 후 지갑에 들어옵니다"
+horizontal_alignment = 1
+
+[node name="AddChipsReserveRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="AddChipsReserved" type="Label" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsReserveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AddChipsReserveCancel" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsReserveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "예약 취소"
+
+[node name="AddChipsRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+layout_mode = 2
+
+[node name="AddChipsSpin" type="SpinBox" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
@@ -393,12 +436,12 @@ step = 100.0
 value = 100.0
 suffix = "칩"
 
-[node name="AddChipsOk" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+[node name="AddChipsOk" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsRow"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "추가"
 
-[node name="AddChipsCancel" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+[node name="AddChipsCancel" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsRow"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "취소"

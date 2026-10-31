@@ -304,7 +304,7 @@ func _ready() -> void:
 	check(table.show_hand_button.visible, "show button returns for the next fold-won hand")
 	table._handle_public(_view(111, [_seat(1, 7)]))
 
-	# 14b. 칩 추가 버튼: 앉아 있고, 핸드 중이 아니고, 스택 < 최대일 때만 활성
+	# 14b. 칩 추가 버튼: 앉아 있고 스택 < 최대일 때 활성(핸드 중에도 — 서버가 예약으로 받는다)
 	var my_seat := _seat(1, 7)
 	table.waiting = false
 	table.add_chips_pending = false
@@ -321,16 +321,43 @@ func _ready() -> void:
 	table.add_chips_pending = false
 	table.add_chips_gen += 1 # 날아간 조회 응답은 버린다
 	table._handle_public(_view(2001, [my_seat], {"handInProgress": true}))
-	check(table.add_chips_button.disabled, "add chips disabled during hand")
-	check(my_stack.mouse_filter == Control.MOUSE_FILTER_IGNORE and my_stack.mouse_default_cursor_shape == Control.CURSOR_ARROW, "my stack label not clickable during hand")
+	check(not table.add_chips_button.disabled, "add chips button still opens during hand (deposit tab)")
+	table.add_chips_top = 1000 # buy-in 조회 뒤 상태
+	table._update_buttons()
+	check(table.add_chips_allowed, "add chips confirm allowed during hand")
+	table.add_chips_top = 0
+	table._update_buttons()
+	check(my_stack.mouse_filter == Control.MOUSE_FILTER_STOP, "my stack label clickable during hand (opens deposit tab)")
 	table.add_chips_pending = false
 	my_stack.gui_input.emit(stack_click)
-	check(not table.add_chips_pending, "stack stack_click ignored during hand")
+	check(table.add_chips_pending, "during hand the buy-in lookup starts too")
+	table.add_chips_pending = false
+	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50000.0}})
+	table._update_buttons() # 실제 흐름은 열기 뒤 갱신한다
+	check(table.add_chips_box.visible and not table.add_chips_deposit and not table.add_chips_ok.disabled and table.add_chips_ok.text == "추가", "during hand the chips tab opens and is usable")
+	check(not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "no reservation: row hidden, button plain")
+	table._handle_private({"seq": 930000.0, "holeCards": [], "chipsReservation": 3000.0})
+	check(table.add_chips_reserve_row.visible and table.add_chips_reserved.text == "예약: 3000칩" and table.add_chips_button.text == "+ 칩 예약", "reservation: row and button text shown")
+	table._set_add_chips_tab(true)
+	check(not table.add_chips_reserve_row.visible, "reservation row hidden on deposit tab")
+	table._set_add_chips_tab(false)
+	table.chips_reservation = null # 예약 취소 성공 때 로컬 값 지움과 같은 상태
+	table._update_buttons()
+	check(not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "reservation cleared: row hidden")
+	table._handle_private({"seq": 930001.0, "holeCards": [], "chipsReservation": 500.0})
+	table._handle_private({"seq": 930002.0, "holeCards": []})
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "private view without chipsReservation clears it")
+	table._handle_private({"seq": 930003.0, "holeCards": [], "chipsReservation": 500.0})
+	table._handle_public(_view(2001, [my_seat])) # 핸드 없는 공개 뷰(같은 seq 는 통과) — 예약이 사라진다
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "no-hand public view clears reservation")
+	table._handle_private({"seq": 930004.0, "holeCards": [], "chipsReservation": 500.0}) # 정산 프레임의 개인 뷰
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "no-hand: private chipsReservation not shown")
+	table.add_chips_box.hide()
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
 	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
 	my_seat.stack = 20000.0
 	table._handle_public(_view(2003, [my_seat]))
-	check(table.add_chips_button.disabled, "add chips disabled at max stack")
+	check(not table.add_chips_button.disabled and not table.add_chips_allowed, "add chips button open but confirm blocked at max stack")
 	my_seat.stack = 1000.0
 	table._handle_public(_view(2004, [_seat(2, 8)]))
 	check(not table.add_chips_button.visible, "add chips hidden when not seated")
@@ -416,7 +443,10 @@ func _ready() -> void:
 	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 2550.0}})
 	check(int(table.add_chips_spin.max_value) == 2500, "add chips max by wallet floor: %d" % int(table.add_chips_spin.max_value))
 	table._apply_add_chips_open(table.add_chips_gen, {"ok": true, "data": {"maxStack": 20000.0, "walletBalance": 50.0}})
-	check(not table.add_chips_box.visible and table.error_label.text == ErrorText.of("INSUFFICIENT_BALANCE"), "add chips: wallet below one unit -> notice")
+	check(table.add_chips_box.visible and table.add_chips_deposit and not table.add_chips_ok.disabled and table.error_label.text == ErrorText.of("INSUFFICIENT_BALANCE"), "add chips: wallet below one unit -> notice + deposit tab usable")
+	table._update_buttons()
+	table._set_add_chips_tab(false)
+	check(table.add_chips_ok.disabled and not table.add_chips_note.visible, "chips tab confirm blocked when nothing can be added")
 	table._handle_public(_view(2006, [_seat(1, 7)]))
 	table._update_buttons()
 
