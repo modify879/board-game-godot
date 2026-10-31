@@ -74,7 +74,10 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var menu_cancel_reservation: Button = %MenuCancelReservation
 @onready var menu_close: Button = %MenuClose
 @onready var add_chips_button: Button = %AddChipsButton
-@onready var add_chips_box: HBoxContainer = %AddChipsBox
+@onready var add_chips_box: VBoxContainer = %AddChipsBox
+@onready var add_chips_tab_chips: Button = %AddChipsTabChips
+@onready var add_chips_tab_deposit: Button = %AddChipsTabDeposit
+@onready var add_chips_note: Label = %AddChipsNote
 @onready var add_chips_spin: SpinBox = %AddChipsSpin
 @onready var add_chips_ok: Button = %AddChipsOk
 @onready var add_chips_cancel: Button = %AddChipsCancel
@@ -171,6 +174,10 @@ var add_chips_gen := 0 # 칩 추가 입력을 열 때마다 올린다 — 늦게
 var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이다
 var add_chips_max_stack := 0 # 칩 추가 입력을 열 때 받은 buy-in 응답
 var add_chips_wallet := 0
+var add_chips_top := 0 # 열 때 정한 추가 가능 최대(0 = 못 더한다)
+var add_chips_allowed := false # 칩 추가 탭의 확인 가능 — 핸드 중 아님·상한 미만·지갑 여유
+var add_chips_deposit := false # 지갑 충전 탭이 열려 있다
+var deposit_key := "" # 충전 요청 멱등키 — 금액이 바뀌면 새로 뽑는다(lobby/wallet.gd 와 같다)
 var sit_min := 0 # 착석 팝업이 받은 buy-in 응답 — 확인 때 Rules.buy_in 으로 다시 검사한다
 var sit_max := 0
 var sit_wallet := 0
@@ -215,6 +222,9 @@ func _ready() -> void:
 	add_chips_button.pressed.connect(_on_add_chips_pressed)
 	add_chips_ok.pressed.connect(_on_add_chips_ok)
 	add_chips_cancel.pressed.connect(func() -> void: add_chips_box.hide())
+	add_chips_tab_chips.pressed.connect(_set_add_chips_tab.bind(false))
+	add_chips_tab_deposit.pressed.connect(_set_add_chips_tab.bind(true))
+	add_chips_spin.value_changed.connect(func(_v: float) -> void: deposit_key = Api.new_idempotency_key())
 	sit_popup_ok.pressed.connect(_on_sit_popup_ok)
 	sit_popup_cancel.pressed.connect(func() -> void: sit_popup.hide())
 	fold_button.pressed.connect(_on_fold_pressed)
@@ -1722,13 +1732,15 @@ func _update_buttons() -> void:
 	show_hand_button.visible = _can_show_hand()
 	show_hand_button.disabled = show_pending
 	add_chips_button.visible = seated
-	add_chips_button.disabled = not can_add or add_chips_pending
+	add_chips_button.disabled = add_chips_pending # 충전 탭은 칩을 못 더할 때도 쓴다 — 착석 중이면 열린다
+	add_chips_allowed = can_add and add_chips_top >= Rules.CHIP_UNIT
+	_refresh_add_chips_ok()
 	for n: Control in seat_nodes: # 내 스택 글자: 버튼이 눌리는 때만 눌리고 손 모양 커서
 		var on: bool = seated and seat_nodes.find(n) == _my_seat_no() - 1 and not add_chips_button.disabled
 		n.stack_label.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
 		n.stack_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if on else Control.CURSOR_ARROW
-	if not can_add:
-		add_chips_box.hide() # 판이 시작되거나 일어서면 열려 있던 입력을 닫는다
+	if my_seat == null:
+		add_chips_box.hide() # 일어서면 열려 있던 입력을 닫는다
 	join_button.visible = _can_join_visible()
 	for n: Control in seat_nodes:
 		n.set_clickable(n.empty and _can_join())
@@ -2044,9 +2056,13 @@ func _on_stack_input(event: InputEvent, seat_no: int) -> void:
 
 
 func _on_add_chips_pressed() -> void:
+	add_chips_top = 0
+	add_chips_gen += 1
+	if public_view.get("handInProgress", false): # 칩 추가는 못 한다 — buy-in 조회 없이 충전 탭만 연다
+		_show_add_chips(false)
+		return
 	add_chips_pending = true
 	add_chips_button.disabled = true
-	add_chips_gen += 1
 	var gen := add_chips_gen
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_GET, "/api/holdem/tables/%d/buy-in" % table_id)
 	add_chips_pending = false
@@ -2054,7 +2070,7 @@ func _on_add_chips_pressed() -> void:
 	_update_buttons()
 
 
-## buy-in 응답으로 추가할 수 있는 최대(min(상한 - 스택, 지갑) 을 100 단위 내림)를 정해 입력을 연다. 낡은 응답은 버린다
+## buy-in 응답으로 추가할 수 있는 최대(min(상한 - 스택, 지갑) 을 100 단위 내림)를 정해 창을 연다. 못 더하면 이유를 알리고 충전 탭으로 연다. 낡은 응답은 버린다
 func _apply_add_chips_open(gen: int, r: Dictionary) -> void:
 	if gen != add_chips_gen:
 		return
@@ -2063,24 +2079,59 @@ func _apply_add_chips_open(gen: int, r: Dictionary) -> void:
 		_show_error(r.error)
 		return
 	var seat: Variant = _find_seat_by_user(Api.user_id)
-	if seat == null or public_view.get("handInProgress", false):
+	if seat == null:
+		return
+	if public_view.get("handInProgress", false):
+		_show_add_chips(false)
 		return
 	add_chips_max_stack = int(r.data.maxStack)
 	add_chips_wallet = int(r.data.walletBalance)
-	var top := mini(add_chips_max_stack - int(seat.stack), add_chips_wallet) / Rules.CHIP_UNIT * Rules.CHIP_UNIT
-	if top < Rules.CHIP_UNIT:
-		add_chips_box.hide()
+	add_chips_top = mini(add_chips_max_stack - int(seat.stack), add_chips_wallet) / Rules.CHIP_UNIT * Rules.CHIP_UNIT
+	if add_chips_top < Rules.CHIP_UNIT:
+		_show_add_chips(false)
 		_show_error("CHIP_ADD_OUT_OF_RANGE" if add_chips_max_stack - int(seat.stack) < Rules.CHIP_UNIT else "INSUFFICIENT_BALANCE")
 		return
 	error_label.hide()
-	add_chips_spin.min_value = Rules.CHIP_UNIT
-	add_chips_spin.max_value = top
-	add_chips_spin.step = Rules.CHIP_UNIT
-	add_chips_spin.value = top
+	_show_add_chips(true)
+
+
+## 창을 연다 — 칩 추가가 되면 칩 추가 탭, 아니면 충전 탭
+func _show_add_chips(chips_tab: bool) -> void:
+	add_chips_deposit = not chips_tab
+	deposit_key = Api.new_idempotency_key()
 	add_chips_box.show()
+	_apply_add_chips_tab()
+
+
+func _set_add_chips_tab(deposit: bool) -> void:
+	add_chips_deposit = deposit
+	error_label.hide()
+	_apply_add_chips_tab()
+
+
+## 탭에 맞게 토글·안내·입력 범위·확인 버튼을 맞춘다
+func _apply_add_chips_tab() -> void:
+	add_chips_tab_chips.set_pressed_no_signal(not add_chips_deposit)
+	add_chips_tab_deposit.set_pressed_no_signal(add_chips_deposit)
+	add_chips_note.visible = add_chips_deposit
+	add_chips_ok.text = "충전 요청" if add_chips_deposit else "추가"
+	add_chips_spin.suffix = "원" if add_chips_deposit else "칩"
+	add_chips_spin.step = InputRules.MONEY_UNIT if add_chips_deposit else Rules.CHIP_UNIT
+	add_chips_spin.min_value = InputRules.MIN_MONEY if add_chips_deposit else Rules.CHIP_UNIT
+	add_chips_spin.max_value = 100000000 if add_chips_deposit else maxi(add_chips_top, Rules.CHIP_UNIT)
+	add_chips_spin.value = InputRules.MIN_MONEY if add_chips_deposit else add_chips_spin.max_value
+	_refresh_add_chips_ok()
+
+
+## 확인 버튼: 요청 중엔 막고, 칩 추가 탭은 칩을 더할 수 있을 때만 켠다(충전 탭은 늘 켠다)
+func _refresh_add_chips_ok() -> void:
+	add_chips_ok.disabled = add_chips_pending or (not add_chips_deposit and not add_chips_allowed)
 
 
 func _on_add_chips_ok() -> void:
+	if add_chips_deposit:
+		_on_deposit_ok()
+		return
 	var seat: Variant = _find_seat_by_user(Api.user_id)
 	if seat == null:
 		return
@@ -2090,14 +2141,36 @@ func _on_add_chips_ok() -> void:
 		_show_error(invalid)
 		return
 	add_chips_pending = true
-	add_chips_ok.disabled = true
 	_update_buttons()
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/seat/chips", {"amount": amount})
 	add_chips_pending = false
-	add_chips_ok.disabled = false
 	if r.ok:
 		add_chips_box.hide() # 새 스택은 서버가 다시 방송하는 공개 뷰로 온다
 	else:
+		_show_error(r.error)
+	_update_buttons()
+
+
+## 지갑 충전 요청 — 로비 지갑과 같은 API·입력 규칙. 승인은 관리자가 하고 지갑에만 들어간다
+func _on_deposit_ok() -> void:
+	var amount := int(add_chips_spin.value)
+	var invalid := InputRules.deposit_amount(amount)
+	if invalid != "":
+		_show_error(invalid)
+		return
+	add_chips_pending = true
+	_update_buttons()
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/wallet/deposit-requests", {"amount": amount}, ["Idempotency-Key: " + deposit_key])
+	add_chips_pending = false
+	if r.ok:
+		deposit_key = Api.new_idempotency_key()
+		add_chips_box.hide()
+		retry_notice_shown = false
+		error_label.text = "충전을 요청했습니다. 관리자 승인 후 지갑에 들어옵니다"
+		error_label.show()
+	else:
+		if not Api.keeps_idempotency_key(r):
+			deposit_key = Api.new_idempotency_key()
 		_show_error(r.error)
 	_update_buttons()
 
