@@ -236,7 +236,7 @@ func _ready() -> void:
 	bi.data.obligationExpiresAt = "2026-01-01T10:00:00Z"
 	table._apply_sit_buy_in(5, bi)
 	check(table.sit_popup_ok.disabled and not table.sit_popup_spin.visible, "wallet below min blocks OK")
-	check(ErrorText.of("INSUFFICIENT_BALANCE") in table.sit_popup_error.text and "이후에 앉을 수" in table.sit_popup_error.text, "blocked notice with obligation time: '%s'" % table.sit_popup_error.text)
+	check(ErrorText.of("INSUFFICIENT_BALANCE") in table.sit_popup_error.text and "제한 없이 앉을 수" in table.sit_popup_error.text, "blocked notice with obligation time: '%s'" % table.sit_popup_error.text)
 	bi.data.obligationExpiresAt = null
 	table._apply_sit_buy_in(5, bi)
 	check(table.sit_popup_error.text == ErrorText.of("INSUFFICIENT_BALANCE"), "blocked without obligation: plain text")
