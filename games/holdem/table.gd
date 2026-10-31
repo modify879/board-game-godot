@@ -764,6 +764,8 @@ func _handle_public(body: Dictionary) -> void:
 	var prev := _motion_snapshot()
 	var prev_view := public_view if have_view else {}
 	public_view = body
+	if not body.get("handInProgress", false):
+		chips_reservation = null # 판이 끝나면 예약은 사라지는데 null 개인 뷰가 따로 오지 않는다(서버 계약)
 	if _should_leave_room(): # 개인 큐는 미리 끊지 않는다 — 공개 뷰가 미착석을 확인한 지금 씬을 바꿔 정리한다
 		leave_room_after_stand = false
 		_leave_closed_table()
@@ -813,7 +815,8 @@ func _handle_private(body: Dictionary) -> void:
 		my_codes_ticks = Time.get_ticks_msec()
 		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
-	chips_reservation = body.get("chipsReservation")
+	# 판이 끝나면 예약은 사라지는데 null 개인 뷰가 따로 오지 않는다(서버 계약) — 정산 프레임의 개인 뷰가 되살리지 못하게 한다
+	chips_reservation = body.get("chipsReservation") if public_view.get("handInProgress", false) else null
 	leave_room_after_stand = body.get("leaveReservation") == "LEAVE" # null | "SPECTATE" | "LEAVE"
 	my_hand_text = Cards.current_hand_text(body.get("currentHand"))
 	_update_pot()

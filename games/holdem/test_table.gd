@@ -347,6 +347,11 @@ func _ready() -> void:
 	table._handle_private({"seq": 930001.0, "holeCards": [], "chipsReservation": 500.0})
 	table._handle_private({"seq": 930002.0, "holeCards": []})
 	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "private view without chipsReservation clears it")
+	table._handle_private({"seq": 930003.0, "holeCards": [], "chipsReservation": 500.0})
+	table._handle_public(_view(2001, [my_seat])) # 핸드 없는 공개 뷰(같은 seq 는 통과) — 예약이 사라진다
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "no-hand public view clears reservation")
+	table._handle_private({"seq": 930004.0, "holeCards": [], "chipsReservation": 500.0}) # 정산 프레임의 개인 뷰
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "no-hand: private chipsReservation not shown")
 	table.add_chips_box.hide()
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
 	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
