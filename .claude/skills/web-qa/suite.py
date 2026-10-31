@@ -14,8 +14,7 @@ def login_lobby(c):
     s = v.wait_state(lambda s: v.vis(s, "ErrorLabel") and s, 15, "로그인 오류")
     assert v.text(s, "ErrorLabel"), "잘못된 비밀번호인데 오류 문구가 비어 있다"
     v.set_text("PasswordEdit", qa.PW); v.press("LoginButton"); v.wait_scene("lobby.tscn", 20)
-    s = v.wait_state(lambda s: v.text(s, "BalanceLabel").strip() and s, 15, "잔액 표시")
-    assert v.text(s, "NicknameLabel").strip(), "닉네임 라벨이 비었다"
+    s = v.wait_state(lambda s: v.text(s, "BalanceLabel").strip() and v.text(s, "NicknameLabel").strip() and s, 15, "잔액·닉네임 표시")  # 잔액·닉네임은 따로 요청한다 — 둘 다 기다린다
     assert any(ch.isdigit() for ch in v.text(s, "BalanceLabel")), f"잔액 문구: {v.text(s, 'BalanceLabel')!r}"
     assert v.vis(s, "GameList/0"), "게임 카드가 안 보인다"
     s = v.wait_state(lambda s: s.get("env") == "qa" and s, 5, "QA 서버 환경(server-info)")  # 요청이 비동기라 잠깐 기다린다
