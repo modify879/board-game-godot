@@ -20,10 +20,14 @@ const WS_INBOUND_BUFFER := 1 << 20
 const AUTH_DEADLINE_SEC := 20.0
 # _process 사이 실시간 간격이 이보다 길면 "멈췄다 돌아옴"(버퍼 넘침으로 프레임을 잃었을 수 있다). 하트비트 주기(10초)보다 짧게
 const RESUME_GAP_MS := 5000
+const STABLE_CONNECTION_MS := 30000 # 이보다 오래 버틴 연결은 안정적이었다 — 다음 끊김은 빨리 재시도
 
 var ws := WebSocketPeer.new()
 var _connected := false
 var _intentional_close := false
+var _retry_after_error := false # 일시 장애 ERROR 를 읽었다 — 뒤따르는 1002 종료는 멈추지 않고 재연결한다
+var _reconnect_attempt := 0 # 재연결 횟수(백오프 지수). 연결이 STABLE_CONNECTION_MS 넘게 버틴 뒤 끊길 때만 0 으로 — CONNECTED 직후 ERROR 로 반복 끊기는 장애에서 백오프가 풀리지 않게
+var _connected_ticks := 0 # 마지막 CONNECTED 시각
 var _reconnecting := false
 var _last_state := WebSocketPeer.STATE_CLOSED
 var _subs := {} # id -> destination
@@ -62,12 +66,16 @@ func _process(_delta: float) -> void:
 		if state == WebSocketPeer.STATE_OPEN:
 			_send_connect(ws)
 		elif state == WebSocketPeer.STATE_CLOSED:
+			if _connected and Time.get_ticks_msec() - _connected_ticks > STABLE_CONNECTION_MS:
+				_reconnect_attempt = 0
 			_connected = false
 			var reason := ws.get_close_reason()
 			var code := ws.get_close_code()
 			closed.emit()
+			var retry := _retry_after_error
+			_retry_after_error = false
 			if not _intentional_close:
-				if code == 1002:
+				if code == 1002 and not retry:
 					# 서버는 ERROR 뒤에만 1002 로 닫는다 — 데스크톱 엔진은 닫힐 때 받은 프레임을 버려 ERROR 를 못 읽는다 — ERROR 와 같게 멈춘다(그대로 두면 같은 구독을 재생하며 2초마다 재연결한다)
 					_intentional_close = true # emit 보다 먼저 — ERROR 분기와 같은 이유
 					error.emit("STOMP_ERROR")
@@ -93,6 +101,7 @@ func _process(_delta: float) -> void:
 func connect_ws() -> void:
 	_cancel_rotate() # 교체 중 새로 연결하면 _finish_rotate 가 새 ws 를 덮어 고아로 만든다
 	_intentional_close = false
+	_retry_after_error = false
 	_connected = false # 새 소켓은 CONNECTED 전까지 STOMP 연결이 아니다
 	ws = _new_peer()
 	ws.connect_to_url(_ws_url())
@@ -189,6 +198,7 @@ func _handle_packet(text: String) -> void:
 		"CONNECTED":
 			_auth_deadline_generation += 1 # 새 연결은 현재 토큰으로 인증됐다 — 옛 소켓에서 건 연장 마감은 무효
 			_connected = true
+			_connected_ticks = Time.get_ticks_msec()
 			_recv_interval_ms = receive_interval_ms(frame.headers.get("heart-beat", ""))
 			_last_recv_ticks = Time.get_ticks_msec()
 			_subscribe_all(ws)
@@ -206,20 +216,28 @@ func _handle_packet(text: String) -> void:
 				# 여기서 직접 갱신·재연결한다 — error 로 내보내면 복구된 뒤에도 화면에 낡은 문구가 남는다
 				if not await get_node("/root/Api")._refresh() and get_node("/root/Api").access_token == "":
 					_intentional_close = true # 세션이 사라진 경우만. 일시 장애면 소켓 종료 경로가 재연결한다
-			else:
+			elif code == "ACCESS_DENIED":
 				_intentional_close = true # emit 먼저 하면 핸들러의 connect_ws() 가 푼 플래그를 다시 덮어 새 소켓이 재연결을 안 한다
 				error.emit(code)
+			else:
+				# INTERNAL_ERROR 등 서버 일시 장애 — error 로 내보내면 복구된 뒤에도 낡은 문구가 남는다. 토큰은 그대로, 뒤따르는 1002 종료가 재연결한다
+				_retry_after_error = true
 
 
 func _schedule_reconnect() -> void:
 	if _reconnecting:
 		return
 	_reconnecting = true
-	# ponytail: fixed 2s interval, switch to exponential backoff if server load becomes an issue
-	await get_tree().create_timer(2.0).timeout
+	var delay := reconnect_delay(_reconnect_attempt) * randf_range(0.8, 1.2)
+	_reconnect_attempt += 1
+	await get_tree().create_timer(delay).timeout
 	_reconnecting = false
 	if not _intentional_close:
 		connect_ws()
+
+
+static func reconnect_delay(attempt: int) -> float:
+	return minf(2.0 * pow(2.0, mini(attempt, 10)), 30.0) # 지터는 호출부에서 — 여기는 시험 가능한 순수 계산
 
 
 func _reauth_reconnect() -> void:

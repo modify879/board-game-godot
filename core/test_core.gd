@@ -115,6 +115,14 @@ func _init() -> void:
 	check(stomp.receive_interval_ms("20000,0") == 20000, "heart-beat 20000,0")
 	check(stomp.receive_interval_ms("0,0") == 0, "heart-beat 0,0 은 비활성")
 	check(stomp.receive_interval_ms("") == 0, "heart-beat 없으면 비활성")
+	check(stomp.reconnect_delay(0) == 2.0 and stomp.reconnect_delay(1) == 4.0 and stomp.reconnect_delay(3) == 16.0, "재연결 백오프 2·4·16초")
+	check(stomp.reconnect_delay(4) == 30.0 and stomp.reconnect_delay(1000) == 30.0, "재연결 백오프는 30초에서 멈춤")
+	var st = stomp.new()
+	st._handle_packet("ERROR\nerrorCode:INTERNAL_ERROR\n\n")
+	check(not st._intentional_close and st._retry_after_error, "ERROR INTERNAL_ERROR 는 멈추지 않고 재시도 표시")
+	st._handle_packet("ERROR\nerrorCode:ACCESS_DENIED\n\n")
+	check(st._intentional_close, "ERROR ACCESS_DENIED 는 멈춤")
+	st.free()
 
 	# ErrorText
 	check(et.of("LOGIN_FAILED") == "아이디 또는 비밀번호가 올바르지 않습니다", "ErrorText known code")
