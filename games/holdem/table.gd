@@ -12,7 +12,7 @@ static var creating := false # table_list 의 "만들기" 가 true 로 넘긴다
 const Cards := preload("res://games/holdem/cards.gd")
 const Rules := preload("res://games/holdem/rules.gd")
 
-const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김", "SITTING_OUT": "자리 비움"}
+const PRESENCE_TEXT := {"DISCONNECTED": "연결 끊김"}
 const SeatScene := preload("res://games/holdem/seat.tscn")
 const SeatScript := preload("res://games/holdem/seat.gd")
 const Marker := preload("res://games/holdem/marker.gd")
@@ -764,8 +764,12 @@ func _handle_public(body: Dictionary) -> void:
 	var prev := _motion_snapshot()
 	var prev_view := public_view if have_view else {}
 	public_view = body
-	if not body.get("handInProgress", false):
-		chips_reservation = null # 판이 끝나면 예약은 사라지는데 null 개인 뷰가 따로 오지 않는다(서버 계약)
+	var me_seat: Variant = _find_seat_by_user(Api.user_id)
+	if body.get("handInProgress", false) and me_seat != null and me_seat.status == "NOT_IN_HAND": # 이번 판에 안 낀 나 — 이전 판 카드를 지운다(hand null 개인 뷰는 카드를 안 건드린다)
+		my_codes = []
+		_show_cards(my_card_rects, [])
+		my_cards_box.visible = false
+		my_hand_text = ""
 	if _should_leave_room(): # 개인 큐는 미리 끊지 않는다 — 공개 뷰가 미착석을 확인한 지금 씬을 바꿔 정리한다
 		leave_room_after_stand = false
 		_leave_closed_table()
@@ -807,18 +811,21 @@ func _handle_private(body: Dictionary) -> void:
 	if int(body.seq) < last_private_seq:
 		return
 	last_private_seq = int(body.seq)
-	var hole_cards: Array = body.get("holeCards", [])
-	_show_cards(my_card_rects, hole_cards)
-	my_cards_box.visible = not hole_cards.is_empty()
-	if hole_cards != my_codes:
-		my_codes = hole_cards
-		my_codes_ticks = Time.get_ticks_msec()
-		_deal_my_cards()
-	my_available_actions = body.get("availableActions")
-	# 판이 끝나면 예약은 사라지는데 null 개인 뷰가 따로 오지 않는다(서버 계약) — 정산 프레임의 개인 뷰가 되살리지 못하게 한다
-	chips_reservation = body.get("chipsReservation") if public_view.get("handInProgress", false) else null
+	var hand: Variant = body.get("hand")
+	if hand != null:
+		var hole_cards: Array = hand.get("holeCards", [])
+		_show_cards(my_card_rects, hole_cards)
+		my_cards_box.visible = not hole_cards.is_empty()
+		if hole_cards != my_codes:
+			my_codes = hole_cards
+			my_codes_ticks = Time.get_ticks_msec()
+			_deal_my_cards()
+		my_available_actions = hand.get("availableActions")
+		my_hand_text = Cards.current_hand_text(hand.get("currentHand"))
+	else: # 핸드 없음·이번 판에 안 낌 — 정산 결과를 보는 동안에도 오므로 카드는 건드리지 않는다
+		my_available_actions = null
+	chips_reservation = body.get("chipsReservation")
 	leave_room_after_stand = body.get("leaveReservation") == "LEAVE" # null | "SPECTATE" | "LEAVE"
-	my_hand_text = Cards.current_hand_text(body.get("currentHand"))
 	_update_pot()
 	_update_buttons()
 	_render_seats()
@@ -1175,7 +1182,7 @@ func qa_state() -> Dictionary:
 	for seat in public_view.get("seats", []):
 		var nick: String = nickname_cache.get(seat.userId, seat_nodes[int(seat.seatNo) - 1].name_label.text) # 캐시가 비면 화면에 보이는 이름
 		seats.append({"seat_no": int(seat.seatNo), "nickname": nick, "stack": int(seat.stack), "status": seat.status, "leave_reserved": seat.leaveReserved,
-			"last_action": PublicView.action_label(seat)})
+			"awaiting_bb": seat.get("awaitingBigBlind", false), "last_action": PublicView.action_label(seat)})
 	var winners := []
 	var result = public_view.get("result")
 	if result != null:
@@ -1648,6 +1655,7 @@ func _render_seat(seat_no: int, seat_node: Control) -> void:
 		"all_in": seat.status == "ALL_IN",
 		"action": "" if face_up else PublicView.action_label(seat),
 		"presence_text": PRESENCE_TEXT.get(seat.presence, ""),
+		"awaiting_bb": seat.get("awaitingBigBlind", false),
 		"leave_reserved": seat.leaveReserved,
 		"leave_text": ("나가기 예약" if leave_room_after_stand else "관전 예약") if is_me else "일어서기 예약",
 		"cards": [] if is_me else cards, # 내 카드는 아래 MyCards 가 크게 그린다

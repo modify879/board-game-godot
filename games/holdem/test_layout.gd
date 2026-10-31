@@ -141,16 +141,16 @@ func _run_case(table: Control, sz: Vector2, n: int, hero: int, state: String) ->
 		table._handle_public(_view(seats, view_extra))
 		if first: # 개인 뷰·행동 막대는 한 번만 먹이고 레이아웃이 가라앉길 기다린다
 			if hero > 0:
-				var priv := {"seq": float(seq), "holeCards": hole, "currentHand": HAND}
+				var priv := {"seq": float(seq), "hand": {"holeCards": hole, "currentHand": HAND, "availableActions": null}}
 				if state != "showdown":
-					priv["availableActions"] = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
+					priv.hand["availableActions"] = {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
 				table._handle_private(priv)
 			await get_tree().process_frame
 			await get_tree().process_frame
 		else:
 			table.motion.kill_real()
 			if hero > 0:
-				table._handle_private({"seq": float(seq), "holeCards": hole, "currentHand": HAND, "availableActions": table.my_available_actions})
+				table._handle_private({"seq": float(seq), "hand": {"holeCards": hole, "currentHand": HAND, "availableActions": table.my_available_actions}})
 		if table.banner_tween != null and table.banner_tween.is_valid():
 			table.banner_tween.custom_step(1.0) # 팝인 끝난 크기로 잰다
 		var r := _collect(table, hero)
