@@ -78,6 +78,9 @@ const CREATE_SEAT_CHECK_SEC := 5.0 # 방 생성 뒤 이 시간 동안 join-queue
 @onready var add_chips_tab_chips: Button = %AddChipsTabChips
 @onready var add_chips_tab_deposit: Button = %AddChipsTabDeposit
 @onready var add_chips_note: Label = %AddChipsNote
+@onready var add_chips_reserve_row: HBoxContainer = %AddChipsReserveRow
+@onready var add_chips_reserved: Label = %AddChipsReserved
+@onready var add_chips_reserve_cancel: Button = %AddChipsReserveCancel
 @onready var add_chips_spin: SpinBox = %AddChipsSpin
 @onready var add_chips_ok: Button = %AddChipsOk
 @onready var add_chips_cancel: Button = %AddChipsCancel
@@ -175,7 +178,8 @@ var add_chips_pending := false # 열기 조회·추가 요청이 진행 중이�
 var add_chips_max_stack := 0 # 칩 추가 입력을 열 때 받은 buy-in 응답
 var add_chips_wallet := 0
 var add_chips_top := 0 # 열 때 정한 추가 가능 최대(0 = 못 더한다)
-var add_chips_allowed := false # 칩 추가 탭의 확인 가능 — 핸드 중 아님·상한 미만·지갑 여유
+var add_chips_allowed := false # 칩 추가 탭의 확인 가능 — 상한 미만·지갑 여유(핸드 중이면 서버가 예약으로 받는다)
+var chips_reservation: Variant = null # 개인 뷰의 chipsReservation(핸드 중 칩 추가 예약, 없으면 null)
 var add_chips_deposit := false # 지갑 충전 탭이 열려 있다
 var deposit_key := "" # 충전 요청 멱등키 — 금액이 바뀌면 새로 뽑는다(lobby/wallet.gd 와 같다)
 var sit_min := 0 # 착석 팝업이 받은 buy-in 응답 — 확인 때 Rules.buy_in 으로 다시 검사한다
@@ -222,6 +226,7 @@ func _ready() -> void:
 	add_chips_button.pressed.connect(_on_add_chips_pressed)
 	add_chips_ok.pressed.connect(_on_add_chips_ok)
 	add_chips_cancel.pressed.connect(func() -> void: add_chips_box.hide())
+	add_chips_reserve_cancel.pressed.connect(_on_chips_reservation_cancel)
 	add_chips_tab_chips.pressed.connect(_set_add_chips_tab.bind(false))
 	add_chips_tab_deposit.pressed.connect(_set_add_chips_tab.bind(true))
 	add_chips_spin.value_changed.connect(func(_v: float) -> void: deposit_key = Api.new_idempotency_key())
@@ -808,6 +813,7 @@ func _handle_private(body: Dictionary) -> void:
 		my_codes_ticks = Time.get_ticks_msec()
 		_deal_my_cards()
 	my_available_actions = body.get("availableActions")
+	chips_reservation = body.get("chipsReservation")
 	leave_room_after_stand = body.get("leaveReservation") == "LEAVE" # null | "SPECTATE" | "LEAVE"
 	my_hand_text = Cards.current_hand_text(body.get("currentHand"))
 	_update_pot()
@@ -884,6 +890,7 @@ func _drop_private() -> void:
 	my_cards_box.hide()
 	my_hand_text = ""
 	my_available_actions = null
+	chips_reservation = null
 
 
 func _leave_closed_table() -> void:
@@ -1727,11 +1734,13 @@ func _update_buttons() -> void:
 	var leave_reserved: bool = seated and my_seat != null and my_seat.leaveReserved
 	back_button.text = ("나가기 예약됨" if leave_room_after_stand else "관전 예약됨") if leave_reserved else "← 방 목록"
 	_refresh_leave_menu()
-	# 칩 추가는 핸드 사이에만, 스택 < 상한일 때만. 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
-	var can_add: bool = my_seat != null and not public_view.get("handInProgress", false) and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
+	# 칩 추가는 스택 < 상한일 때만(핸드 중이면 서버가 예약으로 받는다). 상한은 기본 테이블 값 — 정확한 값은 입력을 열 때 buy-in GET 이 준다
+	var can_add: bool = my_seat != null and int(my_seat.stack) < Rules.DEFAULT_MAX_BUY_IN
 	show_hand_button.visible = _can_show_hand()
 	show_hand_button.disabled = show_pending
 	add_chips_button.visible = seated
+	add_chips_button.text = "+ 칩 예약" if chips_reservation != null else "+ 칩"
+	_apply_chips_reservation()
 	add_chips_button.disabled = add_chips_pending # 충전 탭은 칩을 못 더할 때도 쓴다 — 착석 중이면 열린다
 	add_chips_allowed = can_add and add_chips_top >= Rules.CHIP_UNIT
 	_refresh_add_chips_ok()
@@ -2058,9 +2067,6 @@ func _on_stack_input(event: InputEvent, seat_no: int) -> void:
 func _on_add_chips_pressed() -> void:
 	add_chips_top = 0
 	add_chips_gen += 1
-	if public_view.get("handInProgress", false): # 칩 추가는 못 한다 — buy-in 조회 없이 충전 탭만 연다
-		_show_add_chips(false)
-		return
 	add_chips_pending = true
 	add_chips_button.disabled = true
 	var gen := add_chips_gen
@@ -2080,9 +2086,6 @@ func _apply_add_chips_open(gen: int, r: Dictionary) -> void:
 		return
 	var seat: Variant = _find_seat_by_user(Api.user_id)
 	if seat == null:
-		return
-	if public_view.get("handInProgress", false):
-		_show_add_chips(false)
 		return
 	add_chips_max_stack = int(r.data.maxStack)
 	add_chips_wallet = int(r.data.walletBalance)
@@ -2114,6 +2117,7 @@ func _apply_add_chips_tab() -> void:
 	add_chips_tab_chips.set_pressed_no_signal(not add_chips_deposit)
 	add_chips_tab_deposit.set_pressed_no_signal(add_chips_deposit)
 	add_chips_note.visible = add_chips_deposit
+	_apply_chips_reservation()
 	add_chips_ok.text = "충전 요청" if add_chips_deposit else "추가"
 	add_chips_spin.suffix = "원" if add_chips_deposit else "칩"
 	add_chips_spin.step = InputRules.MONEY_UNIT if add_chips_deposit else Rules.CHIP_UNIT
@@ -2121,6 +2125,27 @@ func _apply_add_chips_tab() -> void:
 	add_chips_spin.max_value = 100000000 if add_chips_deposit else maxi(add_chips_top, Rules.CHIP_UNIT)
 	add_chips_spin.value = InputRules.MIN_MONEY if add_chips_deposit else add_chips_spin.max_value
 	_refresh_add_chips_ok()
+
+
+## 칩 추가 탭에 예약 줄("예약: N칩" + 취소)을 보인다 — 예약이 없거나 충전 탭이면 숨긴다
+func _apply_chips_reservation() -> void:
+	add_chips_reserve_row.visible = chips_reservation != null and not add_chips_deposit
+	if chips_reservation != null:
+		add_chips_reserved.text = "예약: %d칩" % int(chips_reservation)
+	add_chips_reserve_cancel.disabled = add_chips_pending
+
+
+## 예약 취소(204, 멱등). 서버가 개인 뷰를 다시 보내지 않을 수 있어 성공하면 로컬 예약을 지운다
+func _on_chips_reservation_cancel() -> void:
+	add_chips_pending = true
+	_update_buttons()
+	var r: Dictionary = await Api.request(HTTPClient.METHOD_DELETE, "/api/holdem/seat/chips-reservation")
+	add_chips_pending = false
+	if r.ok:
+		chips_reservation = null
+	else:
+		_show_error(r.error)
+	_update_buttons()
 
 
 ## 확인 버튼: 요청 중엔 막고, 칩 추가 탭은 칩을 더할 수 있을 때만 켠다(충전 탭은 늘 켠다)
@@ -2145,7 +2170,12 @@ func _on_add_chips_ok() -> void:
 	var r: Dictionary = await Api.request(HTTPClient.METHOD_POST, "/api/holdem/seat/chips", {"amount": amount})
 	add_chips_pending = false
 	if r.ok:
-		add_chips_box.hide() # 새 스택은 서버가 다시 방송하는 공개 뷰로 온다
+		add_chips_box.hide() # 204: 새 스택은 서버가 다시 방송하는 공개 뷰로 온다
+		if r.status == 202: # 핸드 중 — 예약. 예약 값은 개인 뷰의 chipsReservation 으로 온다
+			chips_reservation = amount # 개인 뷰가 늦게 와도 바로 표시한다 — 다음 개인 뷰가 덮어쓴다
+			retry_notice_shown = false
+			error_label.text = "판이 끝나면 칩이 추가됩니다"
+			error_label.show()
 	else:
 		_show_error(r.error)
 	_update_buttons()

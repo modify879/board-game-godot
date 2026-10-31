@@ -408,6 +408,21 @@ layout_mode = 2
 text = "관리자 승인 후 지갑에 들어옵니다"
 horizontal_alignment = 1
 
+[node name="AddChipsReserveRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="AddChipsReserved" type="Label" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsReserveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AddChipsReserveCancel" type="Button" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox/AddChipsReserveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "예약 취소"
+
 [node name="AddChipsRow" type="HBoxContainer" parent="VBoxContainer/BottomRegion/Bottom/BottomBar/AddChipsBox"]
 layout_mode = 2
 
