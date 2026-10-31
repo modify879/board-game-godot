@@ -14,7 +14,7 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 - `games/<game>.py` 를 만들고 `SCENARIOS = [(이름, fn(c)), ...]`(fn.limit = 제한초, 선택 `fn.sizes = ("d",)` = 그 크기에서만 실행·나머지는 SKIP, 선택 `cleanup()`)를 노출한다. 봇·REST 보조도 거기에 둔다
 - 그 게임 씬에 `qa_state()` 를 둔다(브리지 `extra`). 헤드리스 테스트는 `games/<game>/test_*.gd|tscn` 에 두면 run_all.sh 가 자동으로 집는다
-- 서버 쪽 QA 보조(덱 고정 같은)는 게임별로 서버에 있다
+- 서버 쪽 QA 보조(덱 고정 같은)는 게임별로 서버에 있다. 계정 상태 초기화는 `POST /api/admin/qa/reset {"usernames":[...]}`(qaadmin, QA 전용, 204 — 재착석 의무·대기 중 입출금 요청을 지우고 지갑을 10,000,000 으로. 앉아 있는 계정이 있으면 409 ALREADY_SEATED). 홀덤 `cleanup()` 이 시작·매 시나리오 뒤에 `unseat_all` 다음 모든 qa 계정에 부른다(`H.reset_accounts`)
 
 ## 환경
 
@@ -43,6 +43,10 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 
 화면 크기: `d` 1280x720, `p` 390x844 DPR2. 좌표는 쓰지 않는다 — 전부 브리지 키다. 코드로 만든 이름 없는 Label 은 브리지 nodes 에 안 나온다 — 화면이 `qa_state()` 로 주는 `extra` 를 쓴다(예: 방 목록 `extra.rooms[].in_progress`·`card_key`, 테이블 `extra.seats`). 없으면 그 화면에 `qa_state()` 를 더한다.
 
+### 홀덤 뷰 계약 (결과 판정할 때)
+
+`pots` = 이미 거둔 칩의 팟 층이다(진행 중 스트리트 베팅·콜 못 받은 초과분은 빠진다). 마지막 스트리트 베팅은 결과 프레임에서 합쳐지고, 콜 못 받은 초과분은 그 좌석에 돌려준다 — 지급 합 == `pot`. 그래서 결과 판정은 결과 프레임(seq 가 가장 큰, `result` 가 있는 프레임)으로 하고 폴링으로 직전 뷰를 잡지 않는다(메시지가 순서가 뒤바뀌어 오니 수신 훅에서 seq 가 큰 것만). `AllInButton` 은 슬라이더만 최대로 옮기고 보내는 것은 `RaiseButton` 이다("올인 N").
+
 ### 덱 고정(QA 서버 전용)
 
 `POST /api/admin/qa/holdem/tables/{id}/next-deck`, qaadmin 토큰(`next_deck` 이 캐시). 다음 핸드 1회에만 적용되고 예약은 핸드가 시작될 때까지 남는다 — 핸드 진행 중에 걸면 그다음 판에 적용. 카드는 `2-9TJQKA` + `shdc`, 중복 불가. 204 성공, 400 잘못된 입력. 딜 순서: 버튼 다음 참가 좌석부터, 보드는 번 없이 플랍·턴·리버. 프리셋은 쇼다운 전원 참여(봇 체크/콜)를 가정한다. 적용 여부는 `bot.results[-1]` 의 `shownHands`·`payouts` 로 확인한다.
@@ -56,7 +60,8 @@ description: Godot Web 빌드 화면을 실제 브라우저(헤드리스 Chromiu
 - 바이인이 하한(4,000)이면 몇 판 뒤 파산해 자리가 빈다 — 봇은 큰 바이인으로(예: 10,000)
 - playwright 동기 API 는 다른 스레드에서 못 쓴다 — 브라우저 조작은 메인 스레드, 봇은 `Autoplay` 스레드
 - 결과 화면은 다음 판 시작(1초)까지만 보인다 — 한 `state()` 스냅샷에서 전부 판정한다
-- 시나리오는 한 번에 한 개씩, 같은 qa 계정을 쓰므로 병렬로 돌리지 않는다. 재착석 의무로 바이인 하한이 계정마다 달라진다 — 바이인은 `EntrySpin` 의 min/기본값을 쓴다. 방 목록 로드(`BuyInInfo`)가 끝나기 전에 만들면 서버가 거부한다
+- 서버 타이머가 풀리기를 오래 기다리지 않는다 — 상태 때문에 막히면 바로 실패하고 보고한다
+- 시나리오는 한 번에 한 개씩, 같은 qa 계정을 쓰므로 병렬로 돌리지 않는다. 재착석 의무로 시나리오 안에서 바이인 하한이 올라갈 수 있다(시작 때는 `cleanup()` 의 리셋으로 같다) — 바이인은 `EntrySpin` 의 min/기본값을 쓴다. 방 목록 로드(`BuyInInfo`)가 끝나기 전에 만들면 서버가 거부한다
 - 착석 중 `GameList` 로 목록에 들어가면 곧바로 테이블로 보낸다(앱 동작) — 새로고침 뒤 재진입 확인에 쓴다
 - Godot 캔버스는 DOM 이 없다 — 브리지 키로 누르고 `wait_state` 로 기다린다(sleep·스크린샷 비교 금지)
 - 홀덤 행동 버튼은 고정 자리다 — `FoldButton`·`CheckActionButton`·`CallButton`·`RaiseButton`·`AllInButton`(못 쓰는 것은 숨기지 않고 disabled). 체크/콜은 `extra.available_actions` 의 `CHECK`/`CALL` 로 고른다(`H.check_or_call`). 일어서기·방 나가기·예약 취소는 `BackButton` 을 눌러 연 `LeaveMenu` 의 `MenuSpectate`·`MenuLeave`·`MenuCancelReservation`·`MenuClose` 다(`H.open_leave_menu`·`H.menu_press`). 예약되면 `BackButton` 문구가 "관전 예약됨"/"나가기 예약됨" 이다. 관전 중 `BackButton` 은 곧바로 목록. 칩 추가는 `AddChipsButton`("+ 칩"; 데스크톱은 히어로 닉네임 줄 오른쪽 끝, 폰은 히어로 캡슐 왼쪽). 판 사이에는 히어로의 스택 라벨을 눌러도 연다

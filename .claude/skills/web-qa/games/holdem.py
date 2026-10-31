@@ -52,7 +52,7 @@ class Bot(qa.Client):
 
     # --- 행동 ---
     def _buy_in(self, path, want):
-        """원하는 바이인(없으면 하한)을 서버 범위로 맞춘다. 나간 지 30분 안이면 나간 금액만큼 하한이 올라간다(obligation)"""
+        """원하는 바이인(없으면 하한)을 서버 범위로 맞춘다."""
         r = qa.call(path, self.token)[1]; return min(max(want or r["minBuyIn"], r["minBuyIn"]), r["maxBuyIn"])
     def create_table(self, name, buy_in=None):
         """만든 사람이 서버에서 바로 착석한다. 201 뒤 공개 토픽 구독"""
@@ -303,7 +303,7 @@ def enter(v, tid, do_join=True, buy_in=None):
     except TimeoutError: v.press("RefreshButton"); room = v.wait_state(card, 10, "방 카드(새로고침 후)")  # 방 목록 화면 상태는 bridge 의 rooms 가 기준
     open_room(v, key=room["card_key"])
     if do_join:
-        if buy_in == "min": buy_in = v.state()["nodes"]["EntrySpin"]["min"]  # 재착석 의무로 하한이 계정마다 다르다
+        if buy_in == "min": buy_in = v.state()["nodes"]["EntrySpin"]["min"]
         if buy_in: v.set_value("EntrySpin", buy_in)
         v.last_buy_in = int(v.state()["nodes"]["EntrySpin"]["value"])
         join(v)
@@ -543,6 +543,120 @@ def s10(c):
     assert len(names) == 9 and len(set(names)) == 9, f"보이는 이름 {names}"
     time.sleep(2)
 
+# ------------------------------------------------------------------ 칩 추가 · 레이즈/올인
+AMT = 300  # 칩 추가 금액(100 단위). 바이인 하한 4000 + 이 값들이 상한 20000 안에 든다
+def _hero_row(host, me): return next((s for s in _seats(host.view) if int(s["seatNo"]) == me), None)
+def _hero_total(host, me): r = _hero_row(host, me); return int(r["stack"]) + int(r["totalContributed"])  # 핸드 시작 스택(스택 + 낸 칩)
+def _hero_stack(v, me): return next((x["stack"] for x in v.extra()["seats"] if x["seat_no"] == me), None)
+
+
+def _add_chips_ui(v, amount):
+    """AddChipsButton -> 창(칩 추가 탭) -> 금액 -> AddChipsOk. 창이 닫힐 때까지"""
+    v.press("AddChipsButton")
+    v.wait_state(lambda s: v.vis(s, "AddChipsBox") and not s["nodes"]["AddChipsOk"].get("disabled", True) and s, 15, "칩 추가 창")
+    v.set_value("AddChipsSpin", amount); v.press("AddChipsOk")
+    v.wait_state(lambda s: not v.vis(s, "AddChipsBox") and s, 15, "칩 추가 창 닫힘")
+
+
+def _reserved_hand(v, host, tid, me, amount, cancel):
+    """고정 덱(히어로 승) 핸드 중 amount 칩을 예약하고(cancel 이면 UI 로 취소) 핸드가 끝난 뒤 다음 핸드 시작 시점의 (기대 스택, 실제 스택)을 돌려준다.
+    기대 = 핸드 시작 스택 + 히어로 지급액의 절반(헤즈업 체크/콜이라 낸 칩은 지급액의 절반) [+ 예약 금액]"""
+    fixed_hand(v, host, tid, lambda seats: deck_hero_wins(me, seats)); start = _hero_total(host, me); n0 = len(host.results)
+    _add_chips_ui(v, amount)
+    s = v.wait_state(lambda s: v.text(s, "AddChipsButton") == "+ 칩 예약" and s, 10, "예약 뒤 버튼 문구 + 칩 예약")
+    v.press("AddChipsButton")
+    s = v.wait_state(lambda s: v.vis(s, "AddChipsReserveRow") and s, 15, "예약 줄")
+    assert v.text(s, "AddChipsReserved") == f"예약: {amount}칩", f"예약 줄 문구 {v.text(s, 'AddChipsReserved')!r}"
+    if cancel:
+        v.press("AddChipsReserveCancel")
+        s = v.wait_state(lambda s: not v.vis(s, "AddChipsReserveRow") and s, 10, "예약 줄 사라짐(취소)")
+        assert v.text(s, "AddChipsButton") == "+ 칩", f"취소 뒤 버튼 문구 {v.text(s, 'AddChipsButton')!r}"
+    v.press("AddChipsCancel"); v.wait_state(lambda s: not v.vis(s, "AddChipsBox") and s, 10, "창 닫힘")
+    wait_for(v, lambda x: len(host.results) > n0, 60, "핸드 결과")
+    pay = sum(p["amount"] for p in host.results[n0]["payouts"] if int(p["seatNo"]) == me)
+    assert pay > 0 and pay % 2 == 0, f"히어로 지급액 {host.results[n0]['payouts']}"
+    wait_next_hand(v, pump=False)  # 예약은 핸드 종료 직후 적용되고 다음 판은 그 뒤 1초에 시작한다
+    return start + pay // 2 + (0 if cancel else amount), _hero_total(host, me)
+
+
+@scenario("칩 추가: 즉시 / 핸드 중 예약 / 예약 취소", 240)
+def s11(c):
+    bot_u = "qauser2"
+    v = c.viewer(); v.login(); v.open_game(0); v.wait_scene("table_list.tscn", 15)
+    v.wait_state(lambda s: v.text(s, "BuyInInfo") and not s["nodes"]["CreateButton"].get("disabled") and s, 15, "바이인 로드")
+    v.press("OpenCreateButton"); v.wait_state(lambda s: v.vis(s, "CreatePanel"), 10, "만들기 패널")
+    v.set_text("NameEdit", "QA칩추가"); v.set_value("BuyInSpin", v.state()["nodes"]["BuyInSpin"]["min"]); v.press("CreateButton"); v.wait_scene("table.tscn", 15)
+    s = v.wait_state(lambda s: s["extra"].get("my_seat_no", -1) != -1 and s, 30, "히어로 방장 착석"); me = s["extra"]["my_seat_no"]; tid = s["extra"]["table_id"]
+    # 1) 핸드 없음(혼자 앉음) -> 204 즉시 반영, 정확히 amount
+    s0 = _hero_stack(v, me); assert not s["extra"]["hand_in_progress"], "혼자인데 핸드가 돌고 있다"
+    _add_chips_ui(v, AMT)
+    v.wait_state(lambda s: _hero_stack(v, me) == s0 + AMT and s, 15, f"스택 {s0} -> {s0 + AMT}")
+    assert v.text(v.state(), "AddChipsButton") == "+ 칩", "즉시 추가인데 버튼이 예약 문구다"
+    # 봇이 앉아 핸드가 시작되게 한다
+    bot = Bot(bot_u); ap = Autoplay([bot]); c.bots = getattr(c, "bots", []) + [bot]; c.on_cleanup(lambda: [ap.stop(), bot.stop()])
+    bot.watch(tid); bot.sit(tid, 10000); attach(v, bot, [bot])
+    # 2) 핸드 중 예약 -> 202, 핸드 뒤 정확히 amount 만큼 더 있다
+    want, got = _reserved_hand(v, bot, tid, me, AMT, cancel=False)
+    assert got == want, f"예약 반영 뒤 스택 {got} (기대 {want})"
+    s = v.state(); assert v.text(s, "AddChipsButton") == "+ 칩" and not v.vis(s, "AddChipsReserveRow"), f"반영 뒤에도 예약 표시: {v.text(s, 'AddChipsButton')!r}"
+    # 3) 예약 뒤 UI 로 취소 -> 핸드 뒤 스택에 안 들어간다
+    want, got = _reserved_hand(v, bot, tid, me, AMT, cancel=True)
+    assert got == want, f"취소했는데 스택 {got} (기대 {want})"
+s11.sizes = ("d",)
+
+
+def policy_raise_over_allin(bot, v):
+    """올인한 좌석이 있고 아직 아무도 그 위로 안 걸었으면 최소 레이즈, 아니면 체크/콜(두 봇이 올인 위로 걸어 사이드 팟을 만든다)"""
+    a = (bot.private or {}).get("availableActions") or {}; seats = _seats(v)
+    top = max((int(s["streetBet"]) for s in seats if s["status"] == "ALL_IN"), default=None)
+    if top is not None and a.get("minRaiseTo") is not None and max(int(s["streetBet"]) for s in seats) <= top and bot.act("RAISE_TO", int(a["minRaiseTo"])) < 300: return
+    policy_check_call(bot, v)
+
+
+@scenario("레이즈 UI + 올인 런아웃·사이드 팟", 240)
+def s12(c):
+    bots = [Bot("qauser2"), Bot("qauser3")]; ap = Autoplay(bots); c.bots = getattr(c, "bots", []) + bots; c.on_cleanup(lambda: [ap.stop(), *[b.stop() for b in bots]])
+    tid = bots[0].create_table("S12", 16000); bots[1].sit(tid, 20000)
+    v = c.viewer(); v.login(); to_room_list(v); attach(v, bots[0], bots); enter(v, tid, True, "min"); host = bots[0]; me = my_seat(v)
+    # 1) 레이즈: 스핀으로 금액을 정하고 RaiseButton -> 공개 뷰 streetBet == 금액
+    ap.slow(4)  # 봇이 바로 콜해 스트리트가 넘어가면 streetBet 이 0 으로 돌아간다
+    wait_for(v, lambda x: not x["handInProgress"], 90, "착석 직후 핸드 종료"); wait_next_hand(v, pump=False)  # 입장 중 pump 가 누른 핸드를 건너뛰고 새 핸드 프리플랍부터
+    s = v.wait_state(lambda s: hero_turn(s) and v.vis(s, "ActionBar") and not s["nodes"]["RaiseButton"].get("disabled", True) and s, 60, "히어로 차례(레이즈 가능)", pump=False)
+    assert s["extra"]["street"] == "PREFLOP", f"스트리트 {s['extra']['street']}"
+    sp = s["nodes"]["RaiseSpin"]; amt = min(int(sp["min"]) + 400, int(sp["max"])) // 100 * 100
+    v.set_value("RaiseSpin", amt)
+    s = v.wait_state(lambda s: str(amt) in v.text(s, "RaiseButton") and s, 10, f"RaiseButton 문구에 {amt}", pump=False)
+    v.press("RaiseButton")
+    wait_for(v, lambda x: (_hero_row(host, me) or {}).get("streetBet") == amt and _hero_row(host, me).get("lastAction") == "RAISE_TO", 15, f"히어로 streetBet {amt} + RAISE_TO", pump_=False)
+    s = v.wait_state(lambda s: next((x for x in s["extra"]["seats"] if x["seat_no"] == me), {}).get("last_action") == "레이즈" and s, 10, "히어로 좌석 레이즈 배지", pump=False)
+    ap.fast(); wait_for(v, lambda x: not x["handInProgress"], 90, "핸드 종료")
+    # 2) 올인: 히어로 최단 스택, 봇 둘이 올인 위로 걸어 사이드 팟. 덱: 히어로 AA > 봇1 KK > 봇2 QQ
+    ap.policy = policy_raise_over_allin
+    def deck(seats): return dict(hole_cards={me: ["As", "Ah"], int(host.my_seat()["seatNo"]): ["Kd", "Kc"], int(bots[1].my_seat()["seatNo"]): ["Qd", "Qc"]}, board=["2c", "7d", "9h", "4s", "3d"])
+    fixed_hand(v, host, tid, deck); n0 = len(host.results); k_seat = int(host.my_seat()["seatNo"])
+    s = v.wait_state(lambda s: hero_turn(s) and v.vis(s, "ActionBar") and not s["nodes"]["AllInButton"].get("disabled", True) and s, 60, "히어로 차례(올인 가능)", pump=False)
+    h = _hero_total(host, me); assert h < min(int(x["stack"]) + int(x["totalContributed"]) for x in _seats(host.view) if int(x["seatNo"]) != me), "히어로 스택이 최단이 아니다"
+    v.press("AllInButton")  # 슬라이더를 최대로만 옮긴다 — 보내는 건 RaiseButton
+    s = v.wait_state(lambda s: v.text(s, "RaiseButton").startswith("올인") and s, 10, "RaiseButton 올인 문구", pump=False); assert str(h) in v.text(s, "RaiseButton"), f"올인 금액 {v.text(s, 'RaiseButton')!r} (기대 {h})"
+    seen = {}; orig = host.on_message
+    def hook(hd, d):  # 마지막 스트리트 베팅은 결과 프레임에서 모인다 — 결과 프레임까지 포함해 seq 가 큰 것만 본다(순서가 뒤바뀌어 온다)(마지막 값 = 콜이 다 모인 뒤)
+        orig(hd, d)
+        if "/topic/tables/" in hd and len(d.get("pots", [])) >= 2 and d["seq"] >= seen.get("seq", -1): seen["seq"] = d["seq"]; seen["p"] = [int(p["amount"]) for p in d["pots"]]; seen["pot"] = int(d["pot"])
+    host.on_message = hook
+    v.press("RaiseButton")
+    def two_pots(x): return bool(seen) and len(host.results) > n0
+    wait_for(v, two_pots, 60, "팟 2개 + 핸드 결과", pump_=False)
+    main, side = seen["p"][:2]; assert main == 3 * h and len(seen["p"]) == 2, f"팟 {seen['p']} (기대 메인 {3 * h})"
+    s = v.wait_state(lambda s: s["extra"]["winners"] and s, 30, "결과(승자)", pump=False)
+    pay = {w["seat_no"]: w["amount"] for w in s["extra"]["winners"]}
+    # pots 는 모인 칩의 팟 층이라 콜 못 받은 초과분(서버 mergeUncalled 가 그 좌석에 돌려준다)을 뺀다: 지급 합 == pot, 초과분 = pot - Σpots
+    assert sum(pay.values()) == seen["pot"] and pay[me] == main, f"지급 {pay} (기대 히어로 메인 {main}, 총 {seen['pot']})"
+    if sum(seen["p"]) == seen["pot"]: assert pay == {me: main, k_seat: side}, f"지급 {pay} (기대 히어로 {main}, KK 봇 {side})"  # 초과분이 없으면 정확히
+    else: assert pay[k_seat] >= side, f"지급 {pay} (사이드 {side} 이상)"
+    assert len(s["extra"]["board"]) == 5, f"런아웃 보드 {s['extra']['board']}"
+    assert _hero_stack(v, me) == main, f"히어로 최종 스택 {_hero_stack(v, me)} (기대 메인 팟 {main})"
+    assert not v.errors, f"콘솔 오류 {v.errors}"
+s12.sizes = ("d",)
 
 
 
@@ -558,4 +672,16 @@ def fail_snapshot(c):
     return out
 
 
-cleanup = unseat_all  # 러너가 시작·매 시나리오 뒤에 부른다(모든 qa 계정을 미착석으로)
+def reset_accounts(users=qa.USERS):
+    """POST /api/admin/qa/reset(QA 서버 전용): 재착석 의무·대기 중 입출금 요청·지갑(10,000,000)을 되돌린다. 아직 앉은 계정이 있으면 409(아무것도 안 바뀐다)"""
+    for _ in range(2):
+        if "t" not in _adm: _adm["t"] = qa.rest_login(qa.ADMIN)[0]
+        s, d = qa.call("/api/admin/qa/reset", _adm["t"], {"usernames": list(users)})
+        if s == 401: _adm.clear(); continue
+        break
+    if s != 204: raise RuntimeError(f"qa reset {s} {d}")
+
+
+def cleanup():
+    """러너가 시작·매 시나리오 뒤에 부른다: 모든 qa 계정을 미착석으로 만든 뒤 상태를 되돌린다"""
+    unseat_all(); reset_accounts()
