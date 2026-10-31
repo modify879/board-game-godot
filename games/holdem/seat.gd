@@ -552,8 +552,9 @@ func show_player(info: Dictionary) -> void:
 		modulate = dim
 	fold_label.visible = desk and info.folded
 	badge_all_in.visible = info.all_in
-	badge_presence.text = info.presence_text
-	badge_presence.visible = disconnected
+	var awaiting_bb: bool = info.get("awaiting_bb", false)
+	badge_presence.text = info.presence_text if disconnected else "BB 대기"
+	badge_presence.visible = disconnected or awaiting_bb
 	badge_leave.text = info.get("leave_text", "일어서기 예약") # 서버는 예약 종류를 구분하지 않는다 — 내 좌석만 로컬 의도(관전/나가기)를 안다
 	badge_leave.visible = info.leave_reserved
 	var action: String = info.get("action", "")

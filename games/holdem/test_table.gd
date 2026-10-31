@@ -137,7 +137,7 @@ func _ready() -> void:
 	table.my_available_actions = {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}
 	table._update_action_bar()
 	check(table.raise_button.text.begins_with("레이즈"), "preflop BB option stays 레이즈: '%s'" % table.raise_button.text)
-	var flop_actions := {"seq": 1.0, "holeCards": [], "leaveReservation": null, "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}}
+	var flop_actions := {"seq": 1.0, "leaveReservation": null, "hand": {"holeCards": [], "currentHand": null, "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}}}
 	# (a) 공개 뷰가 먼저(낡은 프리플롭 액션이 남아 있음), 그 뒤 개인 뷰
 	table.deal_end_ticks = -1
 	table._handle_public(_view(13, seats, {"handInProgress": true, "toActSeatNo": 1.0, "street": "FLOP"}))
@@ -336,7 +336,7 @@ func _ready() -> void:
 	table._update_buttons() # 실제 흐름은 열기 뒤 갱신한다
 	check(table.add_chips_box.visible and not table.add_chips_deposit and not table.add_chips_ok.disabled and table.add_chips_ok.text == "추가", "during hand the chips tab opens and is usable")
 	check(not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "no reservation: row hidden, button plain")
-	table._handle_private({"seq": 930000.0, "holeCards": [], "chipsReservation": 3000.0})
+	table._handle_private({"seq": 930000.0, "hand": null, "chipsReservation": 3000.0})
 	check(table.add_chips_reserve_row.visible and table.add_chips_reserved.text == "예약: 3000칩" and table.add_chips_button.text == "+ 칩 예약", "reservation: row and button text shown")
 	table._set_add_chips_tab(true)
 	check(not table.add_chips_reserve_row.visible, "reservation row hidden on deposit tab")
@@ -344,14 +344,15 @@ func _ready() -> void:
 	table.chips_reservation = null # 예약 취소 성공 때 로컬 값 지움과 같은 상태
 	table._update_buttons()
 	check(not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "reservation cleared: row hidden")
-	table._handle_private({"seq": 930001.0, "holeCards": [], "chipsReservation": 500.0})
-	table._handle_private({"seq": 930002.0, "holeCards": []})
-	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "private view without chipsReservation clears it")
-	table._handle_private({"seq": 930003.0, "holeCards": [], "chipsReservation": 500.0})
-	table._handle_public(_view(2001, [my_seat])) # 핸드 없는 공개 뷰(같은 seq 는 통과) — 예약이 사라진다
-	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible and table.add_chips_button.text == "+ 칩", "no-hand public view clears reservation")
-	table._handle_private({"seq": 930004.0, "holeCards": [], "chipsReservation": 500.0}) # 정산 프레임의 개인 뷰
-	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "no-hand: private chipsReservation not shown")
+	table._handle_private({"seq": 930001.0, "hand": null, "chipsReservation": 500.0})
+	table._handle_private({"seq": 930002.0, "hand": null, "chipsReservation": null})
+	check(table.chips_reservation == null and not table.add_chips_reserve_row.visible, "private view with chipsReservation null clears it")
+	table._handle_private({"seq": 930003.0, "hand": null, "chipsReservation": 500.0})
+	check(table.chips_reservation == 500.0, "private chipsReservation taken as-is")
+	table._handle_public(_view(2001, [my_seat])) # 핸드 없는 공개 뷰(같은 seq 는 통과) — 예약은 서버가 개인 뷰로 지운다
+	check(table.chips_reservation == 500.0, "no-hand public view does not clear reservation by itself")
+	table._handle_private({"seq": 930004.0, "hand": null, "chipsReservation": null})
+	check(table.chips_reservation == null, "server clears reservation via private view")
 	table.add_chips_box.hide()
 	table._handle_public(_view(2002, [my_seat], {"nextHandInMs": 3000.0}))
 	check(not table.add_chips_button.disabled, "add chips enabled during countdown")
@@ -426,12 +427,12 @@ func _ready() -> void:
 	check(not table.leave_room_after_stand, "cancel success clears intent")
 	# 14e. 개인 뷰 leaveReservation: 메모리 없이도 복원, null 은 해제
 	table.leave_room_after_stand = false
-	table._handle_private({"seq": 900000.0, "holeCards": [], "leaveReservation": "LEAVE"})
+	table._handle_private({"seq": 900000.0, "hand": null, "leaveReservation": "LEAVE"})
 	check(table.leave_room_after_stand, "private leaveReservation LEAVE restores intent")
-	table._handle_private({"seq": 900002.0, "holeCards": [], "leaveReservation": "SPECTATE"})
+	table._handle_private({"seq": 900002.0, "hand": null, "leaveReservation": "SPECTATE"})
 	check(not table.leave_room_after_stand, "private SPECTATE -> not leaving")
 	table.leave_room_after_stand = true
-	table._handle_private({"seq": 900003.0, "holeCards": [], "leaveReservation": null})
+	table._handle_private({"seq": 900003.0, "hand": null, "leaveReservation": null})
 	check(not table.leave_room_after_stand, "private null clears intent")
 	table._apply_stand_result({"ok": true, "status": 202}, false)
 	check(not table.leave_room_after_stand, "202 SPECTATE resend switches kind")
@@ -560,7 +561,7 @@ func _ready() -> void:
 	# currentHand → 족보 문구
 	table._handle_public(_view(3100, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
 	table.deal_end_ticks = -1 # 앞 시나리오의 새 판 딜 연출은 끝난 것으로
-	table._handle_private({"seq": 910000.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "PAIR", "tiebreakers": [14.0]}})
+	table._handle_private({"seq": 910000.0, "hand": {"holeCards": ["As", "Ah"], "currentHand": {"category": "PAIR", "tiebreakers": [14.0]}, "availableActions": null}})
 	var hr: Label = table.seat_nodes[0].hand_rank
 	check(table.my_hand_text == "A 원페어" and table.qa_state().my_hand_text == "A 원페어", "개인 뷰 currentHand 가 문구로 저장된다")
 	check(hr.visible and hr.text == "A 원페어" or not table.desktop, "내 패널 HandRank 에 문구(데스크톱)")
@@ -573,9 +574,17 @@ func _ready() -> void:
 	table._process(0.0)
 	check(not table.deal_bar_pending and table.hand_text_pill.visible == table.compact and (table.compact or (hr.visible and hr.text == "A 원페어")), "딜이 끝나면 내 족보 문구가 보인다")
 	table.deal_end_ticks = -1
-	table._handle_private({"seq": 910001.0, "holeCards": ["As", "Ah"], "currentHand": null})
+	table._handle_private({"seq": 910001.0, "hand": {"holeCards": ["As", "Ah"], "currentHand": null, "availableActions": null}})
 	check(table.my_hand_text == "" and not hr.visible and not table.hand_text_pill.visible, "currentHand null 이면 문구·라벨 숨김")
-	table._handle_private({"seq": 910002.0, "holeCards": ["As", "Ah"], "currentHand": {"category": "FLUSH", "tiebreakers": [14.0, 9.0]}})
+	table._handle_private({"seq": 910002.0, "hand": {"holeCards": ["As", "Ah"], "currentHand": {"category": "FLUSH", "tiebreakers": [14.0, 9.0]}, "availableActions": null}})
+	table._handle_public(_view(3101, [_seat(1, 7), _seat(2, 8)], {"handInProgress": false}))
+	table._handle_private({"seq": 910003.0, "hand": null})
+	check(table.my_codes == ["As", "Ah"] and table.my_cards_box.visible, "hand null 개인 뷰(핸드 없음)는 카드를 지우지 않는다")
+	var bb_seat := _seat(2, 8, "NOT_IN_HAND")
+	bb_seat["awaitingBigBlind"] = true
+	table._handle_public(_view(3102, [_seat(1, 7, "NOT_IN_HAND"), bb_seat], {"handInProgress": true, "toActSeatNo": 2.0}))
+	check(table.my_codes.is_empty() and not table.my_cards_box.visible and table.my_hand_text == "", "이번 판에 안 낀 내 카드는 공개 뷰가 지운다")
+	check(table.seat_nodes[1].badge_presence.visible and table.seat_nodes[1].badge_presence.text == "BB 대기", "awaitingBigBlind 좌석은 BB 대기 배지")
 	table._drop_private()
 	check(table.my_hand_text == "", "개인 뷰를 버리면 문구도 지운다")
 
@@ -584,14 +593,14 @@ func _ready() -> void:
 
 	# 폴드 확인·± 스텝: 공짜 체크 가능이면 첫 누름은 보내지 않고, 두 번째가 보낸다
 	table._handle_public(_view(3300, [_seat(1, 7), _seat(2, 8)], {"handInProgress": true, "toActSeatNo": 1.0, "board": ["As", "Kd", "2c"]}))
-	table._handle_private({"seq": 920100.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}})
+	table._handle_private({"seq": 920100.0, "hand": {"holeCards": ["As", "Ah"], "currentHand": null, "availableActions": {"canCheck": true, "callAmount": 0.0, "minRaiseTo": 200.0, "maxRaiseTo": 1000.0}}})
 	table.action_pending = false
 	table.fold_button.pressed.emit()
 	check(not table.action_pending and table.fold_button.text == "정말 폴드?", "폴드 확인: canCheck 면 첫 누름은 보내지 않고 문구가 바뀐다")
 	table.fold_button.pressed.emit()
 	check(table.action_pending and table.fold_button.text == "폴드", "폴드 확인: 두 번째 누름은 보낸다")
 	table.action_pending = false
-	table._handle_private({"seq": 920101.0, "holeCards": ["As", "Ah"], "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}})
+	table._handle_private({"seq": 920101.0, "hand": {"holeCards": ["As", "Ah"], "currentHand": null, "availableActions": {"canCheck": false, "callAmount": 200.0, "minRaiseTo": 400.0, "maxRaiseTo": 1000.0}}})
 	table.fold_button.pressed.emit()
 	check(table.action_pending, "폴드 확인: canCheck 가 아니면 바로 보낸다")
 	table.action_pending = false

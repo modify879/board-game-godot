@@ -224,14 +224,14 @@ def spectate(v):
 
 
 def join(v, post_blind=True, timeout=30):
-    """입장 패널의 "바로 참가" 를 체크하고(기본) 참가한다. 안 체크하면 서버가 SITTING_OUT 으로 두고 BB 가 돌아올 때까지(최대 9판) 딜인하지 않는다.
-    착석하고 SITTING_OUT 이 아닐 때까지 확인한다"""
+    """입장 패널의 "바로 참가" 를 체크하고(기본) 참가한다. 안 체크하면 서버가 BB 가 돌아올 때까지(최대 9판) 딜인하지 않는다(BB 대기, awaitingBigBlind).
+    착석하고 BB 대기가 아닐 때까지 확인한다"""
     if post_blind and not v.state()["nodes"]["EntryPostBlind"].get("pressed"): v.press("EntryPostBlind")
     v.press("EntryJoin"); v.wait_scene("table.tscn", 15)
     def ok(s):
         e = s["extra"]; me = e.get("my_seat_no", -1)
         seat = next((x for x in e.get("seats", []) if x["seat_no"] == me), None)
-        return seat and seat["status"] != "SITTING_OUT"
+        return seat and not seat.get("awaiting_bb")
     v.wait_state(ok, timeout, "히어로 착석+딜인")
 
 
@@ -607,7 +607,7 @@ s11.sizes = ("d",)
 
 def policy_raise_over_allin(bot, v):
     """올인한 좌석이 있고 아직 아무도 그 위로 안 걸었으면 최소 레이즈, 아니면 체크/콜(두 봇이 올인 위로 걸어 사이드 팟을 만든다)"""
-    a = (bot.private or {}).get("availableActions") or {}; seats = _seats(v)
+    a = ((bot.private or {}).get("hand") or {}).get("availableActions") or {}; seats = _seats(v)
     top = max((int(s["streetBet"]) for s in seats if s["status"] == "ALL_IN"), default=None)
     if top is not None and a.get("minRaiseTo") is not None and max(int(s["streetBet"]) for s in seats) <= top and bot.act("RAISE_TO", int(a["minRaiseTo"])) < 300: return
     policy_check_call(bot, v)

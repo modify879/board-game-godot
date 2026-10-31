@@ -71,7 +71,7 @@ func _init() -> void:
 		{"seatNo": 1, "userId": 10, "status": "ACTIVE", "totalContributed": 300},
 		{"seatNo": 4, "userId": 11, "status": "FOLDED", "totalContributed": 100},
 		{"seatNo": 7, "userId": 12, "status": "ALL_IN", "totalContributed": 500},
-		{"seatNo": 8, "userId": 13, "status": "SITTING_OUT", "totalContributed": 0},
+		{"seatNo": 8, "userId": 13, "status": "NOT_IN_HAND", "totalContributed": 0},
 	]
 	var view := {"seats": seats, "buttonSeatNo": 4, "street": "FLOP", "handInProgress": false}
 	check(pv.find_seat(view, 7).userId == 12 and pv.find_seat(view, 2) == null, "find_seat 찾기·없음")
